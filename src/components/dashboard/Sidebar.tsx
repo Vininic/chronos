@@ -1,12 +1,14 @@
 import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Calendar, Brain, Sparkles, BarChart3, Settings, LifeBuoy, Compass } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
+import { useSchedule } from "@/lib/schedule/store";
+import { useAuth } from "@/lib/auth";
 
 const main = [
   { to: "/dashboard", label: "Today", icon: LayoutDashboard },
   { to: "/dashboard/week", label: "Week Composer", icon: Calendar },
   { to: "/dashboard/focus", label: "Focus Blocks", icon: Brain },
-  { to: "/dashboard/aetheris", label: "Aetheris AI", icon: Sparkles, badge: 3 },
+  { to: "/dashboard/aetheris", label: "Aetheris AI", icon: Sparkles },
   { to: "/dashboard/ledger", label: "Performance Ledger", icon: BarChart3 },
 ];
 const meta = [
@@ -16,6 +18,10 @@ const meta = [
 ];
 
 export default function Sidebar() {
+  const { data } = useSchedule();
+  const { session } = useAuth();
+  const cycle = data.meta.cycle;
+  const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();
   return (
     <aside className="hidden lg:flex flex-col w-[260px] shrink-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
       <div className="px-6 pt-7 pb-6">
@@ -24,18 +30,20 @@ export default function Sidebar() {
 
       <div className="px-4 mt-2">
         <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-3">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-secondary-soft">Cycle 14 · Wk 22</div>
-          <div className="font-display text-lg text-primary-foreground mt-1">Atlas Quarter</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-secondary-soft">Cycle {cycle.number} · Wk {cycle.week}</div>
+          <div className="font-display text-lg text-primary-foreground mt-1">{cycle.name}</div>
           <div className="mt-3 h-1.5 rounded-full bg-sidebar-border overflow-hidden">
-            <div className="h-full bg-bronze" style={{ width: "62%" }} />
+            <div className="h-full bg-bronze" style={{ width: `${Math.round(cycle.progress * 100)}%` }} />
           </div>
-          <div className="text-[11px] text-sidebar-foreground/70 mt-1.5 num">62% of arc completed</div>
+          <div className="text-[11px] text-sidebar-foreground/70 mt-1.5 num">{Math.round(cycle.progress * 100)}% of arc completed</div>
         </div>
       </div>
 
       <nav className="flex-1 px-3 mt-6">
         <div className="text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mb-2">Composition</div>
-        {main.map(({ to, label, icon: Icon, badge }) => (
+        {main.map(({ to, label, icon: Icon }) => {
+          const badge = to === "/dashboard/aetheris" && data.suggestions.length > 0 ? data.suggestions.length : undefined;
+          return (
           <NavLink
             key={to}
             to={to}
@@ -54,7 +62,7 @@ export default function Sidebar() {
               <span className="text-[10px] font-semibold rounded-full bg-secondary text-primary-deep px-1.5 py-0.5 num">{badge}</span>
             ) : null}
           </NavLink>
-        ))}
+        );})}
 
         <div className="text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mt-7 mb-2">System</div>
         {meta.map(({ to, label, icon: Icon }) => (
@@ -77,10 +85,10 @@ export default function Sidebar() {
 
       <div className="p-4">
         <div className="rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3">
-          <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold">A</div>
+          <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold">{initial}</div>
           <div className="min-w-0">
-            <div className="text-sm text-sidebar-accent-foreground truncate">Aurelia Vance</div>
-            <div className="text-[11px] text-sidebar-foreground/60 truncate">Chief of Staff</div>
+            <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
+            <div className="text-[11px] text-sidebar-foreground/60 truncate">{session?.email ?? "Chronos composer"}</div>
           </div>
         </div>
       </div>
