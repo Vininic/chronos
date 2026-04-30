@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Chronos design system — midnight blue + bronze on warm parchment */
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 39 33% 95%;          /* #F7F4EE parchment */
+    --foreground: 213 67% 11%;         /* deep midnight ink */
+
+    --surface-raised: 38 40% 97%;
+    --surface-veil: 39 22% 88%;        /* near D9D2C3 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 213 67% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 213 67% 11%;
+
+    /* Brand */
+    --primary: 211 67% 16%;            /* #0E2A47 */
+    --primary-foreground: 39 33% 95%;
+    --primary-deep: 211 70% 11%;       /* #081C31 */
+    --primary-glow: 211 60% 28%;
+
+    --secondary: 35 51% 47%;           /* #B7863B bronze */
+    --secondary-foreground: 39 33% 97%;
+    --secondary-soft: 38 56% 63%;      /* #D8B06A */
+
+    --muted: 39 22% 90%;
+    --muted-foreground: 213 20% 32%;
+
+    --accent: 38 56% 63%;              /* bronze soft */
+    --accent-foreground: 211 70% 11%;
+
+    --neutral-veil: 39 22% 82%;        /* D9D2C3 */
+
+    --destructive: 8 62% 44%;
+    --destructive-foreground: 39 33% 97%;
+
+    --border: 39 18% 84%;
+    --input: 39 18% 84%;
+    --ring: 35 51% 47%;
+
+    --radius: 0.625rem;
+
+    /* Sidebar — strongly midnight */
+    --sidebar-background: 211 70% 11%;
+    --sidebar-foreground: 39 30% 86%;
+    --sidebar-primary: 35 51% 47%;
+    --sidebar-primary-foreground: 211 70% 11%;
+    --sidebar-accent: 211 60% 18%;
+    --sidebar-accent-foreground: 39 33% 95%;
+    --sidebar-border: 211 50% 22%;
+    --sidebar-ring: 35 51% 47%;
+
+    /* Gradients */
+    --gradient-midnight: linear-gradient(160deg, hsl(211 70% 11%) 0%, hsl(211 67% 16%) 60%, hsl(211 60% 22%) 100%);
+    --gradient-bronze: linear-gradient(135deg, hsl(38 56% 63%) 0%, hsl(35 51% 47%) 100%);
+    --gradient-parchment: radial-gradient(1200px 600px at 80% -10%, hsl(38 56% 63% / 0.18), transparent 60%),
+                          radial-gradient(900px 500px at -10% 110%, hsl(211 67% 16% / 0.10), transparent 60%),
+                          linear-gradient(180deg, hsl(39 35% 96%), hsl(39 33% 93%));
+    --gradient-veil: linear-gradient(180deg, hsl(39 33% 95% / 0), hsl(39 33% 95% / 0.9));
+
+    /* Shadows */
+    --shadow-soft: 0 1px 2px hsl(211 70% 11% / 0.04), 0 8px 24px -12px hsl(211 70% 11% / 0.12);
+    --shadow-elevated: 0 2px 4px hsl(211 70% 11% / 0.06), 0 24px 48px -20px hsl(211 70% 11% / 0.22);
+    --shadow-bronze: 0 10px 30px -12px hsl(35 51% 47% / 0.55);
+
+    /* Motion */
+    --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "ss01","cv11";
+  }
+  .font-display { font-family: 'Fraunces', ui-serif, Georgia, serif; font-optical-sizing: auto; letter-spacing: -0.02em; }
+}
+
+@layer components {
+  .chronos-surface { background: var(--gradient-parchment); }
+  .chronos-card {
+    @apply bg-card rounded-xl border;
+    box-shadow: var(--shadow-soft);
+  }
+  .chronos-card-elevated {
+    @apply bg-card rounded-xl border;
+    box-shadow: var(--shadow-elevated);
+  }
+  .bronze-rule {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--secondary) / 0.6), transparent);
+  }
+  .hairline { border-color: hsl(var(--border)); }
+  .num { font-variant-numeric: tabular-nums; }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .bg-midnight { background: var(--gradient-midnight); }
+  .bg-bronze { background: var(--gradient-bronze); }
+  .shadow-soft { box-shadow: var(--shadow-soft); }
+  .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  .shadow-bronze { box-shadow: var(--shadow-bronze); }
+  .ring-bronze { box-shadow: 0 0 0 1px hsl(var(--secondary) / 0.4); }
+}
