@@ -89,7 +89,7 @@ export default function Sidebar() {
           <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold">{initial}</div>
           <div className="min-w-0">
             <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
-            <div className="text-[11px] text-sidebar-foreground/60 truncate">{session?.email ?? "Chronos composer"}</div>
+            <div className="text-[11px] text-sidebar-foreground/60 truncate">{session?.email ?? t.chronos.settings.composer}</div>
           </div>
         </div>
       </div>
