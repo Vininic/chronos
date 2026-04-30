@@ -1,21 +1,24 @@
 import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X } from "lucide-react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
-import { BlockKind, DAY_LABELS, durationMin, fmtDur, timeToMinutes } from "@/lib/schedule/types";
+import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
+import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 
-export const kindStyle: Record<BlockKind, { dot: string; chip: string; label: string; icon: any }> = {
-  deep:     { dot: "bg-secondary",       chip: "bg-secondary/15 text-secondary",         label: "Deep",     icon: Brain },
-  meeting:  { dot: "bg-primary",         chip: "bg-primary/10 text-primary",             label: "Meeting",  icon: CalIcon },
-  ritual:   { dot: "bg-primary-glow",    chip: "bg-primary/10 text-primary-glow",        label: "Ritual",   icon: Zap },
-  recovery: { dot: "bg-emerald-700",     chip: "bg-emerald-700/10 text-emerald-800",     label: "Recovery", icon: Coffee },
-  shallow:  { dot: "bg-neutral-veil",    chip: "bg-muted text-muted-foreground",         label: "Shallow",  icon: Clock },
+export const kindStyle: Record<BlockKind, { dot: string; chip: string; icon: any }> = {
+  deep:     { dot: "bg-secondary",       chip: "bg-secondary/15 text-secondary",         icon: Brain },
+  meeting:  { dot: "bg-primary",         chip: "bg-primary/10 text-primary",             icon: CalIcon },
+  ritual:   { dot: "bg-primary-glow",    chip: "bg-primary/10 text-primary-glow",        icon: Zap },
+  recovery: { dot: "bg-emerald-700",     chip: "bg-emerald-700/10 text-emerald-800",     icon: Coffee },
+  shallow:  { dot: "bg-neutral-veil",    chip: "bg-muted text-muted-foreground",         icon: Clock },
 };
 
 /* ---------------- Daily agenda (data-driven) ---------------- */
 export function DailyAgenda() {
   const { data } = useSchedule();
+  const t = useT();
+  const fmtDur = useFmtDur();
   const today = new Date();
   const agenda = buildAgendaForDate(data, today);
   const totalMin = agenda.reduce((sum, a) => sum + durationMin(a.start, a.end), 0);
@@ -26,17 +29,17 @@ export function DailyAgenda() {
     <div className="chronos-card p-6 lg:col-span-2">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Daily agenda</div>
-          <h3 className="font-display text-2xl text-primary mt-1">The shape of today</h3>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.dailyAgenda}</div>
+          <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.dailyTitle}</h3>
         </div>
         <div className="text-xs text-muted-foreground">
-          <span className="num">{agenda.length} movements</span> · <span className="num">{fmtDur(totalMin)}</span> composed
+          <span className="num">{t.chronos.widgets.movements(agenda.length)}</span> · <span className="num">{fmtDur(totalMin)}</span> {t.chronos.widgets.composed}
         </div>
       </div>
 
       {agenda.length === 0 ? (
         <div className="mt-8 rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          No movements composed for today. <ComposeBlockDialog trigger={<button className="text-secondary hover:underline ml-1">Compose one →</button>} />
+          {t.chronos.widgets.emptyAgenda} <ComposeBlockDialog trigger={<button className="text-secondary hover:underline ml-1">{t.chronos.widgets.composeOne}</button>} />
         </div>
       ) : (
         <div className="mt-6 relative">
@@ -60,10 +63,10 @@ export function DailyAgenda() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-primary truncate">{a.title}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
-                        <span className={`inline-block px-1.5 py-0.5 rounded ${s.chip} font-medium uppercase tracking-wider text-[10px]`}>{s.label}</span>
+                        <span className={`inline-block px-1.5 py-0.5 rounded ${s.chip} font-medium uppercase tracking-wider text-[10px]`}>{t.common.kinds[a.kind]}</span>
                         <span className="ml-2 num">{fmtDur(durationMin(a.start, a.end))}</span>
-                        {live && <span className="ml-2 text-secondary font-medium">· in progress</span>}
-                        {a.source === "commitment" && <span className="ml-2 text-muted-foreground">· commitment</span>}
+                        {live && <span className="ml-2 text-secondary font-medium">· {t.chronos.widgets.inProgress}</span>}
+                        {a.source === "commitment" && <span className="ml-2 text-muted-foreground">· {t.chronos.widgets.commitmentTag}</span>}
                       </div>
                     </div>
                   </div>
@@ -80,14 +83,15 @@ export function DailyAgenda() {
 /* ---------------- Productivity score ---------------- */
 export function PerformanceCard() {
   const { data } = useSchedule();
+  const t = useT();
   const score = data.ledger.compositionScore;
   const r = 56;
   const c = 2 * Math.PI * r;
   const offset = c - (score / 100) * c;
   return (
     <div className="chronos-card p-6">
-      <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Performance index</div>
-      <h3 className="font-display text-2xl text-primary mt-1">Composition score</h3>
+      <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
+      <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.compositionScore}</h3>
 
       <div className="mt-6 grid place-items-center relative">
         <svg width="180" height="180" viewBox="0 0 140 140">
@@ -103,7 +107,7 @@ export function PerformanceCard() {
         <div className="absolute inset-0 grid place-items-center text-center">
           <div>
             <div className="font-display text-5xl text-primary num">{score}</div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mt-1">of 100 · this week</div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mt-1">{t.chronos.widgets.ofThisWeek}</div>
           </div>
         </div>
       </div>
@@ -111,7 +115,7 @@ export function PerformanceCard() {
       <div className="mt-6 grid grid-cols-3 gap-3">
         {data.ledger.metrics.map((m) => (
           <div key={m.label} className="rounded-md bg-surface-raised border border-border p-3">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{m.label}</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{translateMetric(t, m.label)}</div>
             <div className="font-display text-xl text-primary mt-0.5 num">{m.value}</div>
             <div className="h-1 mt-1.5 rounded-full bg-muted overflow-hidden">
               <div className="h-full bg-bronze" style={{ width: `${m.value}%` }} />
@@ -123,9 +127,19 @@ export function PerformanceCard() {
   );
 }
 
+function translateMetric(t: ReturnType<typeof useT>, label: string): string {
+  const map: Record<string, string> = {
+    Depth:    t.chronos.widgets.deep,
+    Cadence:  t.chronos.widgets.weekly,
+    Recovery: t.chronos.widgets.recovery,
+  };
+  return map[label] ?? label;
+}
+
 /* ---------------- AI suggestions ---------------- */
 export function AetherisCard() {
   const { data, applySuggestion, deferSuggestion } = useSchedule();
+  const t = useT();
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />
@@ -135,15 +149,15 @@ export function AetherisCard() {
             <Sparkles className="h-4 w-4 text-primary-deep" />
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Aetheris AI</div>
-            <h3 className="font-display text-xl text-primary -mt-0.5">Quiet suggestions</h3>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.nav.aetheris}</div>
+            <h3 className="font-display text-xl text-primary -mt-0.5">{t.chronos.widgets.quietSuggestions}</h3>
           </div>
         </div>
-        <span className="text-[11px] text-muted-foreground">{data.suggestions.length} awaiting review</span>
+        <span className="text-[11px] text-muted-foreground">{data.suggestions.length} {t.common.awaitingReview}</span>
       </div>
 
       {data.suggestions.length === 0 ? (
-        <p className="mt-6 text-sm text-muted-foreground italic">All quiet. Aetheris will return when it has something worth proposing.</p>
+        <p className="mt-6 text-sm text-muted-foreground italic">{t.chronos.aetheris.allQuietLead}</p>
       ) : (
         <ul className="mt-5 space-y-3 relative">
           {data.suggestions.map((s) => (
@@ -159,13 +173,13 @@ export function AetherisCard() {
                 }`}>{s.impact}</span>
               </div>
               <div className="mt-3 flex items-center gap-2">
-                <button onClick={() => { applySuggestion(s.id); toast({ title: "Suggestion applied", description: s.title }); }}
+                <button onClick={() => { applySuggestion(s.id); toast({ title: t.chronos.aetheris.applied, description: s.title }); }}
                   className="text-xs h-8 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary-deep inline-flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5" /> Apply
+                  <Check className="h-3.5 w-3.5" /> {t.common.apply}
                 </button>
-                <button onClick={() => { deferSuggestion(s.id); toast({ title: "Deferred", description: "Aetheris will revisit." }); }}
+                <button onClick={() => { deferSuggestion(s.id); toast({ title: t.chronos.aetheris.deferred, description: t.chronos.aetheris.deferredDesc }); }}
                   className="text-xs h-8 px-3 rounded-md border border-border hover:bg-secondary/10 text-muted-foreground inline-flex items-center gap-1.5">
-                  <X className="h-3.5 w-3.5" /> Defer
+                  <X className="h-3.5 w-3.5" /> {t.common.defer}
                 </button>
               </div>
             </li>
@@ -179,6 +193,7 @@ export function AetherisCard() {
 /* ---------------- Weekly routine planner ---------------- */
 export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
   const { data, removeRoutine } = useSchedule();
+  const t = useT();
   const days = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun
   const startHour = 7;
   const endHour = 19;
@@ -190,14 +205,14 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
     <div className="chronos-card p-6 lg:col-span-3">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Routine composer</div>
-          <h3 className="font-display text-2xl text-primary mt-1">The shape of the week</h3>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.composer}</div>
+          <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.weekShape}</h3>
         </div>
         <div className="flex items-center gap-3 text-xs flex-wrap">
           {(Object.keys(kindStyle) as BlockKind[]).map((k) => (
             <div key={k} className="flex items-center gap-1.5">
               <span className={`h-2 w-2 rounded-full ${kindStyle[k].dot}`} />
-              <span className="text-muted-foreground capitalize">{kindStyle[k].label}</span>
+              <span className="text-muted-foreground">{t.common.kinds[k]}</span>
             </div>
           ))}
         </div>
@@ -207,7 +222,7 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
         <div />
         {days.map((di) => (
           <div key={di} className="text-center text-[11px] uppercase tracking-[0.18em] text-muted-foreground pb-2">
-            {DAY_LABELS[di]}
+            {t.common.days.short[di]}
           </div>
         ))}
         <div className="relative" style={{ height: gridHeight }}>
@@ -233,7 +248,7 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
                   <div className="truncate">{b.title}</div>
                   <div className="text-[9px] opacity-70 num">{b.start}</div>
                   {editable && (
-                    <button onClick={() => { removeRoutine(b.id); toast({ title: "Block removed" }); }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 h-4 w-4 rounded grid place-items-center bg-background/70 hover:bg-background">
+                    <button onClick={() => { removeRoutine(b.id); toast({ title: t.chronos.widgets.blockRemoved }); }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 h-4 w-4 rounded grid place-items-center bg-background/70 hover:bg-background">
                       <X className="h-2.5 w-2.5" />
                     </button>
                   )}
@@ -250,6 +265,8 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
 /* ---------------- Focus blocks card ---------------- */
 export function FocusBlocksCard() {
   const { data } = useSchedule();
+  const t = useT();
+  const fmtDur = useFmtDur();
   const today = new Date();
   const todays = buildAgendaForDate(data, today).filter((a) => a.kind === "deep");
   const totalMin = todays.reduce((s, a) => s + durationMin(a.start, a.end), 0);
@@ -258,13 +275,13 @@ export function FocusBlocksCard() {
     <div className="chronos-card p-6">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Focus blocks</div>
-          <h3 className="font-display text-2xl text-primary mt-1">Today's depth</h3>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
+          <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.focusToday}</h3>
         </div>
-        <span className="text-xs text-muted-foreground num">{todays.length} composed · {fmtDur(totalMin)}</span>
+        <span className="text-xs text-muted-foreground num">{t.chronos.widgets.focusComposed(todays.length, fmtDur(totalMin))}</span>
       </div>
       {todays.length === 0 ? (
-        <p className="mt-5 text-sm text-muted-foreground italic">No deep work composed for today.</p>
+        <p className="mt-5 text-sm text-muted-foreground italic">{t.chronos.widgets.focusEmpty}</p>
       ) : (
         <ul className="mt-5 space-y-3">
           {todays.map((s) => {
@@ -292,7 +309,7 @@ export function FocusBlocksCard() {
       )}
       <Link to="/dashboard/focus">
         <button className="mt-5 w-full h-10 rounded-md bg-midnight text-primary-foreground text-sm hover:opacity-95 inline-flex items-center justify-center gap-2">
-          Open focus room <ArrowUpRight className="h-4 w-4 text-secondary-soft" />
+          {t.chronos.widgets.openFocusRoom} <ArrowUpRight className="h-4 w-4 text-secondary-soft" />
         </button>
       </Link>
     </div>
@@ -302,6 +319,7 @@ export function FocusBlocksCard() {
 /* ---------------- Deep / recovery balance ---------------- */
 export function BalanceCard() {
   const { data } = useSchedule();
+  const t = useT();
   const deep = data.ledger.deepHours;
   const recovery = data.ledger.recoveryHours;
   const max = Math.max(...deep, ...recovery);
@@ -313,8 +331,8 @@ export function BalanceCard() {
   return (
     <div className="chronos-card p-6">
       <div>
-        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Equilibrium</div>
-        <h3 className="font-display text-2xl text-primary mt-1">Deep work · Recovery</h3>
+        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.equilibrium}</div>
+        <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.balanceTitle}</h3>
       </div>
       <div className="mt-4">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32">
@@ -332,15 +350,15 @@ export function BalanceCard() {
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div className="rounded-md bg-surface-raised border p-3">
           <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-primary" /> Deep
+            <span className="h-2 w-2 rounded-full bg-primary" /> {t.chronos.widgets.deep}
           </div>
-          <div className="font-display text-xl text-primary mt-0.5 num">{avg(deep)}h <span className="text-xs text-muted-foreground font-sans">avg</span></div>
+          <div className="font-display text-xl text-primary mt-0.5 num">{avg(deep)}h <span className="text-xs text-muted-foreground font-sans">{t.chronos.widgets.avg}</span></div>
         </div>
         <div className="rounded-md bg-surface-raised border p-3">
           <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-secondary" /> Recovery
+            <span className="h-2 w-2 rounded-full bg-secondary" /> {t.chronos.widgets.recovery}
           </div>
-          <div className="font-display text-xl text-primary mt-0.5 num">{avg(recovery)}h <span className="text-xs text-muted-foreground font-sans">avg</span></div>
+          <div className="font-display text-xl text-primary mt-0.5 num">{avg(recovery)}h <span className="text-xs text-muted-foreground font-sans">{t.chronos.widgets.avg}</span></div>
         </div>
       </div>
     </div>
@@ -350,15 +368,17 @@ export function BalanceCard() {
 /* ---------------- Schedule optimization cards ---------------- */
 export function OptimizationStrip() {
   const { data } = useSchedule();
+  const t = useT();
+  const fmtDur = useFmtDur();
   const totalRoutineMin = data.routine.reduce((s, b) => s + durationMin(b.start, b.end), 0);
   const deepMin = data.routine.filter((r) => r.kind === "deep").reduce((s, b) => s + durationMin(b.start, b.end), 0);
   const meetingMin = data.routine.filter((r) => r.kind === "meeting").reduce((s, b) => s + durationMin(b.start, b.end), 0);
   const recoveryMin = data.routine.filter((r) => r.kind === "recovery").reduce((s, b) => s + durationMin(b.start, b.end), 0);
   const cards = [
-    { k: "Composed weekly", v: fmtDur(totalRoutineMin), d: `${data.routine.length} blocks across the routine.`, trend: "this week" },
-    { k: "Deep ratio", v: `${Math.round((deepMin / Math.max(1, totalRoutineMin)) * 100)}%`, d: "Share of routine spent in deep work.", trend: "target ≥ 35%" },
-    { k: "Meeting load", v: fmtDur(meetingMin), d: "Synchronous time across the week.", trend: "weekly" },
-    { k: "Recovery debt", v: recoveryMin >= 120 ? "Cleared" : fmtDur(120 - recoveryMin), d: "Two 60-minute walks recommended.", trend: "outstanding" },
+    { k: t.chronos.widgets.composedWeekly, v: fmtDur(totalRoutineMin), d: t.chronos.widgets.composedWeeklyDesc(data.routine.length), trend: t.chronos.widgets.thisWeek },
+    { k: t.chronos.widgets.deepRatio,      v: `${Math.round((deepMin / Math.max(1, totalRoutineMin)) * 100)}%`, d: t.chronos.widgets.deepRatioDesc, trend: t.chronos.widgets.deepRatioTrend },
+    { k: t.chronos.widgets.meetingLoad,    v: fmtDur(meetingMin), d: t.chronos.widgets.meetingLoadDesc, trend: t.chronos.widgets.weekly },
+    { k: t.chronos.widgets.recoveryDebt,   v: recoveryMin >= 120 ? t.chronos.widgets.recoveryDebtCleared : fmtDur(120 - recoveryMin), d: t.chronos.widgets.recoveryDebtDesc, trend: t.chronos.widgets.outstanding },
   ];
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
