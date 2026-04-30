@@ -72,6 +72,70 @@
     /* Motion */
     --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Dark theme — "Midnight Atelier"                                    */
+  /*  Same palette logic, inverted: deep midnight surfaces with bronze   */
+  /*  remaining the warm accent. Sidebar darkens further to retain       */
+  /*  Chronos' product identity.                                         */
+  /* ------------------------------------------------------------------ */
+  .dark {
+    --background: 213 50% 7%;            /* near-black midnight */
+    --foreground: 39 30% 92%;
+
+    --surface-raised: 213 45% 11%;
+    --surface-veil:   213 40% 14%;
+
+    --card: 213 45% 10%;
+    --card-foreground: 39 30% 92%;
+
+    --popover: 213 45% 10%;
+    --popover-foreground: 39 30% 92%;
+
+    --primary: 38 56% 63%;               /* bronze becomes the lead in dark */
+    --primary-foreground: 213 60% 8%;
+    --primary-deep: 35 51% 38%;
+    --primary-glow: 38 70% 72%;
+
+    --secondary: 38 56% 63%;
+    --secondary-foreground: 213 60% 8%;
+    --secondary-soft: 38 70% 76%;
+
+    --muted: 213 30% 18%;
+    --muted-foreground: 39 18% 70%;
+
+    --accent: 38 56% 63%;
+    --accent-foreground: 213 60% 8%;
+
+    --neutral-veil: 213 28% 22%;
+
+    --destructive: 8 70% 55%;
+    --destructive-foreground: 39 30% 96%;
+
+    --border: 213 32% 18%;
+    --input: 213 32% 18%;
+    --ring: 38 56% 63%;
+
+    --sidebar-background: 213 60% 5%;
+    --sidebar-foreground: 39 24% 80%;
+    --sidebar-primary: 38 56% 63%;
+    --sidebar-primary-foreground: 213 60% 8%;
+    --sidebar-accent: 213 50% 11%;
+    --sidebar-accent-foreground: 39 30% 96%;
+    --sidebar-border: 213 40% 16%;
+    --sidebar-ring: 38 56% 63%;
+
+    --gradient-midnight: linear-gradient(160deg, hsl(213 70% 5%) 0%, hsl(213 60% 9%) 60%, hsl(213 50% 13%) 100%);
+    --gradient-bronze: linear-gradient(135deg, hsl(38 70% 72%) 0%, hsl(35 60% 52%) 100%);
+    --gradient-parchment: radial-gradient(1200px 600px at 80% -10%, hsl(38 56% 63% / 0.10), transparent 60%),
+                          radial-gradient(900px 500px at -10% 110%, hsl(213 67% 26% / 0.18), transparent 60%),
+                          linear-gradient(180deg, hsl(213 50% 7%), hsl(213 45% 9%));
+    --gradient-veil: linear-gradient(180deg, hsl(213 50% 7% / 0), hsl(213 50% 7% / 0.9));
+
+    --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.4), 0 8px 24px -12px hsl(0 0% 0% / 0.55);
+    --shadow-elevated: 0 2px 4px hsl(0 0% 0% / 0.45), 0 24px 48px -20px hsl(0 0% 0% / 0.7);
+    --shadow-bronze: 0 10px 30px -12px hsl(38 70% 60% / 0.45);
+  }
 }
 
 @layer base {
