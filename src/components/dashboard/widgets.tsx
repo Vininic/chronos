@@ -150,7 +150,7 @@ export function AetherisCard() {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.nav.aetheris}</div>
-            <h3 className="font-display text-xl text-primary -mt-0.5">{t.chronos.widgets.quietSuggestions}</h3>
+            <h3 className="font-display text-xl text-primary -mt-0.5">{t.chronos.aetheris.quietSuggestions}</h3>
           </div>
         </div>
         <span className="text-[11px] text-muted-foreground">{data.suggestions.length} {t.common.awaitingReview}</span>
