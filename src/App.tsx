@@ -17,6 +17,8 @@ import Settings from "./pages/dashboard/Settings";
 import Support from "./pages/dashboard/Support";
 import { ScheduleProvider } from "@/lib/schedule/store";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { I18nProvider } from "@/lib/i18n/I18nProvider";
+import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 
 const queryClient = new QueryClient();
 
@@ -27,13 +29,15 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <ScheduleProvider>
-            <Routes>
+    <ThemeProvider>
+      <I18nProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+              <ScheduleProvider>
+                <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
@@ -47,11 +51,13 @@ const App = () => (
                 <Route path="support" element={<Support />} />
               </Route>
               <Route path="*" element={<NotFound />} />
-            </Routes>
-          </ScheduleProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+                </Routes>
+              </ScheduleProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </I18nProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
