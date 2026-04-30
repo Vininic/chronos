@@ -328,9 +328,9 @@ const pt = {
       suggestionApplied: "Sugestão aplicada",
       blockRemoved: "Bloco removido",
     },
-    layoutFooter: "Chronos · Suíte Olympus · Ciclo XIV",
+      layoutFooter: "Chronos · Suíte Olympus · Ciclo XIV",
   },
-} as const;
+};
 
 const en: typeof pt = {
   common: {
