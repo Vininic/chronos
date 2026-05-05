@@ -272,7 +272,7 @@ export function FocusBlocksCard() {
   const totalMin = todays.reduce((s, a) => s + durationMin(a.start, a.end), 0);
 
   return (
-    <div className="chronos-card p-6">
+    <div className="chronos-card p-6 h-full flex flex-col">
       <div className="flex items-end justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
@@ -307,7 +307,8 @@ export function FocusBlocksCard() {
           })}
         </ul>
       )}
-      <Link to="/dashboard/focus">
+      <div className="flex-1" />
+      <Link to="/dashboard/focus" className="block">
         <button className="mt-5 w-full h-10 rounded-md bg-midnight text-primary-foreground text-sm hover:opacity-95 inline-flex items-center justify-center gap-2">
           {t.chronos.widgets.openFocusRoom} <ArrowUpRight className="h-4 w-4 text-secondary-soft" />
         </button>
