@@ -1,8 +1,8 @@
 {
   "meta": {
     "version": 1,
-    "owner": "Aurelia Vance",
-    "cycle": { "name": "Atlas Quarter", "number": 14, "week": 22, "progress": 0.62 },
+    "owner": "Você",
+    "cycle": { "name": "Semana atual", "number": 14, "week": 22, "progress": 0.62 },
     "workdayStart": "07:00",
     "workdayEnd": "19:00"
   },
