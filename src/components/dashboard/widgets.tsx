@@ -26,7 +26,7 @@ export function DailyAgenda() {
   const liveId = agenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end))?.id;
 
   return (
-    <div className="chronos-card p-6 lg:col-span-2">
+    <div className="chronos-card p-6 h-full">
       <div className="flex items-end justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.dailyAgenda}</div>
@@ -89,7 +89,7 @@ export function PerformanceCard() {
   const c = 2 * Math.PI * r;
   const offset = c - (score / 100) * c;
   return (
-    <div className="chronos-card p-6">
+    <div className="chronos-card p-6 h-full">
       <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
       <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.compositionScore}</h3>
 
