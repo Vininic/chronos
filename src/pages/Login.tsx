@@ -16,21 +16,24 @@ export default function Login() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const t = useT();
-  const [email, setEmail] = useState("aurelia.vance@chronos.app");
-  const [password, setPassword] = useState("composer");
+  const [name, setName] = useState("");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.includes("@")) { toast({ title: t.chronos.login.invalidEmail }); return; }
-    if (password.length < 4)  { toast({ title: t.chronos.login.shortPass }); return; }
-    signIn(email);
+    const trimmed = name.trim();
+    if (!trimmed) { toast({ title: t.chronos.login.needsName }); return; }
+    signIn(trimmed);
     toast({ title: t.chronos.login.welcomeBack, description: t.chronos.login.welcomeBackDesc });
+    navigate("/dashboard");
+  }
+
+  function guest() {
+    signIn("Visitante");
     navigate("/dashboard");
   }
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      {/* Left ceremonial pane */}
       <div className="relative bg-midnight text-primary-foreground p-10 flex flex-col">
         <div className="flex items-center justify-between">
           <Logo variant="light" />
@@ -40,21 +43,16 @@ export default function Login() {
           </div>
         </div>
         <div className="flex-1 grid place-items-center">
-          <Hourglass3D className="h-[520px] w-[520px] max-w-full" />
+          <Hourglass3D className="h-[480px] w-[480px] max-w-full" />
         </div>
         <div>
           <div className="bronze-rule" />
-          <div className="mt-5 flex items-center justify-between text-xs uppercase tracking-[0.22em] text-primary-foreground/60">
-            <span>{t.common.suite} · I</span>
-            <span>Aetheris Mk.III</span>
-          </div>
-          <p className="font-display text-2xl text-primary-foreground/95 mt-4 max-w-md leading-snug">
+          <p className="font-display text-xl text-primary-foreground/90 mt-5 max-w-md leading-snug">
             {t.chronos.login.quote}
           </p>
         </div>
       </div>
 
-      {/* Right form pane */}
       <div className="chronos-surface flex items-center justify-center p-8">
         <div className="w-full max-w-sm">
           <div className="text-xs uppercase tracking-[0.22em] text-secondary">{t.chronos.login.eyebrow}</div>
@@ -63,31 +61,35 @@ export default function Login() {
 
           <form className="mt-8 space-y-5" onSubmit={submit}>
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.login.email}</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@atelier.co" className="h-11 bg-card border-border" />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.login.passphrase}</Label>
-                <a href="#" className="text-xs text-secondary hover:underline">{t.chronos.login.forgot}</a>
-              </div>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••" className="h-11 bg-card border-border" />
+              <Label htmlFor="name" className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                {t.chronos.login.name}
+              </Label>
+              <Input
+                id="name"
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t.chronos.login.namePlaceholder}
+                className="h-11 bg-card border-border"
+              />
             </div>
             <Button type="submit" className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary-deep">
               {t.chronos.login.enter} <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
           </form>
 
-          <div className="mt-8 flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="h-px flex-1 bg-border" /> {t.chronos.login.orDivider} <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <button onClick={() => { signIn("guest@chronos.app"); navigate("/dashboard"); }} className="mt-5 w-full h-11 rounded-md border border-border bg-card hover:bg-secondary/10 transition-colors text-sm font-medium text-primary">
-            {t.chronos.login.sso}
+          <button
+            onClick={guest}
+            className="mt-3 w-full h-11 rounded-md border border-border bg-card hover:bg-secondary/10 transition-colors text-sm text-muted-foreground"
+          >
+            {t.chronos.login.continueAsGuest}
           </button>
 
-          <p className="mt-10 text-xs text-muted-foreground text-center">
-            {t.chronos.login.newToSuite} <Link to="/" className="text-secondary hover:underline">{t.chronos.login.requestInvite}</Link>
+          <p className="mt-8 text-[11px] text-muted-foreground text-center leading-relaxed">
+            {t.chronos.login.localOnly}
+          </p>
+          <p className="mt-4 text-xs text-muted-foreground text-center">
+            <Link to="/" className="text-secondary hover:underline">← Chronos</Link>
           </p>
         </div>
       </div>
