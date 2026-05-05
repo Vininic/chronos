@@ -330,22 +330,40 @@ export function BalanceCard() {
   const path = (arr: number[]) => arr.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
   const avg = (arr: number[]) => (arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1);
   return (
-    <div className="chronos-card p-6">
-      <div>
-        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.equilibrium}</div>
-        <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.balanceTitle}</h3>
+    <div className="chronos-card p-6 h-full flex flex-col">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.equilibrium}</div>
+          <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.balanceTitle}</h3>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-primary" /> {t.chronos.widgets.deep}</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-secondary" /> {t.chronos.widgets.recovery}</span>
+        </div>
       </div>
-      <div className="mt-4">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32">
+      <div className="mt-5 flex-1">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-36">
           <defs>
             <linearGradient id="deepFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.25" />
+              <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.32" />
               <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
             </linearGradient>
+            <linearGradient id="recoveryFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="hsl(var(--secondary))" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="hsl(var(--secondary))" stopOpacity="0" />
+            </linearGradient>
           </defs>
+          {/* baseline ticks */}
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={f} x1={P} x2={W - P} y1={P + f * (H - 2 * P)} y2={P + f * (H - 2 * P)} stroke="hsl(var(--border))" strokeWidth="0.5" strokeDasharray="2 4" />
+          ))}
+          <path d={`${path(recovery)} L ${x(recovery.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#recoveryFill)" />
           <path d={`${path(deep)} L ${x(deep.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#deepFill)" />
           <path d={path(deep)} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
-          <path d={path(recovery)} fill="none" stroke="hsl(var(--secondary))" strokeWidth="2" strokeDasharray="3 3" />
+          <path d={path(recovery)} fill="none" stroke="hsl(var(--secondary))" strokeWidth="2" strokeDasharray="4 3" />
+          {/* end-point markers */}
+          <circle cx={x(deep.length - 1)} cy={y(deep[deep.length - 1])} r="3" fill="hsl(var(--primary))" />
+          <circle cx={x(recovery.length - 1)} cy={y(recovery[recovery.length - 1])} r="3" fill="hsl(var(--secondary))" />
         </svg>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
