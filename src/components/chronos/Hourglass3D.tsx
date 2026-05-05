@@ -277,7 +277,7 @@ export default function Hourglass3D({ className, compact = false }: Props) {
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ position: [0, 0.15, 4.0], fov: 36 }}
+        camera={{ position: [0, 0.1, 4.8], fov: 32 }}
         gl={{ antialias: true, alpha: true }}
       >
         <Suspense fallback={null}>
