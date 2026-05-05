@@ -253,8 +253,8 @@ function HourglassScene() {
     }
   });
   return (
-    <Float speed={1.0} rotationIntensity={0.15} floatIntensity={0.45}>
-      <group ref={group}>
+    <Float speed={1.0} rotationIntensity={0.15} floatIntensity={0.35}>
+      <group ref={group} scale={0.88}>
         <Frame />
         <SandPiles />
         <SandStream />
