@@ -23,6 +23,7 @@ interface Ctx {
   removeRoutine: (id: string) => void;
   addCommitment: (c: Omit<Commitment, "id">) => void;
   removeCommitment: (id: string) => void;
+  updateCommitment: (id: string, patch: Partial<Commitment>) => void;
   applySuggestion: (id: string) => void;
   deferSuggestion: (id: string) => void;
   resetToSeed: () => void;
@@ -53,6 +54,9 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   const removeCommitment = useCallback((id: string) => {
     setData((d) => ({ ...d, commitments: d.commitments.filter((c) => c.id !== id) }));
   }, []);
+  const updateCommitment = useCallback((id: string, patch: Partial<Commitment>) => {
+    setData((d) => ({ ...d, commitments: d.commitments.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
+  }, []);
 
   const applySuggestion = useCallback((id: string) => {
     setData((d) => {
@@ -79,8 +83,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   const replace = useCallback((next: ScheduleData) => setData(next), []);
 
   const value = useMemo(
-    () => ({ data, addRoutine, updateRoutine, removeRoutine, addCommitment, removeCommitment, applySuggestion, deferSuggestion, resetToSeed, replace }),
-    [data, addRoutine, updateRoutine, removeRoutine, addCommitment, removeCommitment, applySuggestion, deferSuggestion, resetToSeed, replace],
+    () => ({ data, addRoutine, updateRoutine, removeRoutine, addCommitment, removeCommitment, updateCommitment, applySuggestion, deferSuggestion, resetToSeed, replace }),
+    [data, addRoutine, updateRoutine, removeRoutine, addCommitment, removeCommitment, updateCommitment, applySuggestion, deferSuggestion, resetToSeed, replace],
   );
   return <ScheduleCtx.Provider value={value}>{children}</ScheduleCtx.Provider>;
 }
