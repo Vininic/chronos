@@ -18,16 +18,16 @@ export default function Today() {
         <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{t.chronos.today.lead}</p>
       </section>
       <OptimizationStrip />
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <DailyAgenda />
-        <div className="space-y-6">
-          <PerformanceCard />
-          <FocusBlocksCard />
-        </div>
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8"><DailyAgenda /></div>
+        <div className="lg:col-span-4"><PerformanceCard /></div>
       </div>
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2"><AetherisCard /></div>
-        <BalanceCard />
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-5"><FocusBlocksCard /></div>
+        <div className="lg:col-span-7"><BalanceCard /></div>
+      </div>
+      <div className="mt-6">
+        <AetherisCard />
       </div>
     </>
   );
