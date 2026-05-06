@@ -23,7 +23,8 @@ export default function Atlas() {
     e.preventDefault();
     if (!title.trim()) return toast({ title: t.chronos.atlas.needsTitle });
     if (start >= end) return toast({ title: t.chronos.atlas.endAfterStart });
-    addCommitment({ date, start, end, kind, title: title.trim() });
+    const error = addCommitment({ date, start, end, kind, title: title.trim() });
+    if (error) return toast({ title: "Scheduling conflict", description: error });
     toast({ title: t.chronos.atlas.added }); setTitle("");
   }
   const sorted = [...data.commitments].sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
@@ -40,12 +41,12 @@ export default function Atlas() {
           <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.titleField}</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t.chronos.atlas.titlePlaceholder} /></div>
           <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.date}</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.start}</Label><Input type="time" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.end}</Label><Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.start}</Label><Input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.end}</Label><Input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.category}</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}><SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{data.categories.map((c) => (<SelectItem key={c.id} value={c.id}>{t.common.kinds[c.id]}</SelectItem>))}</SelectContent>
+              <SelectContent>{data.categories.map((c) => (<SelectItem key={c.id} value={c.id}>{c.label || t.common.kinds[c.id]}</SelectItem>))}</SelectContent>
             </Select></div>
           <Button type="submit" className="w-full bg-primary text-primary-foreground hover:bg-primary-deep"><Plus className="h-4 w-4 mr-1" /> {t.chronos.atlas.addCommitment}</Button>
         </form>
@@ -59,7 +60,7 @@ export default function Atlas() {
                 <tr key={c.id} className="border-b border-border/60">
                   <td className="py-2.5 num text-muted-foreground">{fmt.fromISO(c.date)}</td>
                   <td className="text-primary">{c.title}</td>
-                  <td className="text-muted-foreground">{t.common.kinds[c.kind]}</td>
+                  <td className="text-muted-foreground">{data.categories.find((k) => k.id === c.kind)?.label || t.common.kinds[c.kind]}</td>
                   <td className="text-right num">{c.start}–{c.end}</td>
                   <td className="text-right num text-secondary">{fmtDur(durationMin(c.start, c.end))}</td>
                   <td className="text-right"><button onClick={() => { removeCommitment(c.id); toast({ title: t.chronos.atlas.removed }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button></td>

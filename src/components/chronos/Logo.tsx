@@ -4,7 +4,9 @@ interface LogoProps {
   showWordmark?: boolean;
 }
 export default function Logo({ className = "", variant = "dark", showWordmark = true }: LogoProps) {
-  const ink = variant === "light" ? "hsl(var(--primary-foreground))" : "hsl(var(--primary))";
+  // "light" = used on dark/midnight backgrounds (sidebar, login) → always warm-light
+  // "dark"  = used on light/parchment backgrounds (landing) → adapts with theme
+  const ink = variant === "light" ? "hsl(var(--sidebar-foreground))" : "hsl(var(--foreground))";
   const bronze = "hsl(var(--secondary))";
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>

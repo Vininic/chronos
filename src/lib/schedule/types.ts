@@ -3,8 +3,10 @@ export type BlockKind = "deep" | "meeting" | "ritual" | "recovery" | "shallow";
 export interface Category {
   id: BlockKind;
   label: string;
+  labelCustom?: string;
   tone: string;
   description: string;
+  descriptionCustom?: string;
 }
 
 export interface RoutineBlock {
@@ -14,6 +16,7 @@ export interface RoutineBlock {
   end: string;
   kind: BlockKind;
   title: string;
+  titleCustom?: string;
   notes?: string;
 }
 
@@ -24,6 +27,7 @@ export interface Commitment {
   end: string;
   kind: BlockKind;
   title: string;
+  titleCustom?: string;
   notes?: string;
 }
 
@@ -35,6 +39,7 @@ export interface Suggestion {
   priority: "high" | "med" | "low";
   patch?:
     | { type: "add-routine"; block: Omit<RoutineBlock, "id"> }
+    | { type: "add-routines"; blocks: Omit<RoutineBlock, "id">[] }
     | { type: "remove-routine"; match: Partial<RoutineBlock> };
 }
 

@@ -10,6 +10,8 @@ import { ThemeToggle } from "@/components/suite/ThemeToggle";
 export default function Landing() {
   const t = useT();
   const L = t.chronos.landing;
+  const projectGithub = "https://github.com/Vininic/chronos-the-art-of-time";
+
   return (
     <div className="min-h-screen chronos-surface">
       <header className="container flex items-center justify-between py-6">
@@ -29,7 +31,6 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="container grid lg:grid-cols-12 gap-8 items-center pt-12 pb-20">
         <div className="lg:col-span-7 animate-fade-up">
           <div className="inline-flex items-center gap-2 rounded-full border bg-card/70 px-3 py-1.5 text-xs text-muted-foreground">
@@ -48,11 +49,6 @@ export default function Landing() {
                 {L.ctaPrimary} <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
             </Link>
-            <Link to="/login">
-              <Button variant="outline" className="h-12 px-6 border-primary/20 hover:bg-secondary/10 hover:text-primary">
-                {L.ctaSecondary}
-              </Button>
-            </Link>
           </div>
         </div>
         <div className="lg:col-span-5 relative h-[420px] md:h-[520px]">
@@ -62,7 +58,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* What it does */}
       <section id="what" className="container py-20 border-t">
         <div className="max-w-2xl">
           <div className="text-xs uppercase tracking-[0.22em] text-secondary">{L.systemEyebrow}</div>
@@ -76,9 +71,12 @@ export default function Landing() {
             </article>
           ))}
         </div>
+        <div className="mt-4 rounded-xl border border-border bg-card p-5">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{L.privacyEyebrow}</div>
+          <p className="text-sm text-muted-foreground mt-2">{L.privacyLead}</p>
+        </div>
       </section>
 
-      {/* Suite */}
       <section id="suite" className="container py-20 border-t">
         <div className="max-w-2xl">
           <div className="text-xs uppercase tracking-[0.22em] text-secondary">{L.suiteEyebrow}</div>
@@ -88,10 +86,17 @@ export default function Landing() {
           {L.suiteProducts.map((p, i) => {
             const live = i === 0;
             return (
-              <div key={p.n} className={`rounded-2xl p-6 relative overflow-hidden ${live ? "bg-midnight text-primary-foreground" : "bg-card text-primary border"}`}>
-                <div className="text-xs uppercase tracking-[0.22em] opacity-70">{p.r}</div>
-                <div className="font-display text-3xl mt-2">{p.n}</div>
-                <p className={`text-sm mt-3 ${live ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{p.d}</p>
+              <div
+                key={p.n}
+                className={`rounded-2xl p-6 relative overflow-hidden ${
+                  live
+                    ? "bg-midnight border border-secondary/20 shadow-elevated"
+                    : "bg-card text-primary border"
+                }`}
+              >
+                <div className={`text-xs uppercase tracking-[0.22em] ${live ? "text-secondary-soft" : "opacity-70"}`}>{p.r}</div>
+                <div className={`font-display text-3xl mt-2 ${live ? "text-sidebar-foreground" : ""}`}>{p.n}</div>
+                <p className={`text-sm mt-3 ${live ? "text-sidebar-foreground/70" : "text-muted-foreground"}`}>{p.d}</p>
                 <div className="mt-6 text-xs">
                   {live ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary text-primary-deep px-2.5 py-1 font-medium">{L.live}</span>
@@ -108,9 +113,9 @@ export default function Landing() {
       <footer className="border-t bg-card/60">
         <div className="container py-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <Logo />
-          <div className="text-xs text-muted-foreground">{L.footerRights}</div>
+          <div className="text-xs text-muted-foreground">{L.footerRights} {L.footerAuthor}</div>
           <div className="flex items-center gap-5 text-xs text-muted-foreground">
-            {L.footerLinks.map((f) => (<a key={f} href="#" className="hover:text-foreground">{f}</a>))}
+            <a href={projectGithub} target="_blank" rel="noreferrer" className="hover:text-foreground">GitHub</a>
           </div>
         </div>
       </footer>

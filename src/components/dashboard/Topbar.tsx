@@ -1,12 +1,15 @@
 import { Search, Bell, LogOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
-import { useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate, useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
 import { useDateFormat, useT } from "@/lib/i18n/I18nProvider";
+import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { LanguageToggle } from "@/components/suite/LanguageToggle";
 import { ThemeToggle } from "@/components/suite/ThemeToggle";
+import { timeToMinutes } from "@/lib/schedule/types";
+import { toast } from "@/hooks/use-toast";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -17,11 +20,15 @@ export default function Topbar() {
   const { session, signOut } = useAuth();
   const t = useT();
   const fmt = useDateFormat();
+  const scheduleText = useScheduleText();
   const today = fmt.long(new Date());
   const navigate = useNavigate();
+  const location = useLocation();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [dueFocus, setDueFocus] = useState<{ title: string; start: string } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const remindedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     function onClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
@@ -32,17 +39,58 @@ export default function Topbar() {
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return [];
-    const r = data.routine.filter((x) => x.title.toLowerCase().includes(term)).slice(0, 5).map((x) => ({
-      id: x.id, label: x.title, sub: `${t.common.days.short[x.day]} · ${x.start}–${x.end}`, kind: "routine" as const,
+    const r = data.routine.filter((x) => {
+      const localizedTitle = scheduleText.blockTitle(x.title, x.titleCustom).toLowerCase();
+      return x.title.toLowerCase().includes(term) || localizedTitle.includes(term);
+    }).slice(0, 5).map((x) => ({
+      id: x.id, label: scheduleText.blockTitle(x.title, x.titleCustom), sub: `${t.common.days.short[x.day]} · ${x.start}–${x.end}`, kind: "routine" as const, kindLabel: t.chronos.nav.week,
     }));
-    const c = data.commitments.filter((x) => x.title.toLowerCase().includes(term)).slice(0, 5).map((x) => ({
-      id: x.id, label: x.title, sub: `${fmt.fromISO(x.date)} · ${x.start}–${x.end}`, kind: "commitment" as const,
+    const c = data.commitments.filter((x) => {
+      const localizedTitle = scheduleText.blockTitle(x.title, x.titleCustom).toLowerCase();
+      return x.title.toLowerCase().includes(term) || localizedTitle.includes(term);
+    }).slice(0, 5).map((x) => ({
+      id: x.id, label: scheduleText.blockTitle(x.title, x.titleCustom), sub: `${fmt.fromISO(x.date)} · ${x.start}–${x.end}`, kind: "commitment" as const, kindLabel: t.chronos.nav.atlas,
     }));
     const s = data.suggestions.filter((x) => x.title.toLowerCase().includes(term)).slice(0, 3).map((x) => ({
-      id: x.id, label: x.title, sub: x.impact, kind: "suggestion" as const,
+      id: x.id, label: x.title, sub: x.impact, kind: "suggestion" as const, kindLabel: t.chronos.nav.aetheris,
     }));
     return [...r, ...c, ...s];
-  }, [q, data, t, fmt]);
+  }, [q, data, t, fmt, scheduleText]);
+
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const todayIso = now.toISOString().slice(0, 10);
+      const deepAgenda = buildAgendaForDate(data, now).filter((a) => a.kind === "deep");
+      const due = deepAgenda.find((a) => {
+        const diff = timeToMinutes(a.start) - nowMin;
+        return diff >= 0 && diff <= 1;
+      });
+
+      if (!due) return;
+      const reminderId = `${todayIso}-${due.id}`;
+      if (remindedRef.current.has(reminderId)) return;
+      remindedRef.current.add(reminderId);
+      setDueFocus({ title: scheduleText.blockTitle(due.title, due.titleCustom), start: due.start });
+
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => undefined);
+      }
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(t.chronos.store.notification.focusDue, {
+          body: t.chronos.store.notification.focusStartsAt(scheduleText.blockTitle(due.title, due.titleCustom), due.start),
+        });
+      }
+      if (location.pathname !== "/dashboard/focus") {
+        toast({ title: t.chronos.store.notification.focusDue, description: t.chronos.store.notification.focusStartsNow(scheduleText.blockTitle(due.title, due.titleCustom)) });
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, [data, location.pathname, scheduleText]);
 
   function go(kind: string) {
     setOpen(false); setQ("");
@@ -76,7 +124,7 @@ export default function Topbar() {
               <button key={`${r.kind}-${r.id}`} onClick={() => go(r.kind)} className="w-full text-left px-4 py-2.5 hover:bg-secondary/10 border-b border-border/60 last:border-b-0">
                 <div className="text-sm text-primary truncate">{r.label}</div>
                 <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-                  <span className="uppercase tracking-wider text-secondary">{r.kind}</span> · {r.sub}
+                  <span className="uppercase tracking-wider text-secondary">{r.kindLabel}</span> · {r.sub}
                 </div>
               </button>
             ))}
@@ -84,6 +132,17 @@ export default function Topbar() {
         )}
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {dueFocus && location.pathname !== "/dashboard/focus" && (
+          <button
+            onClick={() => {
+              navigate("/dashboard/focus");
+              setDueFocus(null);
+            }}
+            className="h-8 px-2.5 rounded-md bg-secondary text-primary-deep text-xs font-medium"
+          >
+            Focus now · {dueFocus.start}
+          </button>
+        )}
         <LanguageToggle />
         <ThemeToggle />
         <DropdownMenu>
@@ -117,7 +176,6 @@ export default function Topbar() {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>
                 <div className="font-display text-base text-primary">{session.name}</div>
-                <div className="text-xs text-muted-foreground font-sans font-normal">{session.email}</div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate("/dashboard/settings")}>{t.common.settings}</DropdownMenuItem>

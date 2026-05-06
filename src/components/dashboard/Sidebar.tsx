@@ -4,11 +4,13 @@ import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { useScheduleText } from "@/lib/i18n/scheduleText";
 
 export default function Sidebar() {
   const { data } = useSchedule();
   const { session } = useAuth();
   const t = useT();
+  const scheduleText = useScheduleText();
   const main = [
     { to: "/dashboard",          label: t.chronos.nav.today,    icon: LayoutDashboard },
     { to: "/dashboard/week",     label: t.chronos.nav.week,     icon: Calendar },
@@ -32,7 +34,7 @@ export default function Sidebar() {
       <div className="px-4 mt-2">
         <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-secondary-soft">{t.chronos.nav.cycle} {cycle.number} · {t.chronos.nav.week_short} {cycle.week}</div>
-          <div className="font-display text-lg text-primary-foreground mt-1">{cycle.name}</div>
+          <div className="font-display text-lg text-sidebar-foreground mt-1">{scheduleText.cycleName(cycle.name)}</div>
           <div className="mt-3 h-1.5 rounded-full bg-sidebar-border overflow-hidden">
             <div className="h-full bg-bronze" style={{ width: `${Math.round(cycle.progress * 100)}%` }} />
           </div>
@@ -89,7 +91,7 @@ export default function Sidebar() {
           <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold">{initial}</div>
           <div className="min-w-0">
             <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
-            <div className="text-[11px] text-sidebar-foreground/60 truncate">{session?.email ?? t.chronos.settings.composer}</div>
+            <div className="text-[11px] text-sidebar-foreground/50 truncate">{t.common.appName}</div>
           </div>
         </div>
       </div>

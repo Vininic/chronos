@@ -5,6 +5,17 @@ import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
+import { useScheduleText } from "@/lib/i18n/scheduleText";
+
+function categoryLabel(
+  data: ReturnType<typeof useSchedule>["data"],
+  kind: BlockKind,
+  fallback: ReturnType<typeof useT>,
+  localizeCategoryLabel: (kind: BlockKind, label: string, customLabel?: string) => string,
+) {
+  const category = data.categories.find((c) => c.id === kind);
+  return category ? localizeCategoryLabel(kind, category.label, category.labelCustom) : fallback.common.kinds[kind];
+}
 
 export const kindStyle: Record<BlockKind, { dot: string; chip: string; icon: any }> = {
   deep:     { dot: "bg-secondary",       chip: "bg-secondary/15 text-secondary",         icon: Brain },
@@ -19,6 +30,7 @@ export function DailyAgenda() {
   const { data } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
+  const scheduleText = useScheduleText();
   const today = new Date();
   const agenda = buildAgendaForDate(data, today);
   const totalMin = agenda.reduce((sum, a) => sum + durationMin(a.start, a.end), 0);
@@ -61,9 +73,9 @@ export function DailyAgenda() {
                   <div className={`flex-1 rounded-lg border ${live ? "border-secondary/40 bg-secondary/5" : "border-border bg-surface-raised"} p-3.5 flex items-center gap-3`}>
                     <div className={`h-8 w-8 rounded-md grid place-items-center ${s.chip}`}><Icon className="h-4 w-4" /></div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-primary truncate">{a.title}</div>
+                      <div className="text-sm font-medium text-primary truncate">{scheduleText.blockTitle(a.title, a.titleCustom)}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
-                        <span className={`inline-block px-1.5 py-0.5 rounded ${s.chip} font-medium uppercase tracking-wider text-[10px]`}>{t.common.kinds[a.kind]}</span>
+                        <span className={`inline-block px-1.5 py-0.5 rounded ${s.chip} font-medium uppercase tracking-wider text-[10px]`}>{categoryLabel(data, a.kind, t, scheduleText.categoryLabel)}</span>
                         <span className="ml-2 num">{fmtDur(durationMin(a.start, a.end))}</span>
                         {live && <span className="ml-2 text-secondary font-medium">· {t.chronos.widgets.inProgress}</span>}
                         {a.source === "commitment" && <span className="ml-2 text-muted-foreground">· {t.chronos.widgets.commitmentTag}</span>}
@@ -137,9 +149,10 @@ function translateMetric(t: ReturnType<typeof useT>, label: string): string {
 }
 
 /* ---------------- AI suggestions ---------------- */
-export function AetherisCard() {
+export function AetherisCard({ compact = false }: { compact?: boolean }) {
   const { data, applySuggestion, deferSuggestion } = useSchedule();
   const t = useT();
+  const visibleSuggestions = compact ? data.suggestions.slice(0, 2) : data.suggestions;
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />
@@ -151,6 +164,7 @@ export function AetherisCard() {
           <div>
             <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.nav.aetheris}</div>
             <h3 className="font-display text-xl text-primary -mt-0.5">{t.chronos.aetheris.quietSuggestions}</h3>
+            <div className="text-[11px] text-muted-foreground">Local rule engine · no external AI calls</div>
           </div>
         </div>
         <span className="text-[11px] text-muted-foreground">{data.suggestions.length} {t.common.awaitingReview}</span>
@@ -160,7 +174,7 @@ export function AetherisCard() {
         <p className="mt-6 text-sm text-muted-foreground italic">{t.chronos.aetheris.allQuietLead}</p>
       ) : (
         <ul className="mt-5 space-y-3 relative">
-          {data.suggestions.map((s) => (
+          {visibleSuggestions.map((s) => (
             <li key={s.id} className="rounded-lg border border-border bg-surface-raised p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -186,6 +200,14 @@ export function AetherisCard() {
           ))}
         </ul>
       )}
+
+      {compact && data.suggestions.length > visibleSuggestions.length && (
+        <div className="mt-4 pt-3 border-t border-border/60">
+          <Link to="/dashboard/aetheris" className="text-xs text-secondary hover:underline inline-flex items-center gap-1.5">
+            {t.chronos.widgets.viewAllSuggestions} <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
@@ -194,6 +216,7 @@ export function AetherisCard() {
 export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
   const { data, removeRoutine } = useSchedule();
   const t = useT();
+  const scheduleText = useScheduleText();
   const days = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun
   const startHour = 7;
   const endHour = 19;
@@ -212,7 +235,7 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
           {(Object.keys(kindStyle) as BlockKind[]).map((k) => (
             <div key={k} className="flex items-center gap-1.5">
               <span className={`h-2 w-2 rounded-full ${kindStyle[k].dot}`} />
-              <span className="text-muted-foreground">{t.common.kinds[k]}</span>
+              <span className="text-muted-foreground">{categoryLabel(data, k, t, scheduleText.categoryLabel)}</span>
             </div>
           ))}
         </div>
@@ -244,8 +267,8 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
               const height = Math.max(18, ((eh - sh) / totalHours) * gridHeight - 2);
               const s = kindStyle[b.kind];
               return (
-                <div key={b.id} className={`group absolute left-1 right-1 rounded-md text-[10px] font-medium px-1.5 py-1 ${s.chip} border border-current/10 overflow-hidden`} style={{ top, height }} title={`${b.title} · ${b.start}–${b.end}`}>
-                  <div className="truncate">{b.title}</div>
+                <div key={b.id} className={`group absolute left-1 right-1 rounded-md text-[10px] font-medium px-1.5 py-1 ${s.chip} border border-current/10 overflow-hidden`} style={{ top, height }} title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.start}–${b.end}`}>
+                  <div className="truncate">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>
                   <div className="text-[9px] opacity-70 num">{b.start}</div>
                   {editable && (
                     <button onClick={() => { removeRoutine(b.id); toast({ title: t.chronos.widgets.blockRemoved }); }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 h-4 w-4 rounded grid place-items-center bg-background/70 hover:bg-background">
@@ -267,6 +290,7 @@ export function FocusBlocksCard() {
   const { data } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
+  const scheduleText = useScheduleText();
   const today = new Date();
   const todays = buildAgendaForDate(data, today).filter((a) => a.kind === "deep");
   const totalMin = todays.reduce((s, a) => s + durationMin(a.start, a.end), 0);
@@ -293,7 +317,7 @@ export function FocusBlocksCard() {
                   <Brain className="h-4 w-4 text-secondary-soft" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-primary truncate">{s.title}</div>
+                  <div className="text-sm text-primary truncate">{scheduleText.blockTitle(s.title, s.titleCustom)}</div>
                   <div className="h-1.5 mt-1.5 rounded-full bg-muted overflow-hidden">
                     <div className="h-full bg-bronze" style={{ width: `${pct}%` }} />
                   </div>
@@ -308,10 +332,11 @@ export function FocusBlocksCard() {
         </ul>
       )}
       <div className="flex-1" />
-      <Link to="/dashboard/focus" className="block">
-        <button className="mt-5 w-full h-10 rounded-md bg-midnight text-primary-foreground text-sm hover:opacity-95 inline-flex items-center justify-center gap-2">
-          {t.chronos.widgets.openFocusRoom} <ArrowUpRight className="h-4 w-4 text-secondary-soft" />
-        </button>
+      <Link
+        to="/dashboard/focus"
+        className="mt-5 w-full h-10 rounded-md bg-midnight text-primary-foreground text-sm hover:opacity-95 inline-flex items-center justify-center gap-2"
+      >
+        {t.chronos.widgets.openFocusRoom} <ArrowUpRight className="h-4 w-4 text-secondary-soft" />
       </Link>
     </div>
   );
@@ -338,7 +363,7 @@ export function BalanceCard() {
         </div>
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-primary" /> {t.chronos.widgets.deep}</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-secondary" /> {t.chronos.widgets.recovery}</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-emerald-700" /> {t.chronos.widgets.recovery}</span>
         </div>
       </div>
       <div className="mt-5 flex-1">
@@ -349,8 +374,8 @@ export function BalanceCard() {
               <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
             </linearGradient>
             <linearGradient id="recoveryFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(var(--secondary))" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="hsl(var(--secondary))" stopOpacity="0" />
+              <stop offset="0%" stopColor="#047857" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#047857" stopOpacity="0" />
             </linearGradient>
           </defs>
           {/* baseline ticks */}
@@ -360,10 +385,10 @@ export function BalanceCard() {
           <path d={`${path(recovery)} L ${x(recovery.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#recoveryFill)" />
           <path d={`${path(deep)} L ${x(deep.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#deepFill)" />
           <path d={path(deep)} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
-          <path d={path(recovery)} fill="none" stroke="hsl(var(--secondary))" strokeWidth="2" strokeDasharray="4 3" />
+          <path d={path(recovery)} fill="none" stroke="#047857" strokeWidth="2" strokeDasharray="4 3" />
           {/* end-point markers */}
           <circle cx={x(deep.length - 1)} cy={y(deep[deep.length - 1])} r="3" fill="hsl(var(--primary))" />
-          <circle cx={x(recovery.length - 1)} cy={y(recovery[recovery.length - 1])} r="3" fill="hsl(var(--secondary))" />
+          <circle cx={x(recovery.length - 1)} cy={y(recovery[recovery.length - 1])} r="3" fill="#047857" />
         </svg>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -375,7 +400,7 @@ export function BalanceCard() {
         </div>
         <div className="rounded-md bg-surface-raised border p-3">
           <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-secondary" /> {t.chronos.widgets.recovery}
+            <span className="h-2 w-2 rounded-full bg-emerald-700" /> {t.chronos.widgets.recovery}
           </div>
           <div className="font-display text-xl text-primary mt-0.5 num">{avg(recovery)}h <span className="text-xs text-muted-foreground font-sans">{t.chronos.widgets.avg}</span></div>
         </div>

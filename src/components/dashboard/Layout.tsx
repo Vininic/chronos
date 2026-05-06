@@ -1,10 +1,8 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
-import { useT } from "@/lib/i18n/I18nProvider";
 
 export default function DashboardLayout() {
-  const t = useT();
   return (
     <div className="min-h-screen flex bg-background">
       <Sidebar />
@@ -15,7 +13,7 @@ export default function DashboardLayout() {
             <Outlet />
           </div>
           <footer className="py-8 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            {t.chronos.layoutFooter}
+            Chronos · by Vinicius
           </footer>
         </main>
       </div>

@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
-import { durationMin } from "@/lib/schedule/types";
+import { durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Brain, Pause, Play, RotateCcw } from "lucide-react";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
+import { useScheduleText } from "@/lib/i18n/scheduleText";
 
 export default function Focus() {
   const { data } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
+  const scheduleText = useScheduleText();
   const todays = buildAgendaForDate(data, new Date()).filter((a) => a.kind === "deep");
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const activeScheduled = todays.find((b) => timeToMinutes(b.start) <= nowMin && nowMin < timeToMinutes(b.end));
+  const nextScheduled = todays.find((b) => timeToMinutes(b.start) > nowMin);
   const upcoming = data.routine.filter((r) => r.kind === "deep");
   const [running, setRunning] = useState(false);
   const [seconds, setSeconds] = useState(25 * 60);
@@ -25,6 +30,11 @@ export default function Focus() {
     return () => { if (ref.current) window.clearInterval(ref.current); };
   }, [running, t]);
   function start(min: number) { setTarget(min * 60); setSeconds(min * 60); setRunning(true); }
+  function startScheduled(startTime: string, endTime: string, title: string) {
+    const mins = Math.max(15, durationMin(startTime, endTime));
+    start(mins);
+    toast({ title: t.chronos.focus.focusBlockStarted, description: `${scheduleText.blockTitle(title)} · ${startTime}-${endTime}` });
+  }
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   return (
@@ -51,12 +61,34 @@ export default function Focus() {
         <div className="chronos-card p-6">
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.todaysDepth}</div>
           <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.focus.composed(todays.length)}</h3>
+          {(activeScheduled || nextScheduled) && (
+            <div className="mt-4 rounded-md border border-secondary/30 bg-secondary/5 p-3.5">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-secondary">{t.chronos.focus.scheduledFocus}</div>
+              {activeScheduled ? (
+                <>
+                  <div className="text-sm text-primary mt-1">{scheduleText.blockTitle(activeScheduled.title, activeScheduled.titleCustom)}</div>
+                  <div className="text-[11px] text-muted-foreground num">{activeScheduled.start}-{activeScheduled.end} · {t.chronos.focus.inProgress}</div>
+                  <Button size="sm" className="mt-2 h-8" onClick={() => startScheduled(activeScheduled.start, activeScheduled.end, activeScheduled.title)}>
+                    {t.chronos.focus.continueBlock}
+                  </Button>
+                </>
+              ) : nextScheduled ? (
+                <>
+                  <div className="text-sm text-primary mt-1">{scheduleText.blockTitle(nextScheduled.title, nextScheduled.titleCustom)}</div>
+                  <div className="text-[11px] text-muted-foreground num">{nextScheduled.start}-{nextScheduled.end}</div>
+                  <Button size="sm" variant="outline" className="mt-2 h-8" onClick={() => startScheduled(nextScheduled.start, nextScheduled.end, nextScheduled.title)}>
+                    {t.chronos.focus.startWhenBegins}
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          )}
           <ul className="mt-4 space-y-3">
             {todays.length === 0 && <li className="text-sm text-muted-foreground italic">{t.chronos.focus.noDeepToday}</li>}
             {todays.map((s) => (
               <li key={s.id} className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-md bg-primary text-primary-foreground grid place-items-center"><Brain className="h-4 w-4 text-secondary-soft" /></div>
-                <div className="flex-1 min-w-0"><div className="text-sm text-primary truncate">{s.title}</div><div className="text-[11px] text-muted-foreground num">{s.start}–{s.end} · {fmtDur(durationMin(s.start, s.end))}</div></div>
+                <div className="flex-1 min-w-0"><div className="text-sm text-primary truncate">{scheduleText.blockTitle(s.title, s.titleCustom)}</div><div className="text-[11px] text-muted-foreground num">{s.start}–{s.end} · {fmtDur(durationMin(s.start, s.end))}</div></div>
               </li>
             ))}
           </ul>
@@ -72,7 +104,7 @@ export default function Focus() {
             {upcoming.map((r) => (
               <tr key={r.id} className="border-b border-border/60">
                 <td className="py-2.5 text-muted-foreground">{t.common.days.short[r.day]}</td>
-                <td className="text-primary">{r.title}</td>
+                <td className="text-primary">{scheduleText.blockTitle(r.title, r.titleCustom)}</td>
                 <td className="text-right num">{r.start}</td><td className="text-right num">{r.end}</td>
                 <td className="text-right num text-secondary">{fmtDur(durationMin(r.start, r.end))}</td>
               </tr>

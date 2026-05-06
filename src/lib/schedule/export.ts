@@ -1,6 +1,8 @@
 import * as XLSX from "xlsx";
 import type { ScheduleData } from "./types";
 import { DAY_LABELS_LONG, durationMin, fmtDur } from "./types";
+import type { Locale } from "@/lib/i18n/dictionaries";
+import { DICTIONARIES } from "@/lib/i18n/dictionaries";
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -13,70 +15,75 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function exportToXLSX(data: ScheduleData, filename = "chronos-schedule.xlsx") {
+export function exportToXLSX(data: ScheduleData, filename = "chronos-schedule.xlsx", locale: Locale = "en") {
+  const dict = DICTIONARIES[locale];
+  const headers = dict.chronos.store.export.headers;
+  const sheets = dict.chronos.store.export.sheets;
   const wb = XLSX.utils.book_new();
 
   // Weekly Routine
   const routineRows = [...data.routine]
     .sort((a, b) => a.day - b.day || a.start.localeCompare(b.start))
     .map((r) => ({
-      Day: DAY_LABELS_LONG[r.day],
-      Start: r.start,
-      End: r.end,
-      Duration: fmtDur(durationMin(r.start, r.end)),
-      Category: r.kind,
-      Title: r.title,
-      Notes: r.notes ?? "",
+      [headers.day]: DAY_LABELS_LONG[r.day],
+      [headers.start]: r.start,
+      [headers.end]: r.end,
+      [headers.duration]: fmtDur(durationMin(r.start, r.end)),
+      [headers.category]: r.kind,
+      [headers.title]: r.title,
+      [headers.notes]: r.notes ?? "",
     }));
   const wsRoutine = XLSX.utils.json_to_sheet(routineRows);
   wsRoutine["!cols"] = [{ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 40 }, { wch: 30 }];
-  XLSX.utils.book_append_sheet(wb, wsRoutine, "Weekly Routine");
+  XLSX.utils.book_append_sheet(wb, wsRoutine, sheets.routine);
 
   // Commitments
   const commitRows = [...data.commitments]
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
     .map((c) => ({
       Date: c.date,
-      Start: c.start,
-      End: c.end,
-      Duration: fmtDur(durationMin(c.start, c.end)),
-      Category: c.kind,
-      Title: c.title,
-      Notes: c.notes ?? "",
+      [headers.start]: c.start,
+      [headers.end]: c.end,
+      [headers.duration]: fmtDur(durationMin(c.start, c.end)),
+      [headers.category]: c.kind,
+      [headers.title]: c.title,
+      [headers.notes]: c.notes ?? "",
     }));
-  const wsCommit = XLSX.utils.json_to_sheet(commitRows.length ? commitRows : [{ Date: "", Start: "", End: "", Duration: "", Category: "", Title: "", Notes: "" }]);
+  const wsCommit = XLSX.utils.json_to_sheet(commitRows.length ? commitRows : [{ Date: "", [headers.start]: "", [headers.end]: "", [headers.duration]: "", [headers.category]: "", [headers.title]: "", [headers.notes]: "" }]);
   wsCommit["!cols"] = [{ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 40 }, { wch: 30 }];
-  XLSX.utils.book_append_sheet(wb, wsCommit, "Commitments");
+  XLSX.utils.book_append_sheet(wb, wsCommit, sheets.commitments);
 
   // Focus blocks (deep work only)
   const focusRows = data.routine
     .filter((r) => r.kind === "deep")
     .map((r) => ({
-      Day: DAY_LABELS_LONG[r.day],
-      Start: r.start,
-      End: r.end,
-      Duration: fmtDur(durationMin(r.start, r.end)),
-      Title: r.title,
+      [headers.day]: DAY_LABELS_LONG[r.day],
+      [headers.start]: r.start,
+      [headers.end]: r.end,
+      [headers.duration]: fmtDur(durationMin(r.start, r.end)),
+      [headers.title]: r.title,
     }));
-  const wsFocus = XLSX.utils.json_to_sheet(focusRows.length ? focusRows : [{ Day: "", Start: "", End: "", Duration: "", Title: "" }]);
+  const wsFocus = XLSX.utils.json_to_sheet(focusRows.length ? focusRows : [{ [headers.day]: "", [headers.start]: "", [headers.end]: "", [headers.duration]: "", [headers.title]: "" }]);
   wsFocus["!cols"] = [{ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 40 }];
-  XLSX.utils.book_append_sheet(wb, wsFocus, "Focus Blocks");
+  XLSX.utils.book_append_sheet(wb, wsFocus, sheets.focus);
 
   // Categories / metadata
-  const catRows = data.categories.map((c) => ({ ID: c.id, Label: c.label, Description: c.description }));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catRows), "Categories");
+  const catRows = data.categories.map((c) => ({ [headers.id]: c.id, [headers.label]: c.label, [headers.tone]: c.tone, [headers.description]: c.description }));
+  const wsCategories = XLSX.utils.json_to_sheet(catRows);
+  wsCategories["!cols"] = [{ wch: 14 }, { wch: 20 }, { wch: 16 }, { wch: 42 }];
+  XLSX.utils.book_append_sheet(wb, wsCategories, sheets.categories);
 
   const metaRows = [
-    { Key: "Owner", Value: data.meta.owner },
-    { Key: "Cycle", Value: `${data.meta.cycle.name} #${data.meta.cycle.number}` },
-    { Key: "Week", Value: data.meta.cycle.week },
-    { Key: "Workday", Value: `${data.meta.workdayStart}–${data.meta.workdayEnd}` },
-    { Key: "Composition score", Value: data.ledger.compositionScore },
-    { Key: "Exported", Value: new Date().toISOString() },
+    { [headers.key]: headers.owner, [headers.value]: data.meta.owner },
+    { [headers.key]: headers.cycle, [headers.value]: `${data.meta.cycle.name} #${data.meta.cycle.number}` },
+    { [headers.key]: headers.week, [headers.value]: data.meta.cycle.week },
+    { [headers.key]: headers.workday, [headers.value]: `${data.meta.workdayStart}–${data.meta.workdayEnd}` },
+    { [headers.key]: headers.compositionScore, [headers.value]: data.ledger.compositionScore },
+    { [headers.key]: headers.exported, [headers.value]: new Date().toISOString() },
   ];
   const wsMeta = XLSX.utils.json_to_sheet(metaRows);
   wsMeta["!cols"] = [{ wch: 22 }, { wch: 40 }];
-  XLSX.utils.book_append_sheet(wb, wsMeta, "Metadata");
+  XLSX.utils.book_append_sheet(wb, wsMeta, sheets.metadata);
 
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   download(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);

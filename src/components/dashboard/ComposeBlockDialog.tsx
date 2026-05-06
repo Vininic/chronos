@@ -11,12 +11,14 @@ import { BlockKind } from "@/lib/schedule/types";
 import { toast } from "@/hooks/use-toast";
 import { Plus } from "lucide-react";
 import { useT } from "@/lib/i18n/I18nProvider";
+import { useScheduleText } from "@/lib/i18n/scheduleText";
 
 interface Props { trigger?: React.ReactNode; defaultKind?: BlockKind; }
 
 export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
   const { data, addRoutine, addCommitment } = useSchedule();
   const t = useT();
+  const scheduleText = useScheduleText();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"routine" | "commitment">("routine");
   const [kind, setKind] = useState<BlockKind>(defaultKind);
@@ -35,10 +37,18 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
     if (!title.trim()) { toast({ title: t.chronos.dialog.needsTitle }); return; }
     if (start >= end) { toast({ title: t.chronos.dialog.endAfterStart }); return; }
     if (mode === "routine") {
-      addRoutine({ day: Number(day), start, end, kind, title: title.trim(), notes: notes.trim() });
+      const error = addRoutine({ day: Number(day), start, end, kind, title: title.trim(), notes: notes.trim() });
+      if (error) {
+        toast({ title: "Scheduling conflict", description: error });
+        return;
+      }
       toast({ title: t.chronos.dialog.routineAdded, description: `${t.common.days.long[Number(day)]} · ${start}–${end}` });
     } else {
-      addCommitment({ date, start, end, kind, title: title.trim(), notes: notes.trim() });
+      const error = addCommitment({ date, start, end, kind, title: title.trim(), notes: notes.trim() });
+      if (error) {
+        toast({ title: "Scheduling conflict", description: error });
+        return;
+      }
       toast({ title: t.chronos.dialog.commitmentAdded, description: `${date} · ${start}–${end}` });
     }
     reset();
@@ -75,7 +85,11 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
                 <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {data.categories.map((c) => (<SelectItem key={c.id} value={c.id}>{t.common.kinds[c.id]}</SelectItem>))}
+                    {data.categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {scheduleText.categoryLabel(c.id, c.label || t.common.kinds[c.id], c.labelCustom)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -96,11 +110,11 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.dialog.start}</Label>
-                <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+                <Input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.dialog.end}</Label>
-                <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+                <Input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">

@@ -2,26 +2,33 @@ import { createContext, ReactNode, useContext, useEffect, useState } from "react
 
 const KEY = "chronos.session.v1";
 
-interface Session { email: string; name: string; signedInAt: string; }
+interface Session { name: string; signedInAt: string; }
 interface Ctx {
   session: Session | null;
-  signIn: (email: string) => void;
+  signIn: (name: string) => void;
   signOut: () => void;
 }
 const AuthCtx = createContext<Ctx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(() => {
-    try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      // Migrate old sessions that stored email instead of name
+      const name = (parsed.name as string) || (parsed.email as string | undefined)?.split("@")[0] || "Composer";
+      return { name, signedInAt: (parsed.signedInAt as string) || new Date().toISOString() };
+    } catch { return null; }
   });
   useEffect(() => {
     if (session) localStorage.setItem(KEY, JSON.stringify(session));
     else localStorage.removeItem(KEY);
   }, [session]);
 
-  function signIn(email: string) {
-    const name = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Composer";
-    setSession({ email, name, signedInAt: new Date().toISOString() });
+  function signIn(name: string) {
+    const trimmed = name.trim() || "Composer";
+    setSession({ name: trimmed, signedInAt: new Date().toISOString() });
   }
   function signOut() { setSession(null); }
 
