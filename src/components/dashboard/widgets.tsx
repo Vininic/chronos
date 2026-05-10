@@ -1,4 +1,4 @@
-import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X } from "lucide-react";
+import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon } from "lucide-react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
@@ -17,12 +17,13 @@ function categoryLabel(
   return category ? localizeCategoryLabel(kind, category.label, category.labelCustom) : fallback.common.kinds[kind];
 }
 
-export const kindStyle: Record<BlockKind, { dot: string; chip: string; icon: any }> = {
-  deep:     { dot: "bg-secondary",       chip: "bg-secondary/15 text-secondary",         icon: Brain },
-  meeting:  { dot: "bg-primary",         chip: "bg-primary/10 text-primary",             icon: CalIcon },
-  ritual:   { dot: "bg-primary-glow",    chip: "bg-primary/10 text-primary-glow",        icon: Zap },
-  recovery: { dot: "bg-emerald-700",     chip: "bg-emerald-700/10 text-emerald-800",     icon: Coffee },
-  shallow:  { dot: "bg-neutral-veil",    chip: "bg-muted text-muted-foreground",         icon: Clock },
+export const kindStyle: Record<BlockKind, { dot: string; chip: string; icon: any; blockBg: string; blockBorder: string }> = {
+  deep:     { dot: "bg-amber-500",   chip: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",     icon: Brain,   blockBg: "bg-amber-500/10 dark:bg-amber-400/15",    blockBorder: "border-amber-500/35 dark:border-amber-400/30" },
+  meeting:  { dot: "bg-blue-500",    chip: "bg-blue-500/15  text-blue-700  dark:bg-blue-400/20  dark:text-blue-300",      icon: CalIcon, blockBg: "bg-blue-500/10  dark:bg-blue-400/15",     blockBorder: "border-blue-500/30  dark:border-blue-400/25" },
+  ritual:   { dot: "bg-violet-500",  chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300", icon: Zap,     blockBg: "bg-violet-500/10 dark:bg-violet-400/15", blockBorder: "border-violet-500/30 dark:border-violet-400/25" },
+  recovery: { dot: "bg-emerald-500", chip: "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300", icon: Coffee, blockBg: "bg-emerald-500/10 dark:bg-emerald-400/15", blockBorder: "border-emerald-500/30 dark:border-emerald-400/25" },
+  shallow:  { dot: "bg-slate-400",   chip: "bg-slate-400/15  text-slate-600  dark:bg-slate-400/20  dark:text-slate-300",  icon: Clock,   blockBg: "bg-slate-400/10",                         blockBorder: "border-slate-400/30" },
+  sleep:    { dot: "bg-indigo-400",  chip: "bg-indigo-400/15  text-indigo-700 dark:bg-indigo-400/20  dark:text-indigo-300",  icon: Moon,    blockBg: "bg-indigo-400/10  dark:bg-indigo-400/12",  blockBorder: "border-indigo-400/30 dark:border-indigo-400/20" },
 };
 
 /* ---------------- Daily agenda (data-driven) ---------------- */
@@ -334,9 +335,9 @@ export function FocusBlocksCard() {
       <div className="flex-1" />
       <Link
         to="/dashboard/focus"
-        className="mt-5 w-full h-10 rounded-md bg-midnight text-primary-foreground text-sm hover:opacity-95 inline-flex items-center justify-center gap-2"
+        className="mt-5 w-full h-10 rounded-md border border-secondary/30 bg-primary text-primary-foreground text-sm hover:bg-primary-deep inline-flex items-center justify-center gap-2 shadow-sm"
       >
-        {t.chronos.widgets.openFocusRoom} <ArrowUpRight className="h-4 w-4 text-secondary-soft" />
+        {t.chronos.widgets.openFocusRoom} <ArrowUpRight className="h-4 w-4 text-primary-foreground" />
       </Link>
     </div>
   );

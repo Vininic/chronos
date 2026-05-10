@@ -4,16 +4,32 @@
     "owner": "You",
     "cycle": { "name": "Current week", "number": 14, "week": 22, "progress": 0.62 },
     "workdayStart": "07:00",
-    "workdayEnd": "19:00"
+    "workdayEnd": "19:00",
+    "sleepWindow": { "start": "22:30", "end": "07:00" }
   },
   "categories": [
     { "id": "deep",     "label": "Deep work", "tone": "bronze",      "description": "Uninterrupted high-cognition work." },
     { "id": "meeting",  "label": "Meeting",   "tone": "midnight",    "description": "Synchronous collaboration." },
     { "id": "ritual",   "label": "Ritual",    "tone": "primary-glow","description": "Recurring personal practice." },
     { "id": "recovery", "label": "Recovery",  "tone": "emerald",     "description": "Active rest, walks, breath." },
-    { "id": "shallow",  "label": "Shallow",   "tone": "neutral",     "description": "Email, admin, low-cost tasks." }
+    { "id": "shallow",  "label": "Shallow",   "tone": "neutral",     "description": "Email, admin, low-cost tasks." },
+    { "id": "sleep",    "label": "Sleep",     "tone": "indigo",      "description": "Protected rest window." }
   ],
   "routine": [
+    { "id": "r-sleep-am-0", "day": 0, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-0", "day": 0, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-am-1", "day": 1, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-1", "day": 1, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-am-2", "day": 2, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-2", "day": 2, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-am-3", "day": 3, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-3", "day": 3, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-am-4", "day": 4, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-4", "day": 4, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-am-5", "day": 5, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-5", "day": 5, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-am-6", "day": 6, "start": "00:00", "end": "07:00", "kind": "sleep", "title": "Sleep" },
+    { "id": "r-sleep-pm-6", "day": 6, "start": "22:30", "end": "23:59", "kind": "sleep", "title": "Sleep" },
     { "id": "r-mon-1", "day": 1, "start": "07:00", "end": "07:30", "kind": "ritual",   "title": "Stoic morning · journaling" },
     { "id": "r-mon-2", "day": 1, "start": "08:00", "end": "10:00", "kind": "deep",     "title": "Atlas · strategy memo" },
     { "id": "r-mon-3", "day": 1, "start": "11:00", "end": "12:00", "kind": "meeting",  "title": "Aurora standup" },

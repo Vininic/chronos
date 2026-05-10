@@ -55,6 +55,7 @@ const pt = {
       ritual: "Ritual",
       recovery: "Pausa",
       shallow: "Tarefas",
+      sleep: "Sono",
     },
   },
   chronos: {
@@ -159,6 +160,7 @@ const pt = {
       details: "Detalhes",
       removeBlock: "Remover bloco",
       editBlock: "Editar bloco",
+      free: "Livre",
       notes: "Notas",
       duration: "Duração",
       kind: "Tipo",
@@ -515,6 +517,7 @@ const en: typeof pt = {
       ritual: "Ritual",
       recovery: "Break",
       shallow: "Tasks",
+      sleep: "Sleep",
     },
   },
   chronos: {
@@ -619,6 +622,7 @@ const en: typeof pt = {
       details: "Details",
       removeBlock: "Remove block",
       editBlock: "Edit block",
+      free: "Free",
       notes: "Notes",
       duration: "Duration",
       kind: "Type",

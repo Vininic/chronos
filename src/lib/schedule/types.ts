@@ -1,4 +1,4 @@
-export type BlockKind = "deep" | "meeting" | "ritual" | "recovery" | "shallow";
+export type BlockKind = "deep" | "meeting" | "ritual" | "recovery" | "shallow" | "sleep";
 
 export interface Category {
   id: BlockKind;
@@ -25,6 +25,8 @@ export interface Commitment {
   date: string; // YYYY-MM-DD
   start: string;
   end: string;
+  endDate?: string; // optional explicit end date for cross-day commitments
+  endsNextDay?: boolean; // convenience flag when endDate is omitted
   kind: BlockKind;
   title: string;
   titleCustom?: string;
@@ -50,6 +52,7 @@ export interface ScheduleData {
     cycle: { name: string; number: number; week: number; progress: number };
     workdayStart: string;
     workdayEnd: string;
+    sleepWindow?: { start: string; end: string };
   };
   categories: Category[];
   routine: RoutineBlock[];

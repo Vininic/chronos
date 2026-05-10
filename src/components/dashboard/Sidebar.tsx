@@ -26,7 +26,7 @@ export default function Sidebar() {
   const cycle = data.meta.cycle;
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();
   return (
-    <aside className="hidden lg:flex flex-col w-[260px] shrink-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+    <aside className="hidden lg:flex flex-col w-[260px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
       <div className="px-6 pt-7 pb-6">
         <Logo variant="light" />
       </div>

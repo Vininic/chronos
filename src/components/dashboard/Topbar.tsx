@@ -138,7 +138,7 @@ export default function Topbar() {
               navigate("/dashboard/focus");
               setDueFocus(null);
             }}
-            className="h-8 px-2.5 rounded-md bg-secondary text-primary-deep text-xs font-medium"
+            className="h-8 px-2.5 rounded-md bg-card text-foreground border border-secondary/35 hover:bg-secondary/10 text-xs font-medium shadow-sm"
           >
             Focus now · {dueFocus.start}
           </button>

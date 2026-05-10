@@ -1,25 +1,19 @@
+import { useState } from "react";
 import { WeeklyRoutine, kindStyle } from "@/components/dashboard/widgets";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { useSchedule } from "@/lib/schedule/store";
-import { BlockKind, durationMin } from "@/lib/schedule/types";
+import { BlockKind, RoutineBlock, durationMin } from "@/lib/schedule/types";
 import { exportToICS, exportToXLSX } from "@/lib/schedule/export";
 import { Button } from "@/components/ui/button";
-import { Download, CalendarDays, Trash2, ArrowLeftRight, Plus, Minus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Download, CalendarDays, Trash2, Pencil } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
-
-function toMin(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function toTime(min: number) {
-  const clamped = Math.max(0, Math.min(23 * 60 + 45, min));
-  const h = Math.floor(clamped / 60);
-  const m = clamped % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function Week() {
   const { data, removeRoutine, updateRoutine } = useSchedule();
@@ -27,6 +21,7 @@ export default function Week() {
   const { locale } = useI18n();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
+  const [editItem, setEditItem] = useState<RoutineBlock | null>(null);
   // Mon=1..Sun=0, same order as the weekly grid
   const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
   const byDay = DAY_ORDER.map((di) => ({ di, blocks: data.routine.filter((r) => r.day === di).sort((a, b) => a.start.localeCompare(b.start)) }));
@@ -40,23 +35,15 @@ export default function Week() {
     toast({ title: successTitle });
   }
 
-  function shiftBlock(id: string, start: string, end: string, delta: number) {
-    const s = toMin(start) + delta;
-    const e = toMin(end) + delta;
-    if (s < 0 || e > 24 * 60) return;
-    patchRoutine(id, { start: toTime(s), end: toTime(e) }, t.chronos.weekPage.blockMoved);
+  function handleSave(item: RoutineBlock, patch: Partial<RoutineBlock>) {
+    patchRoutine(item.id, patch, t.common.save);
+    setEditItem(null);
   }
 
-  function resizeBlock(id: string, start: string, end: string, delta: number) {
-    const s = toMin(start);
-    const e = toMin(end) + delta;
-    if (e <= s || e > 24 * 60) return;
-    patchRoutine(id, { end: toTime(e) }, t.chronos.weekPage.durationUpdated);
-  }
-
-  function moveDay(id: string, day: number, delta: number) {
-    const nextDay = (day + delta + 7) % 7;
-    patchRoutine(id, { day: nextDay }, t.chronos.weekPage.movedToAnotherDay);
+  function handleRemove(item: RoutineBlock) {
+    removeRoutine(item.id);
+    toast({ title: t.chronos.weekPage.blockRemoved });
+    setEditItem(null);
   }
 
   return (
@@ -73,7 +60,7 @@ export default function Week() {
           <ComposeBlockDialog />
         </div>
       </header>
-      <div className="grid grid-cols-1 gap-6"><WeeklyRoutine editable /></div>
+      <div className="grid grid-cols-1 gap-6"><WeeklyRoutine /></div>
       <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {byDay.map(({ di, blocks }) => (
           <div key={di} className="chronos-card p-5">
@@ -87,26 +74,10 @@ export default function Week() {
                   <span className={`h-2 w-2 rounded-full ${kindStyle[b.kind as BlockKind].dot}`} />
                   <span className="text-primary truncate flex-1">{scheduleText.blockTitle(b.title, b.titleCustom)}</span>
                   <span className="text-[11px] text-muted-foreground num">{b.start} · {fmtDur(durationMin(b.start, b.end))}</span>
-                  <button onClick={() => { removeRoutine(b.id); toast({ title: t.chronos.weekPage.blockRemoved }); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => setEditItem(b)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary"><Pencil className="h-3.5 w-3.5" /></button>
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => shiftBlock(b.id, b.start, b.end, -15)}>
-                      <Minus className="h-3 w-3 mr-1" /> 15m
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => shiftBlock(b.id, b.start, b.end, 15)}>
-                      <Plus className="h-3 w-3 mr-1" /> 15m
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => resizeBlock(b.id, b.start, b.end, 15)}>
-                      <ArrowLeftRight className="h-3 w-3 mr-1" /> +15m
-                    </Button>
-                  </div>
-                  <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[11px]">
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => moveDay(b.id, b.day, -1)}>
-                      <ChevronLeft className="h-3 w-3 mr-1" /> {t.chronos.weekPage.previousDay}
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => moveDay(b.id, b.day, 1)}>
-                      {t.chronos.weekPage.nextDay} <ChevronRight className="h-3 w-3 ml-1" />
-                    </Button>
+                  <div className="mt-1.5 text-[11px] text-muted-foreground num">
+                    {b.start}–{b.end}
                   </div>
                 </li>
               ))}
@@ -114,6 +85,125 @@ export default function Week() {
           </div>
         ))}
       </div>
+
+      {editItem && (
+        <WeekBlockEditDialog
+          item={editItem}
+          categories={data.categories}
+          onClose={() => setEditItem(null)}
+          onRemove={() => handleRemove(editItem)}
+          onSave={(patch) => handleSave(editItem, patch)}
+        />
+      )}
     </>
+  );
+}
+
+function WeekBlockEditDialog({
+  item,
+  categories,
+  onClose,
+  onRemove,
+  onSave,
+}: {
+  item: RoutineBlock;
+  categories: { id: string; label: string; labelCustom?: string }[];
+  onClose: () => void;
+  onRemove: () => void;
+  onSave: (patch: Partial<RoutineBlock>) => void;
+}) {
+  const t = useT();
+  const fmtDur = useFmtDur();
+  const scheduleText = useScheduleText();
+  const [title, setTitle] = useState(item.titleCustom ?? item.title);
+  const [kind, setKind] = useState<BlockKind>(item.kind);
+  const [day, setDay] = useState<number>(item.day);
+  const [start, setStart] = useState(item.start);
+  const [end, setEnd] = useState(item.end);
+  const [notes, setNotes] = useState(item.notes ?? "");
+  const duration = start < end ? durationMin(start, end) : 0;
+
+  function save() {
+    if (!title.trim()) return;
+    if (start >= end) {
+      toast({ title: t.chronos.dialog.endAfterStart });
+      return;
+    }
+
+    onSave({
+      title: item.titleCustom ? item.title : title.trim(),
+      titleCustom: item.titleCustom || item.title !== title.trim() ? title.trim() : undefined,
+      kind,
+      day,
+      start,
+      end,
+      notes: notes.trim() || undefined,
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl text-primary">{scheduleText.blockTitle(item.title, item.titleCustom)}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.title_field}</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-9" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.kind}</Label>
+              <Select value={kind} onValueChange={(value) => setKind(value as BlockKind)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {scheduleText.categoryLabel(category.id as BlockKind, category.label, category.labelCustom)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.day}</Label>
+              <Select value={String(day)} onValueChange={(value) => setDay(Number(value))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6, 0].map((value) => (
+                    <SelectItem key={value} value={String(value)}>{t.common.days.long[value]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.start}</Label>
+              <Input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.end}</Label>
+              <Input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} className="h-9" />
+            </div>
+          </div>
+          {duration > 0 && <p className="text-[11px] num text-secondary">{t.chronos.today.duration}: {fmtDur(duration)}</p>}
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.notes}</Label>
+            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t.chronos.dialog.notesPlaceholder} className="resize-none" />
+          </div>
+        </div>
+        <DialogFooter className="flex-row items-center justify-between gap-2 pt-2">
+          <Button variant="ghost" size="sm" onClick={onRemove} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />{t.chronos.today.removeBlock}
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>{t.chronos.dialog.cancel}</Button>
+            <Button size="sm" onClick={save}>{t.common.save}</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

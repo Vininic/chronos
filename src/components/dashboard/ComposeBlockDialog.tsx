@@ -6,18 +6,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TimeSelect } from "@/components/ui/time-select";
 import { useSchedule } from "@/lib/schedule/store";
 import { BlockKind } from "@/lib/schedule/types";
 import { toast } from "@/hooks/use-toast";
 import { Plus } from "lucide-react";
-import { useT } from "@/lib/i18n/I18nProvider";
+import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 
-interface Props { trigger?: React.ReactNode; defaultKind?: BlockKind; }
+interface Props { trigger?: React.ReactNode; defaultKind?: BlockKind; defaultStart?: string; defaultEnd?: string; }
 
-export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
+export function ComposeBlockDialog({ trigger, defaultKind = "deep", defaultStart, defaultEnd }: Props) {
   const { data, addRoutine, addCommitment } = useSchedule();
   const t = useT();
+  const { bcp47 } = useI18n();
   const scheduleText = useScheduleText();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"routine" | "commitment">("routine");
@@ -25,18 +27,18 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
   const [title, setTitle] = useState("");
   const [day, setDay] = useState(String(new Date().getDay()));
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [start, setStart] = useState("09:00");
-  const [end, setEnd] = useState("10:00");
+  const [start, setStart] = useState(defaultStart ?? "09:00");
+  const [end, setEnd] = useState(defaultEnd ?? "10:00");
   const [notes, setNotes] = useState("");
 
   function reset() {
-    setTitle(""); setNotes(""); setStart("09:00"); setEnd("10:00"); setKind(defaultKind);
+    setTitle(""); setNotes(""); setStart(defaultStart ?? "09:00"); setEnd(defaultEnd ?? "10:00"); setKind(defaultKind);
   }
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) { toast({ title: t.chronos.dialog.needsTitle }); return; }
-    if (start >= end) { toast({ title: t.chronos.dialog.endAfterStart }); return; }
     if (mode === "routine") {
+      if (start >= end) { toast({ title: t.chronos.dialog.endAfterStart }); return; }
       const error = addRoutine({ day: Number(day), start, end, kind, title: title.trim(), notes: notes.trim() });
       if (error) {
         toast({ title: "Scheduling conflict", description: error });
@@ -44,12 +46,16 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
       }
       toast({ title: t.chronos.dialog.routineAdded, description: `${t.common.days.long[Number(day)]} · ${start}–${end}` });
     } else {
-      const error = addCommitment({ date, start, end, kind, title: title.trim(), notes: notes.trim() });
+      const endsNextDay = end <= start;
+      const error = addCommitment({ date, start, end, endsNextDay, kind, title: title.trim(), notes: notes.trim() });
       if (error) {
         toast({ title: "Scheduling conflict", description: error });
         return;
       }
-      toast({ title: t.chronos.dialog.commitmentAdded, description: `${date} · ${start}–${end}` });
+      toast({
+        title: t.chronos.dialog.commitmentAdded,
+        description: `${date} · ${start}–${end}${endsNextDay ? " (+1d)" : ""}`,
+      });
     }
     reset();
     setOpen(false);
@@ -85,7 +91,7 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
                 <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {data.categories.map((c) => (
+                    {data.categories.filter((c) => c.id !== "sleep").map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {scheduleText.categoryLabel(c.id, c.label || t.common.kinds[c.id], c.labelCustom)}
                       </SelectItem>
@@ -110,11 +116,11 @@ export function ComposeBlockDialog({ trigger, defaultKind = "deep" }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.dialog.start}</Label>
-                <Input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
+                <TimeSelect value={start} onValueChange={setStart} bcp47={bcp47} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.dialog.end}</Label>
-                <Input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
+                <TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} />
               </div>
             </div>
             <div className="space-y-1.5">

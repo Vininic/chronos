@@ -20,6 +20,7 @@ const categoryLabels: Record<BlockKind, LocaleText> = {
   ritual: { pt: "Ritual", en: "Ritual" },
   recovery: { pt: "Pausa", en: "Break" },
   shallow: { pt: "Tarefas", en: "Tasks" },
+  sleep: { pt: "Sono", en: "Sleep" },
 };
 
 const categoryDescriptions: Record<BlockKind, LocaleText> = {
@@ -43,6 +44,10 @@ const categoryDescriptions: Record<BlockKind, LocaleText> = {
     pt: "E-mail, administração e tarefas leves.",
     en: "Email, admin, low-cost tasks.",
   },
+  sleep: {
+    pt: "Janela de descanso protegida.",
+    en: "Protected rest window.",
+  },
 };
 
 const categoryDescriptionAliases = new Set([
@@ -56,6 +61,8 @@ const categoryDescriptionAliases = new Set([
   "Descanso ativo, caminhadas, respiração.",
   "Email, admin, low-cost tasks.",
   "E-mail, administração e tarefas leves.",
+  "Protected rest window.",
+  "Janela de descanso protegida.",
 ]);
 
 const categoryLabelAliases: Record<BlockKind, Set<string>> = {
@@ -64,6 +71,7 @@ const categoryLabelAliases: Record<BlockKind, Set<string>> = {
   ritual: new Set(["Ritual"]),
   recovery: new Set(["Pausa", "Break", "Recovery"]),
   shallow: new Set(["Tarefas", "Tasks", "Shallow"]),
+  sleep: new Set(["Sono", "Sleep"]),
 };
 
 const blockTitles: Record<string, LocaleText> = {

@@ -29,7 +29,14 @@ function normalizeNamingModel(data: ScheduleData): ScheduleData {
     return { ...c, labelCustom, descriptionCustom };
   });
 
-  return { ...data, categories };
+  return {
+    ...data,
+    categories,
+    meta: {
+      ...data.meta,
+      sleepWindow: normalizeSleepWindow(data),
+    },
+  };
 }
 
 function uid(prefix: string) {
@@ -48,11 +55,106 @@ function dayFromIsoDate(isoDate: string) {
   return new Date(`${isoDate}T00:00:00`).getDay();
 }
 
+function dateToIso(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function minutesToTime(min: number) {
   const clamped = Math.max(0, Math.min(23 * 60 + 59, min));
   const h = Math.floor(clamped / 60);
   const m = clamped % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function addDaysToIso(isoDate: string, days: number) {
+  const d = new Date(`${isoDate}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return dateToIso(d);
+}
+
+function toDateTime(isoDate: string, time: string) {
+  return new Date(`${isoDate}T${time}:00`);
+}
+
+function normalizeSleepWindow(data: ScheduleData): { start: string; end: string } {
+  if (data.meta.sleepWindow) return data.meta.sleepWindow;
+  const sleep = data.routine.filter((r) => r.kind === "sleep");
+  const morningEnd = sleep
+    .filter((r) => timeToMinutes(r.end) <= 12 * 60)
+    .reduce((m, r) => Math.max(m, timeToMinutes(r.end)), timeToMinutes(data.meta.workdayStart));
+  const eveningStart = sleep
+    .filter((r) => timeToMinutes(r.start) >= 18 * 60)
+    .reduce((m, r) => Math.min(m, timeToMinutes(r.start)), timeToMinutes(data.meta.workdayEnd));
+  return { start: minutesToTime(eveningStart), end: minutesToTime(morningEnd) };
+}
+
+function resolveCommitmentEndDate(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  if (c.endDate) return c.endDate;
+  if (c.endsNextDay || c.end <= c.start) return addDaysToIso(c.date, 1);
+  return c.date;
+}
+
+function commitmentInterval(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  const start = toDateTime(c.date, c.start);
+  const end = toDateTime(resolveCommitmentEndDate(c), c.end);
+  return { start, end };
+}
+
+function intervalsOverlap(a: { start: Date; end: Date }, b: { start: Date; end: Date }) {
+  return a.start < b.end && b.start < a.end;
+}
+
+function buildSleepSegmentsForDate(
+  sleepWindow: { start: string; end: string },
+  date: Date,
+  sleepTitle: string,
+) {
+  const iso = dateToIso(date);
+  const s = timeToMinutes(sleepWindow.start);
+  const e = timeToMinutes(sleepWindow.end);
+
+  if (s > e) {
+    return [
+      {
+        id: `sleep-am-${iso}`,
+        title: sleepTitle,
+        titleCustom: undefined,
+        notes: undefined,
+        start: "00:00",
+        end: sleepWindow.end,
+        kind: "sleep" as const,
+        source: "routine" as const,
+      },
+      {
+        id: `sleep-pm-${iso}`,
+        title: sleepTitle,
+        titleCustom: undefined,
+        notes: undefined,
+        start: sleepWindow.start,
+        end: "23:59",
+        kind: "sleep" as const,
+        source: "routine" as const,
+      },
+    ];
+  }
+  if (s < e) {
+    return [
+      {
+        id: `sleep-mid-${iso}`,
+        title: sleepTitle,
+        titleCustom: undefined,
+        notes: undefined,
+        start: sleepWindow.start,
+        end: sleepWindow.end,
+        kind: "sleep" as const,
+        source: "routine" as const,
+      },
+    ];
+  }
+  return [];
 }
 
 function clamp(v: number, min = 0, max = 100) {
@@ -246,7 +348,7 @@ function generateLocalSuggestions(data: ScheduleData, locale: Locale = "en"): Su
           title: sugg.structureBlockTitle,
         };
       })
-      .filter((x): x is Omit<RoutineBlock, "id"> => Boolean(x));
+      .filter(Boolean) as Omit<RoutineBlock, "id">[];
 
     if (candidates.length > 0) {
       suggestions.push({
@@ -279,6 +381,8 @@ interface Ctx {
   addCommitment: (c: Omit<Commitment, "id">) => string | null;
   removeCommitment: (id: string) => void;
   updateCommitment: (id: string, patch: Partial<Commitment>) => string | null;
+  pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string) => string | null;
+  updateSleepWindow: (patch: Partial<{ start: string; end: string }>) => void;
   updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone">>) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
   applySuggestion: (id: string) => void;
@@ -352,16 +456,33 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     setData((d) => withDerived({ ...d, routine: d.routine.filter((r) => r.id !== id) }));
   }, []);
   const addCommitment = useCallback((c: Omit<Commitment, "id">) => {
-    const dateDay = dayFromIsoDate(c.date);
-    const conflictCommitment = data.commitments.find((x) => x.date === c.date && overlap(x.start, x.end, c.start, c.end));
+    const next: Omit<Commitment, "id"> = {
+      ...c,
+      endsNextDay: c.endsNextDay ?? c.end <= c.start,
+    };
+    const nextInterval = commitmentInterval(next);
+
+    const conflictCommitment = data.commitments.find((x) => intervalsOverlap(commitmentInterval(x), nextInterval));
     if (conflictCommitment) {
       return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
     }
-    const conflictRoutine = data.routine.find((r) => r.day === dateDay && overlap(r.start, r.end, c.start, c.end));
-    if (conflictRoutine) {
-      return `Conflicts with routine "${conflictRoutine.title}" (${conflictRoutine.start}-${conflictRoutine.end}).`;
+
+    let cursorIso = next.date;
+    const endIso = resolveCommitmentEndDate(next);
+    while (true) {
+      const dayRoutine = data.routine.filter((r) => r.kind !== "sleep" && r.day === dayFromIsoDate(cursorIso));
+      const hit = dayRoutine.find((r) => {
+        const rInterval = { start: toDateTime(cursorIso, r.start), end: toDateTime(cursorIso, r.end) };
+        return intervalsOverlap(rInterval, nextInterval);
+      });
+      if (hit) {
+        return `Conflicts with routine "${hit.title}" (${hit.start}-${hit.end}).`;
+      }
+      if (cursorIso === endIso) break;
+      cursorIso = addDaysToIso(cursorIso, 1);
     }
-    setData((d) => withDerived({ ...d, commitments: [...d.commitments, { ...c, id: uid("c") }] }));
+
+    setData((d) => withDerived({ ...d, commitments: [...d.commitments, { ...next, id: uid("c") }] }));
     return null;
   }, [data]);
   const removeCommitment = useCallback((id: string) => {
@@ -370,21 +491,147 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   const updateCommitment = useCallback((id: string, patch: Partial<Commitment>) => {
     const current = data.commitments.find((c) => c.id === id);
     if (!current) return null;
-    const next = { ...current, ...patch };
-    const dateDay = dayFromIsoDate(next.date);
-    const conflictCommitment = data.commitments.find(
-      (c) => c.id !== id && c.date === next.date && overlap(c.start, c.end, next.start, next.end),
-    );
+    const next: Commitment = {
+      ...current,
+      ...patch,
+      endsNextDay: patch.endsNextDay ?? current.endsNextDay ?? ((patch.end ?? current.end) <= (patch.start ?? current.start)),
+    };
+    const nextInterval = commitmentInterval(next);
+    const conflictCommitment = data.commitments.find((c) => c.id !== id && intervalsOverlap(commitmentInterval(c), nextInterval));
     if (conflictCommitment) {
       return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
     }
-    const conflictRoutine = data.routine.find((r) => r.day === dateDay && overlap(r.start, r.end, next.start, next.end));
-    if (conflictRoutine) {
-      return `Conflicts with routine "${conflictRoutine.title}" (${conflictRoutine.start}-${conflictRoutine.end}).`;
+
+    let cursorIso = next.date;
+    const endIso = resolveCommitmentEndDate(next);
+    while (true) {
+      const dayRoutine = data.routine.filter((r) => r.kind !== "sleep" && r.day === dayFromIsoDate(cursorIso));
+      const hit = dayRoutine.find((r) => {
+        const rInterval = { start: toDateTime(cursorIso, r.start), end: toDateTime(cursorIso, r.end) };
+        return intervalsOverlap(rInterval, nextInterval);
+      });
+      if (hit) {
+        return `Conflicts with routine "${hit.title}" (${hit.start}-${hit.end}).`;
+      }
+      if (cursorIso === endIso) break;
+      cursorIso = addDaysToIso(cursorIso, 1);
     }
-    setData((d) => withDerived({ ...d, commitments: d.commitments.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
+
+    setData((d) => withDerived({ ...d, commitments: d.commitments.map((c) => (c.id === id ? next : c)) }));
     return null;
   }, [data]);
+
+  const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string) => {
+    const day = date.getDay();
+    const dayAgenda = buildAgendaForDate(data, date).filter((a) => a.kind !== "sleep");
+    const moved = dayAgenda.find((a) => a.id === id && a.source === source);
+    if (!moved) return "Block not found.";
+
+    const movedStart = timeToMinutes(newStart);
+    const movedEnd = timeToMinutes(newEnd);
+    const movedDur = Math.max(15, movedEnd - movedStart);
+
+    // Clamp the moved block to the day's sleep boundaries so it can never overlap sleep
+    const sleepForDay = buildAgendaForDate(data, date).filter((a) => a.kind === "sleep");
+    const wakeMin = sleepForDay
+      .filter((a) => timeToMinutes(a.end) <= 12 * 60)
+      .reduce((m, a) => Math.max(m, timeToMinutes(a.end)), 0);
+    const bedMin = sleepForDay
+      .filter((a) => timeToMinutes(a.start) >= 18 * 60)
+      .reduce((m, a) => Math.min(m, timeToMinutes(a.start)), 23 * 60 + 45);
+    const boundarySnapTol = 15;
+    let candidateStart = movedStart;
+    // Snap only when crossing into sleep, not when merely near the boundary.
+    if (movedStart < wakeMin && wakeMin - movedStart <= boundarySnapTol) {
+      candidateStart = wakeMin;
+    }
+    if (movedEnd > bedMin && movedEnd - bedMin <= boundarySnapTol) {
+      candidateStart = bedMin - movedDur;
+    }
+    const clampedStart = Math.max(wakeMin, Math.min(candidateStart, bedMin - movedDur));
+    const clampedEnd = clampedStart + movedDur;
+
+    const reordered = dayAgenda
+      .map((a) => {
+        if (a.id === id && a.source === source) {
+          return { ...a, start: minutesToTime(clampedStart), end: minutesToTime(clampedEnd) };
+        }
+        return a;
+      })
+      .sort((a, b) => a.start.localeCompare(b.start));
+
+    const idx = reordered.findIndex((a) => a.id === id && a.source === source);
+    if (idx < 0) return "Block not found.";
+
+    const adjusted = reordered.map((a) => ({
+      ...a,
+      s: timeToMinutes(a.start),
+      e: timeToMinutes(a.end),
+      dur: Math.max(15, timeToMinutes(a.end) - timeToMinutes(a.start)),
+    }));
+    adjusted[idx].s = clampedStart;
+    adjusted[idx].e = clampedStart + movedDur;
+    adjusted[idx].dur = movedDur;
+
+    if (idx > 0) {
+      const minStart = adjusted[idx - 1].e;
+      if (adjusted[idx].s < minStart) {
+        adjusted[idx].s = minStart;
+        adjusted[idx].e = adjusted[idx].s + adjusted[idx].dur;
+      }
+    }
+
+    for (let i = idx + 1; i < adjusted.length; i += 1) {
+      if (adjusted[i].s < adjusted[i - 1].e) {
+        adjusted[i].s = adjusted[i - 1].e;
+        adjusted[i].e = adjusted[i].s + adjusted[i].dur;
+      } else {
+        break;
+      }
+    }
+
+    const MAX_END = bedMin;
+    const overflow = adjusted.length > 0 ? adjusted[adjusted.length - 1].e - MAX_END : 0;
+    if (overflow > 0) {
+      for (let i = idx; i < adjusted.length; i += 1) {
+        adjusted[i].s -= overflow;
+        adjusted[i].e -= overflow;
+      }
+      if (adjusted[idx].s < 0) return "Cannot push more. Day limit reached.";
+      for (let i = idx + 1; i < adjusted.length; i += 1) {
+        adjusted[i].s = adjusted[i - 1].e;
+        adjusted[i].e = adjusted[i].s + adjusted[i].dur;
+      }
+      if (adjusted[adjusted.length - 1].e > MAX_END) return "Cannot push more. Day limit reached.";
+    }
+
+    const agendaMap = new Map(adjusted.map((a) => [
+      `${a.source}:${a.id}`,
+      { start: minutesToTime(Math.max(0, a.s)), end: minutesToTime(Math.min(MAX_END, a.e)) },
+    ]));
+
+    setData((d) => {
+      const routine = d.routine.map((r) => {
+        if (r.day !== day) return r;
+        const adj = agendaMap.get(`routine:${r.id}`);
+        return adj ? { ...r, start: adj.start, end: adj.end } : r;
+      });
+      const commitments = d.commitments.map((c) => {
+        const adj = agendaMap.get(`commitment:${c.id}`);
+        return adj ? { ...c, start: adj.start, end: adj.end } : c;
+      });
+      return withDerived({ ...d, routine, commitments });
+    });
+    return null;
+  }, [data]);
+
+  const updateSleepWindow = useCallback((patch: Partial<{ start: string; end: string }>) => {
+    setData((d) => {
+      const current = d.meta.sleepWindow ?? normalizeSleepWindow(d);
+      const next = { ...current, ...patch };
+      return withDerived({ ...d, meta: { ...d.meta, sleepWindow: next } });
+    });
+  }, []);
 
   const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone">>) => {
     setData((d) => withDerived({
@@ -443,6 +690,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addCommitment,
       removeCommitment,
       updateCommitment,
+      pushMoveDayChain,
+      updateSleepWindow,
       updateCategory,
       resetCategoryNaming,
       applySuggestion,
@@ -459,6 +708,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addCommitment,
       removeCommitment,
       updateCommitment,
+      pushMoveDayChain,
+      updateSleepWindow,
       updateCategory,
       resetCategoryNaming,
       applySuggestion,
@@ -481,11 +732,41 @@ export function useSchedule() {
 export function buildAgendaForDate(data: ScheduleData, date: Date) {
   const day = date.getDay();
   const iso = date.toISOString().slice(0, 10);
-  const fromRoutine = data.routine.filter((r) => r.day === day).map((r) => ({
-    id: r.id, title: r.title, titleCustom: r.titleCustom, start: r.start, end: r.end, kind: r.kind, source: "routine" as const,
+  const fromRoutine = data.routine.filter((r) => r.day === day && r.kind !== "sleep").map((r) => ({
+    id: r.id, title: r.title, titleCustom: r.titleCustom,
+    start: r.start, end: r.end, kind: r.kind, source: "routine" as const, notes: r.notes,
   }));
-  const fromCommit = data.commitments.filter((c) => c.date === iso).map((c) => ({
-    id: c.id, title: c.title, titleCustom: c.titleCustom, start: c.start, end: c.end, kind: c.kind, source: "commitment" as const,
-  }));
-  return [...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
+
+  const dayStart = toDateTime(iso, "00:00");
+  const dayEnd = toDateTime(addDaysToIso(iso, 1), "00:00");
+  const toTime = (d: Date, isEnd = false) => {
+    if (isEnd && d.getTime() === dayEnd.getTime()) return "23:59";
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
+  };
+
+  const fromCommit = data.commitments.flatMap((c) => {
+    const interval = commitmentInterval(c);
+    if (!intervalsOverlap(interval, { start: dayStart, end: dayEnd })) return [];
+    const segStart = interval.start > dayStart ? interval.start : dayStart;
+    const segEnd = interval.end < dayEnd ? interval.end : dayEnd;
+    if (segEnd <= segStart) return [];
+    return [{
+      id: c.id,
+      title: c.title,
+      titleCustom: c.titleCustom,
+      start: toTime(segStart),
+      end: toTime(segEnd, true),
+      kind: c.kind,
+      source: "commitment" as const,
+      notes: c.notes,
+    }];
+  });
+
+  const sleepTitle = data.categories.find((c) => c.id === "sleep")?.label ?? "Sleep";
+  const sleepWindow = data.meta.sleepWindow ?? normalizeSleepWindow(data);
+  const sleepSegments = buildSleepSegmentsForDate(sleepWindow, date, sleepTitle);
+
+  return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
 }
