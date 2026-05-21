@@ -1,6 +1,6 @@
 {
   "meta": {
-    "version": 1,
+    "version": 2,
     "owner": "You",
     "cycle": { "name": "Current week", "number": 14, "week": 22, "progress": 0.62 },
     "workdayStart": "07:00",

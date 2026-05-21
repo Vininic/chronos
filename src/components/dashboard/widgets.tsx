@@ -225,6 +225,37 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
   const rowHeight = 36;
   const gridHeight = totalHours * rowHeight;
   const tickHours = [7, 9, 11, 13, 15, 17, 19];
+
+  const freeSlotsForDay = (day: number) => {
+    const dayBlocks = data.routine
+      .filter((b) => b.day === day && b.kind !== "sleep")
+      .slice()
+      .sort((a, b) => a.start.localeCompare(b.start));
+    const slots: { start: string; end: string }[] = [];
+    let cursor = startHour * 60;
+    const dayEnd = endHour * 60;
+
+    for (const block of dayBlocks) {
+      const originalStart = timeToMinutes(block.start);
+      if (originalStart - cursor >= 15) {
+        slots.push({
+          start: `${String(Math.floor(cursor / 60)).padStart(2, "0")}:${String(cursor % 60).padStart(2, "0")}`,
+          end: `${String(Math.floor(originalStart / 60)).padStart(2, "0")}:${String(originalStart % 60).padStart(2, "0")}`,
+        });
+      }
+      cursor = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.end)));
+    }
+
+    if (dayEnd - cursor >= 15) {
+      slots.push({
+        start: `${String(Math.floor(cursor / 60)).padStart(2, "0")}:${String(cursor % 60).padStart(2, "0")}`,
+        end: `${String(endHour).padStart(2, "0")}:00`,
+      });
+    }
+
+    return slots;
+  };
+
   return (
     <div className="chronos-card p-6 lg:col-span-3">
       <div className="flex items-end justify-between flex-wrap gap-3">
@@ -261,6 +292,26 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
             {tickHours.slice(1, -1).map((h) => (
               <div key={`gl-${h}`} className="absolute left-0 right-0 border-t border-dashed border-border/50" style={{ top: ((h - startHour) / totalHours) * gridHeight }} />
             ))}
+            {freeSlotsForDay(di).map((slot) => {
+              const sh = timeToMinutes(slot.start) / 60;
+              const eh = timeToMinutes(slot.end) / 60;
+              const top = ((sh - startHour) / totalHours) * gridHeight;
+              const height = Math.max(12, ((eh - sh) / totalHours) * gridHeight - 2);
+              return (
+                <div
+                  key={`free-${di}-${slot.start}`}
+                  className="absolute left-1 right-1 rounded-md border border-dashed border-border/50 bg-background/25 px-1.5 py-1 overflow-hidden"
+                  style={{ top, height }}
+                  title={`${t.chronos.today.free} · ${slot.start}-${slot.end}`}
+                >
+                  {height >= 24 && (
+                    <div className="truncate text-[9px] uppercase tracking-wider text-muted-foreground/55">
+                      {t.chronos.today.free}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {data.routine.filter((b) => b.day === di).map((b) => {
               const sh = timeToMinutes(b.start) / 60;
               const eh = timeToMinutes(b.end) / 60;

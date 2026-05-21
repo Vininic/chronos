@@ -20,6 +20,7 @@ const SNAP = 15;
 
 type AgendaItem = {
   id: string;
+  sourceId?: string;
   title: string;
   titleCustom?: string;
   start: string;
@@ -27,6 +28,7 @@ type AgendaItem = {
   kind: BlockKind;
   source: "routine" | "commitment";
   notes?: string;
+  derived?: boolean;
 };
 
 type FreeSlot = { type: "free"; id: string; start: string; end: string };
@@ -203,6 +205,7 @@ export function DayPlanner() {
 
   const dragState = useRef<{
     id: string;
+    sourceId: string;
     source: "routine" | "commitment";
     originY: number;
     origStartMin: number;
@@ -229,10 +232,12 @@ export function DayPlanner() {
   }
 
   function onGripDown(e: React.PointerEvent, a: AgendaItem) {
+    if (a.source === "routine" && a.derived) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragState.current = {
       id: a.id,
+      sourceId: a.sourceId ?? a.id,
       source: a.source,
       originY: e.clientY,
       origStartMin: timeToMinutes(a.start),
@@ -250,12 +255,12 @@ export function DayPlanner() {
 
   function onGripUp(e: React.PointerEvent) {
     if (!dragState.current) return;
-    const { id, source, origStartMin, origEndMin } = dragState.current;
+    const { sourceId, source, origStartMin, origEndMin } = dragState.current;
     const snapped = Math.round(((e.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
     if (snapped !== 0) {
       const ns = snapTime(origStartMin + snapped);
       const ne = snapTime(origEndMin + snapped);
-      const err = pushMoveDayChain(selectedDate, source, id, ns, ne);
+      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne);
       if (err) toast({ title: "Conflict", description: err });
     }
     dragState.current = null;
@@ -271,9 +276,10 @@ export function DayPlanner() {
 
   function handleSave(patch: Partial<AgendaItem> & { titleCustom?: string; endsNextDay?: boolean }) {
     if (!editItem) return;
+    const targetId = editItem.sourceId ?? editItem.id;
     const err = editItem.source === "routine"
-      ? updateRoutine(editItem.id, patch)
-      : updateCommitment(editItem.id, patch as any);
+      ? updateRoutine(targetId, patch)
+      : updateCommitment(targetId, patch as any);
     if (err) {
       toast({ title: "Conflict", description: err });
       return;
@@ -283,7 +289,8 @@ export function DayPlanner() {
   }
 
   function handleRemove(a: AgendaItem) {
-    if (a.source === "routine") removeRoutine(a.id); else removeCommitment(a.id);
+    const targetId = a.sourceId ?? a.id;
+    if (a.source === "routine") removeRoutine(targetId); else removeCommitment(targetId);
     toast({ title: t.chronos.widgets.blockRemoved });
     setEditItem(null);
     setExpandedId((p) => (p === a.id ? null : p));
@@ -452,7 +459,11 @@ export function DayPlanner() {
                   <div className={`absolute top-1.5 bottom-1.5 left-7 w-[3px] rounded-full ${s.dot}`} />
                   <div className="flex items-center h-full">
                     <div
-                      className="w-7 h-full shrink-0 flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing touch-none"
+                      className={`w-7 h-full shrink-0 flex items-center justify-center touch-none ${
+                        a.source === "routine" && a.derived
+                          ? "text-muted-foreground/20 cursor-not-allowed"
+                          : "text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing"
+                      }`}
                       onPointerDown={(e) => onGripDown(e, a)}
                       onPointerMove={onGripMove}
                       onPointerUp={onGripUp}
@@ -477,13 +488,15 @@ export function DayPlanner() {
                       </div>
                     </button>
 
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditItem(a); }}
-                      className="shrink-0 w-9 h-full flex items-center justify-center text-muted-foreground/40 hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 rounded-r-lg transition-colors"
-                      aria-label="Edit"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
+                    {!(a.source === "routine" && a.derived) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditItem(a); }}
+                        className="shrink-0 w-9 h-full flex items-center justify-center text-muted-foreground/40 hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 rounded-r-lg transition-colors"
+                        aria-label="Edit"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
 
                   {expanded && (

@@ -8,7 +8,9 @@ import { DICTIONARIES } from "@/lib/i18n/dictionaries";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { isDefaultCategoryDescription, isDefaultCategoryLabel } from "@/lib/i18n/scheduleText";
 
-const STORAGE_KEY = "chronos.schedule.v1";
+const SCHEMA_VERSION = 2;
+const STORAGE_KEY = "chronos.schedule.v2";
+const LEGACY_STORAGE_KEYS = ["chronos.schedule.v1"];
 
 function getSeedForLocale(locale: Locale): ScheduleData {
   return locale === "pt" ? (seedPt as ScheduleData) : (seedEn as ScheduleData);
@@ -16,7 +18,9 @@ function getSeedForLocale(locale: Locale): ScheduleData {
 
 function load(locale: Locale = "en"): ScheduleData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY)
+      ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean)
+      ?? null;
     if (raw) return normalizeNamingModel(JSON.parse(raw) as ScheduleData);
   } catch {}
   return normalizeNamingModel(getSeedForLocale(locale));
@@ -34,6 +38,7 @@ function normalizeNamingModel(data: ScheduleData): ScheduleData {
     categories,
     meta: {
       ...data.meta,
+      version: SCHEMA_VERSION,
       sleepWindow: normalizeSleepWindow(data),
     },
   };
@@ -101,6 +106,42 @@ function commitmentInterval(c: Pick<Commitment, "date" | "start" | "end" | "endD
   const start = toDateTime(c.date, c.start);
   const end = toDateTime(resolveCommitmentEndDate(c), c.end);
   return { start, end };
+}
+
+function intersectsClockRange(
+  rangeStart: string,
+  rangeEnd: string,
+  blockStart: string,
+  blockEnd: string,
+) {
+  return overlap(rangeStart, rangeEnd, blockStart, blockEnd);
+}
+
+function subtractRanges(
+  base: { start: string; end: string },
+  blockers: { start: string; end: string }[],
+) {
+  let segments = [base];
+
+  for (const blocker of blockers) {
+    const nextSegments: { start: string; end: string }[] = [];
+    for (const segment of segments) {
+      if (!intersectsClockRange(segment.start, segment.end, blocker.start, blocker.end)) {
+        nextSegments.push(segment);
+        continue;
+      }
+
+      if (timeToMinutes(blocker.start) > timeToMinutes(segment.start)) {
+        nextSegments.push({ start: segment.start, end: blocker.start });
+      }
+      if (timeToMinutes(blocker.end) < timeToMinutes(segment.end)) {
+        nextSegments.push({ start: blocker.end, end: segment.end });
+      }
+    }
+    segments = nextSegments.filter((segment) => timeToMinutes(segment.end) - timeToMinutes(segment.start) >= 15);
+  }
+
+  return segments;
 }
 
 function intervalsOverlap(a: { start: Date; end: Date }, b: { start: Date; end: Date }) {
@@ -368,6 +409,10 @@ function generateLocalSuggestions(data: ScheduleData, locale: Locale = "en"): Su
 function withDerived(data: ScheduleData, regenerateSuggestions = false, locale: Locale = "en"): ScheduleData {
   return {
     ...data,
+    meta: {
+      ...data.meta,
+      version: SCHEMA_VERSION,
+    },
     ledger: buildLedger(data),
     suggestions: regenerateSuggestions ? generateLocalSuggestions(data, locale) : data.suggestions,
   };
@@ -467,21 +512,6 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
     }
 
-    let cursorIso = next.date;
-    const endIso = resolveCommitmentEndDate(next);
-    while (true) {
-      const dayRoutine = data.routine.filter((r) => r.kind !== "sleep" && r.day === dayFromIsoDate(cursorIso));
-      const hit = dayRoutine.find((r) => {
-        const rInterval = { start: toDateTime(cursorIso, r.start), end: toDateTime(cursorIso, r.end) };
-        return intervalsOverlap(rInterval, nextInterval);
-      });
-      if (hit) {
-        return `Conflicts with routine "${hit.title}" (${hit.start}-${hit.end}).`;
-      }
-      if (cursorIso === endIso) break;
-      cursorIso = addDaysToIso(cursorIso, 1);
-    }
-
     setData((d) => withDerived({ ...d, commitments: [...d.commitments, { ...next, id: uid("c") }] }));
     return null;
   }, [data]);
@@ -500,21 +530,6 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     const conflictCommitment = data.commitments.find((c) => c.id !== id && intervalsOverlap(commitmentInterval(c), nextInterval));
     if (conflictCommitment) {
       return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
-    }
-
-    let cursorIso = next.date;
-    const endIso = resolveCommitmentEndDate(next);
-    while (true) {
-      const dayRoutine = data.routine.filter((r) => r.kind !== "sleep" && r.day === dayFromIsoDate(cursorIso));
-      const hit = dayRoutine.find((r) => {
-        const rInterval = { start: toDateTime(cursorIso, r.start), end: toDateTime(cursorIso, r.end) };
-        return intervalsOverlap(rInterval, nextInterval);
-      });
-      if (hit) {
-        return `Conflicts with routine "${hit.title}" (${hit.start}-${hit.end}).`;
-      }
-      if (cursorIso === endIso) break;
-      cursorIso = addDaysToIso(cursorIso, 1);
     }
 
     setData((d) => withDerived({ ...d, commitments: d.commitments.map((c) => (c.id === id ? next : c)) }));
@@ -732,11 +747,6 @@ export function useSchedule() {
 export function buildAgendaForDate(data: ScheduleData, date: Date) {
   const day = date.getDay();
   const iso = date.toISOString().slice(0, 10);
-  const fromRoutine = data.routine.filter((r) => r.day === day && r.kind !== "sleep").map((r) => ({
-    id: r.id, title: r.title, titleCustom: r.titleCustom,
-    start: r.start, end: r.end, kind: r.kind, source: "routine" as const, notes: r.notes,
-  }));
-
   const dayStart = toDateTime(iso, "00:00");
   const dayEnd = toDateTime(addDaysToIso(iso, 1), "00:00");
   const toTime = (d: Date, isEnd = false) => {
@@ -763,6 +773,25 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
       notes: c.notes,
     }];
   });
+
+  const routineBlockers = fromCommit.map((c) => ({ start: c.start, end: c.end }));
+  const fromRoutine = data.routine
+    .filter((r) => r.day === day && r.kind !== "sleep")
+    .flatMap((r) => {
+      const visibleSegments = subtractRanges({ start: r.start, end: r.end }, routineBlockers);
+      return visibleSegments.map((segment, index) => ({
+        id: visibleSegments.length === 1 ? r.id : `${r.id}::segment-${index}`,
+        sourceId: r.id,
+        derived: visibleSegments.length > 1 || segment.start !== r.start || segment.end !== r.end,
+        title: r.title,
+        titleCustom: r.titleCustom,
+        start: segment.start,
+        end: segment.end,
+        kind: r.kind,
+        source: "routine" as const,
+        notes: r.notes,
+      }));
+    });
 
   const sleepTitle = data.categories.find((c) => c.id === "sleep")?.label ?? "Sleep";
   const sleepWindow = data.meta.sleepWindow ?? normalizeSleepWindow(data);
