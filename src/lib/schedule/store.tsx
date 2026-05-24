@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, RoutineBlock, ScheduleData, Suggestion } from "./types";
-import { timeToMinutes } from "./types";
+import type { Category, Commitment, RoutineBlock, ScheduleData, Suggestion, SleepCut } from "./types";
+import { durationMin, timeToMinutes } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { DICTIONARIES } from "@/lib/i18n/dictionaries";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -473,8 +473,10 @@ interface Ctx {
   addCommitment: (c: Omit<Commitment, "id">) => string | null;
   removeCommitment: (id: string) => void;
   updateCommitment: (id: string, patch: Partial<Commitment>) => string | null;
-  pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string) => string | null;
+  pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number) => string | null;
   updateSleepWindow: (patch: Partial<{ start: string; end: string }>) => void;
+  addSleepCut: (cut: Omit<SleepCut, never>) => void;
+  removeSleepCut: (date: string) => void;
   updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone">>) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
   applySuggestion: (id: string) => void;
@@ -610,15 +612,28 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     return null;
   }, [data]);
 
-  const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string) => {
+  const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number) => {
     const day = date.getDay();
     const dayAgenda = buildAgendaForDate(data, date).filter((a) => !(a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary));
     const moved = dayAgenda.find((a) => a.id === id && a.source === source);
     if (!moved) return "Block not found.";
 
+    const sourceRoutine = source === "routine" ? data.routine.find((r) => r.id === id) : null;
+    const sourceCommitment = source === "commitment" ? data.commitments.find((c) => c.id === id) : null;
+    const sourceDuration = sourceRoutine
+      ? durationMin(sourceRoutine.start, sourceRoutine.end)
+      : sourceCommitment
+        ? Math.max(15, Math.round((commitmentInterval(sourceCommitment).end.getTime() - commitmentInterval(sourceCommitment).start.getTime()) / 60_000))
+        : durationMin(newStart, newEnd);
+    const sourceStartMin = sourceRoutine
+      ? timeToMinutes(sourceRoutine.start)
+      : sourceCommitment
+        ? timeToMinutes(sourceCommitment.start)
+        : timeToMinutes(moved.start);
+
     const movedStart = timeToMinutes(newStart);
     const movedEnd = timeToMinutes(newEnd);
-    const movedDur = Math.max(15, movedEnd - movedStart);
+    const movedDur = Math.max(15, sourceDuration);
 
     // Clamp the moved block to the day's sleep boundaries so it can never overlap sleep
     const sleepForDay = buildAgendaForDate(data, date).filter((a) => a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary);
@@ -629,6 +644,83 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       .filter((a) => timeToMinutes(a.start) >= 18 * 60)
       .reduce((m, a) => Math.min(m, timeToMinutes(a.start)), 23 * 60 + 45);
     const boundarySnapTol = 15;
+
+    const sourceSpansNextDay = sourceRoutine
+      ? (sourceRoutine.endsNextDay ?? sourceRoutine.end <= sourceRoutine.start)
+      : sourceCommitment
+        ? (sourceCommitment.endsNextDay || resolveCommitmentEndDate(sourceCommitment) > sourceCommitment.date || sourceCommitment.end <= sourceCommitment.start)
+        : false;
+
+    // Cross-day blocks keep total duration. Dragging changes how much spills into next day.
+    if (sourceSpansNextDay) {
+      let crossStart = typeof dragDeltaMin === "number" ? sourceStartMin + dragDeltaMin : movedStart;
+      const clampedCrossStart = Math.max(wakeMin, Math.min(crossStart, bedMin - 15));
+      const absoluteEnd = clampedCrossStart + movedDur;
+      const nextStart = minutesToTime(clampedCrossStart);
+      const nextEnd = minutesToTime(absoluteEnd % (24 * 60));
+      const nextEndsNextDay = absoluteEnd > 24 * 60;
+
+      if (sourceRoutine) {
+        const candidate: RoutineBlock = {
+          ...sourceRoutine,
+          start: nextStart,
+          end: nextEnd,
+          endsNextDay: nextEndsNextDay,
+        };
+        const candidateSegments = buildRoutineWeeklySegments(candidate);
+        const conflict = data.routine.find((r) => {
+          if (r.id === sourceRoutine.id) return false;
+          const existingSegments = buildRoutineWeeklySegments(r);
+          return candidateSegments.some((candidateSegment) =>
+            existingSegments.some((existingSegment) =>
+              candidateSegment.day === existingSegment.day
+              && candidateSegment.startMin < existingSegment.endMin
+              && existingSegment.startMin < candidateSegment.endMin,
+            ),
+          );
+        });
+        if (conflict) {
+          return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
+        }
+
+        setData((d) => withDerived({
+          ...d,
+          routine: d.routine.map((r) =>
+            r.id === sourceRoutine.id
+              ? { ...r, start: nextStart, end: nextEnd, endsNextDay: nextEndsNextDay }
+              : r,
+          ),
+        }));
+        return null;
+      }
+
+      if (sourceCommitment) {
+        const baseDate = sourceCommitment.date;
+        const nextEndDate = nextEndsNextDay ? addDaysToIso(baseDate, 1) : baseDate;
+        const candidate: Commitment = {
+          ...sourceCommitment,
+          start: nextStart,
+          end: nextEnd,
+          endsNextDay: nextEndsNextDay,
+          endDate: nextEndDate,
+        };
+        const conflict = data.commitments.find((c) => c.id !== sourceCommitment.id && intervalsOverlap(commitmentInterval(c), commitmentInterval(candidate)));
+        if (conflict) {
+          return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
+        }
+
+        setData((d) => withDerived({
+          ...d,
+          commitments: d.commitments.map((c) =>
+            c.id === sourceCommitment.id
+              ? { ...c, start: nextStart, end: nextEnd, endsNextDay: nextEndsNextDay, endDate: nextEndDate }
+              : c,
+          ),
+        }));
+        return null;
+      }
+    }
+
     let candidateStart = movedStart;
     // Snap only when crossing into sleep, not when merely near the boundary.
     if (movedStart < wakeMin && wakeMin - movedStart <= boundarySnapTol) {
@@ -703,11 +795,23 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       const routine = d.routine.map((r) => {
         if (r.day !== day) return r;
         const adj = agendaMap.get(`routine:${r.id}`);
-        return adj ? { ...r, start: adj.start, end: adj.end } : r;
+        if (!adj) return r;
+        return {
+          ...r,
+          start: adj.start,
+          end: adj.end,
+          endsNextDay: adj.end <= adj.start,
+        };
       });
       const commitments = d.commitments.map((c) => {
         const adj = agendaMap.get(`commitment:${c.id}`);
-        return adj ? { ...c, start: adj.start, end: adj.end } : c;
+        return adj ? {
+          ...c,
+          start: adj.start,
+          end: adj.end,
+          endsNextDay: adj.end <= adj.start,
+          endDate: (adj.end <= adj.start) ? addDaysToIso(c.date, 1) : c.date,
+        } : c;
       });
       return withDerived({ ...d, routine, commitments });
     });
@@ -719,6 +823,21 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       const current = d.meta.sleepWindow ?? normalizeSleepWindow(d);
       const next = sanitizeSleepWindow({ ...current, ...patch }, d.meta.workdayStart);
       return withDerived({ ...d, meta: { ...d.meta, sleepWindow: next } });
+    });
+  }, []);
+
+  const addSleepCut = useCallback((cut: SleepCut) => {
+    setData((d) => {
+      // Remove any existing cut for this date, then add the new one
+      const cuts = (d.meta.sleepCuts ?? []).filter((c) => c.date !== cut.date);
+      return withDerived({ ...d, meta: { ...d.meta, sleepCuts: [...cuts, cut] } });
+    });
+  }, []);
+
+  const removeSleepCut = useCallback((date: string) => {
+    setData((d) => {
+      const cuts = (d.meta.sleepCuts ?? []).filter((c) => c.date !== date);
+      return withDerived({ ...d, meta: { ...d.meta, sleepCuts: cuts } });
     });
   }, []);
 
@@ -781,6 +900,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCommitment,
       pushMoveDayChain,
       updateSleepWindow,
+      addSleepCut,
+      removeSleepCut,
       updateCategory,
       resetCategoryNaming,
       applySuggestion,
@@ -799,6 +920,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCommitment,
       pushMoveDayChain,
       updateSleepWindow,
+      addSleepCut,
+      removeSleepCut,
       updateCategory,
       resetCategoryNaming,
       applySuggestion,
@@ -839,6 +962,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
     if (segEnd <= segStart) return [];
     return [{
       id: c.id,
+      sourceId: c.id,
       title: c.title,
       titleCustom: c.titleCustom,
       start: toTime(segStart),

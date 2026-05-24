@@ -46,6 +46,16 @@ export interface Suggestion {
     | { type: "remove-routine"; match: Partial<RoutineBlock> };
 }
 
+/** A mid-day sleep cut for a specific date.
+ *  Splits the day's timeline into two visible segments separated by a sleep divider bar.
+ *  start/end are clock times ("HH:MM") within the same calendar day.
+ *  This is purely a visual/structural cut — not a block category. */
+export interface SleepCut {
+  date: string;   // YYYY-MM-DD
+  start: string;  // "HH:MM" — when sleep begins
+  end: string;    // "HH:MM" — when sleep ends (same calendar day, end > start)
+}
+
 export interface ScheduleData {
   meta: {
     version: number;
@@ -54,6 +64,7 @@ export interface ScheduleData {
     workdayStart: string;
     workdayEnd: string;
     sleepWindow?: { start: string; end: string };
+    sleepCuts?: SleepCut[];
   };
   categories: Category[];
   routine: RoutineBlock[];

@@ -157,6 +157,15 @@
 
 **Current step: 3 - Weekly Agenda polish + small-block and cross-day regression fixes** <- in progress
 
+## MAX PRIORITY - Drag regressions to fix later
+
+- [ ] Crossday routine drag can feel glued to the bottom edge instead of moving freely upward.
+- [ ] Dragging a crossday block downward can shrink the visible span instead of preserving duration.
+- [ ] Dragging a crossday block near another block can act like a magnet and snap too aggressively.
+- [ ] Crossday blocks can lose the clear top/bottom spill signal during drag.
+- [ ] Block time rows can still render in the wrong position or read as secondary metadata.
+- [ ] Drag interactions need a dedicated regression sweep after any sleep/timeline layout change.
+
 ## 12. Session Log - 2026-05-22 (round 4)
 
 ### Solved in this session

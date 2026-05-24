@@ -41,6 +41,12 @@ function snapTime(min: number) {
   return `${String(Math.floor(c / 60)).padStart(2, "0")}:${String(c % 60).padStart(2, "0")}`;
 }
 
+function clockTimeFromMin(min: number) {
+  const day = 24 * 60;
+  const wrapped = ((Math.round(min / SNAP) * SNAP) % day + day) % day;
+  return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+}
+
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
@@ -243,6 +249,8 @@ export function DayPlanner() {
     pushMoveDayChain,
     updateRoutine,
     updateSleepWindow,
+    addSleepCut,
+    removeSleepCut,
     removeRoutine,
     updateCommitment,
     removeCommitment,
@@ -258,6 +266,8 @@ export function DayPlanner() {
 
   const rawAgenda = buildAgendaForDate(data, selectedDate);
   const selectedDateIso = toIsoDate(selectedDate);
+  const routineById = useMemo(() => new Map(data.routine.map((r) => [r.id, r])), [data.routine]);
+  const commitmentById = useMemo(() => new Map(data.commitments.map((c) => [c.id, c])), [data.commitments]);
   const liveId = isToday
     ? rawAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end))?.id
     : undefined;
@@ -283,13 +293,19 @@ export function DayPlanner() {
     ? { start: sleepWindow.start, end: sleepWindow.end }
     : null;
 
+  // Sleep cut for this specific date (mid-day divider, independent of sleepWindow)
+  const sleepCutForDay = (data.meta.sleepCuts ?? []).find((c) => c.date === selectedDateIso) ?? null;
+
   const defaultStartMin = timeToMinutes(data.meta.workdayStart);
   const defaultEndMin = timeToMinutes(data.meta.workdayEnd);
 
+  // Timeline boundaries: driven by content, not by sleepWindow.
+  // sleepWindow only controls the visual boundary badges (top/bottom),
+  // not where the scrollable timeline starts/ends.
+  // This allows crossday blocks to reach 24:00 naturally.
   let startMin = hasCrossDaySleep ? sleepEndMin : defaultStartMin;
-  let endMin = hasCrossDaySleep ? sleepStartMin : defaultEndMin;
+  let endMin = defaultEndMin;
 
-  // For same-day sleep, ensure the timeline always encompasses the full sleep window.
   if (hasSameDaySleep) {
     startMin = Math.min(startMin, sleepStartMin);
     endMin = Math.max(endMin, sleepEndMin);
@@ -300,6 +316,17 @@ export function DayPlanner() {
 
   startMin = Math.min(startMin, firstWorkStart);
   endMin = Math.max(endMin, lastWorkEnd);
+
+  // Extend to show sleep cut zone if it falls outside computed bounds
+  if (sleepCutForDay) {
+    startMin = Math.min(startMin, timeToMinutes(sleepCutForDay.start));
+    endMin = Math.max(endMin, timeToMinutes(sleepCutForDay.end));
+  }
+
+  // Cross-day sleep: extend to include the evening sleep zone visually
+  if (hasCrossDaySleep) {
+    endMin = Math.max(endMin, sleepStartMin);
+  }
 
   if (endMin - startMin < 60) {
     startMin = defaultStartMin;
@@ -313,34 +340,46 @@ export function DayPlanner() {
   if (isToday) {
     startMin = Math.min(startMin, Math.max(0, nowMin - 60));
     endMin = Math.max(endMin, Math.min(24 * 60, nowMin + 60));
-
-    // Keep "jump to now" context without extending beyond explicit sleep bounds.
-    if (hasCrossDaySleep) {
-      startMin = Math.max(startMin, sleepEndMin);
-      endMin = Math.min(endMin, sleepStartMin);
-    }
   }
 
-  const sameDaySleepGap = useMemo(() => {
-    if (!sameDaySleep) return null;
-    const gapStart = Math.max(startMin, timeToMinutes(sameDaySleep.start));
-    const gapEnd = Math.min(endMin, timeToMinutes(sameDaySleep.end));
-    if (gapEnd - gapStart < SNAP) return null;
-    return { startMin: gapStart, endMin: gapEnd };
-  }, [sameDaySleep, startMin, endMin]);
+  const sleepSplit = useMemo(() => {
+    if (!sleepCutForDay) return null;
+    const cutStart = Math.max(startMin, timeToMinutes(sleepCutForDay.start));
+    const cutEnd = Math.min(endMin, timeToMinutes(sleepCutForDay.end));
+    if (cutEnd - cutStart < SNAP) return null;
+    return { startMin: cutStart, endMin: cutEnd, durMin: cutEnd - cutStart };
+  }, [sleepCutForDay, startMin, endMin]);
+
+  const projectMinute = (minute: number) => {
+    if (!sleepSplit) return minute;
+    if (minute >= sleepSplit.endMin) return minute - sleepSplit.durMin;
+    if (minute > sleepSplit.startMin) return sleepSplit.startMin;
+    return minute;
+  };
+
+  const topForProjected = (time: string) => ((projectMinute(timeToMinutes(time)) - projectMinute(startMin)) / 60) * HOUR_PX;
 
   const timeline = useMemo(() => {
+    if (sleepSplit) {
+      const before = sleepSplit.startMin - startMin >= SNAP
+        ? buildTimeline(nonSleepAgenda, startMin, sleepSplit.startMin)
+        : [];
+      const after = endMin - sleepSplit.endMin >= SNAP
+        ? buildTimeline(nonSleepAgenda, sleepSplit.endMin, endMin)
+        : [];
+      return [...before, ...after];
+    }
     return buildTimeline(nonSleepAgenda, startMin, endMin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(nonSleepAgenda), startMin, endMin, selectedDateIso]);
+  }, [JSON.stringify(nonSleepAgenda), startMin, endMin, selectedDateIso, sleepSplit]);
 
-  const totalHeight = ((endMin - startMin) / 60) * HOUR_PX;
+  const totalHeight = ((endMin - startMin - (sleepSplit?.durMin ?? 0)) / 60) * HOUR_PX;
   const firstVisibleHour = Math.ceil(startMin / 60);
   const lastVisibleHour = Math.floor(endMin / 60);
   const hours = Array.from(
     { length: Math.max(0, lastVisibleHour - firstVisibleHour + 1) },
     (_, i) => firstVisibleHour + i,
-  );
+  ).filter((h) => !sleepSplit || h * 60 <= sleepSplit.startMin || h * 60 >= sleepSplit.endMin);
   const clampedNowMin = Math.max(startMin, Math.min(nowMin, endMin));
   const isNowClamped = isToday && clampedNowMin !== nowMin;
   const topBadgeLane = morningSleep ? 26 : 0;
@@ -352,69 +391,147 @@ export function DayPlanner() {
     source: "routine" | "commitment";
     originY: number;
     origStartMin: number;
-    origEndMin: number;
+    origDurMin: number;
+    sourceSpansNextDay: boolean;
+    minStartMin: number;
+    maxStartMin: number;
   } | null>(null);
   const [dragDeltaMin, setDragDeltaMin] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragDeltaRef = useRef(0);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const [dragLimitHint, setDragLimitHint] = useState<string | null>(null);
 
   const [editItem, setEditItem] = useState<AgendaItem | null>(null);
   const [editSleep, setEditSleep] = useState(false);
+  const [editSleepCut, setEditSleepCut] = useState(false);
   const [inspectItem, setInspectItem] = useState<AgendaItem | null>(null);
 
   useEffect(() => {
     if (!isToday || !scrollRef.current) return;
-    scrollRef.current.scrollTo({ top: Math.max(0, ((nowMin - startMin) / 60) * HOUR_PX + topBadgeLane - 200), behavior: "smooth" });
+    scrollRef.current.scrollTo({ top: Math.max(0, ((projectMinute(nowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane - 200), behavior: "smooth" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (dragCleanupRef.current) {
+        dragCleanupRef.current();
+        dragCleanupRef.current = null;
+      }
+    };
   }, []);
 
   function jumpToNow() {
     scrollRef.current?.scrollTo({
-      top: Math.max(0, ((nowMin - startMin) / 60) * HOUR_PX + topBadgeLane - 200),
+      top: Math.max(0, ((projectMinute(nowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane - 200),
       behavior: "smooth",
     });
   }
 
-  function onGripDown(e: React.PointerEvent, a: AgendaItem) {
-    if (a.source === "routine" && a.derived) return;
+  function clearDragState() {
+    dragState.current = null;
+    setDraggingId(null);
+    setDragDeltaMin(0);
+    dragDeltaRef.current = 0;
+    setDragLimitHint(null);
+  }
+
+  function updateDragPreview(snapped: number) {
+    setDragDeltaMin(snapped);
+    dragDeltaRef.current = snapped;
+    if (dragState.current?.sourceSpansNextDay) {
+      const candidateStart = dragState.current.origStartMin + snapped;
+      if (candidateStart < dragState.current.minStartMin) {
+        setDragLimitHint(bcp47.toLowerCase().startsWith("pt") ? "Limite superior" : "Top limit");
+      } else if (candidateStart > dragState.current.maxStartMin) {
+        setDragLimitHint(bcp47.toLowerCase().startsWith("pt") ? "Limite inferior" : "Bottom limit");
+      } else {
+        setDragLimitHint(null);
+      }
+    } else {
+      setDragLimitHint(null);
+    }
+  }
+
+  function commitDrag(snapped: number) {
+    if (!dragState.current) return;
+    const { sourceId, source, origStartMin, origDurMin } = dragState.current;
+    if (snapped !== 0) {
+      const ns = clockTimeFromMin(origStartMin + snapped);
+      const ne = clockTimeFromMin(origStartMin + origDurMin + snapped);
+      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne, snapped);
+      if (err) toast({ title: "Conflict", description: err });
+    }
+  }
+
+  function onGripDown(e: React.MouseEvent, a: AgendaItem) {
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (dragCleanupRef.current) {
+      dragCleanupRef.current();
+      dragCleanupRef.current = null;
+    }
+    const sourceId = a.sourceId ?? a.id;
+    let sourceStart = a.start;
+    let sourceEnd = a.end;
+    let sourceSpansNextDay = false;
+    if (a.source === "routine") {
+      const src = routineById.get(sourceId);
+      if (src) {
+        sourceStart = src.start;
+        sourceEnd = src.end;
+        sourceSpansNextDay = src.endsNextDay ?? src.end <= src.start;
+      }
+    } else {
+      const src = commitmentById.get(sourceId);
+      if (src) {
+        sourceStart = src.start;
+        sourceEnd = src.end;
+        sourceSpansNextDay = src.endsNextDay ?? (Boolean(src.endDate && src.endDate > src.date) || src.end <= src.start);
+      }
+    }
+    const wakeMin = sleepStartMin > sleepEndMin ? sleepEndMin : 0;
+    const minCrossStart = Math.max(wakeMin, 24 * 60 - durationMin(sourceStart, sourceEnd) + SNAP);
+    const maxCrossStart = 24 * 60 - SNAP;
     dragState.current = {
       id: a.id,
-      sourceId: a.sourceId ?? a.id,
+      sourceId,
       source: a.source,
       originY: e.clientY,
-      origStartMin: timeToMinutes(a.start),
-      origEndMin: timeToMinutes(a.end),
+      origStartMin: timeToMinutes(sourceStart),
+      origDurMin: durationMin(sourceStart, sourceEnd),
+      sourceSpansNextDay,
+      minStartMin: sourceSpansNextDay && minCrossStart <= maxCrossStart ? minCrossStart : wakeMin,
+      maxStartMin: sourceSpansNextDay && minCrossStart <= maxCrossStart ? maxCrossStart : 24 * 60 - SNAP,
     };
     setDraggingId(a.id);
     setDragDeltaMin(0);
-  }
+    dragDeltaRef.current = 0;
+    setDragLimitHint(null);
 
-  function onGripMove(e: React.PointerEvent) {
-    if (!dragState.current) return;
-    const snapped = Math.round(((e.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
-    setDragDeltaMin(snapped);
-  }
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!dragState.current) return;
+      const snapped = Math.round(((ev.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
+      updateDragPreview(snapped);
+    };
+    const handleMouseDone = (ev: MouseEvent) => {
+      if (!dragState.current) return;
+      const fallbackSnapped = Math.round(((ev.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
+      const snapped = dragDeltaRef.current !== 0 ? dragDeltaRef.current : fallbackSnapped;
+      commitDrag(snapped);
+      if (dragCleanupRef.current) {
+        dragCleanupRef.current();
+        dragCleanupRef.current = null;
+      }
+      clearDragState();
+    };
 
-  function onGripUp(e: React.PointerEvent) {
-    if (!dragState.current) return;
-    const { sourceId, source, origStartMin, origEndMin } = dragState.current;
-    const snapped = Math.round(((e.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
-    if (snapped !== 0) {
-      const ns = snapTime(origStartMin + snapped);
-      const ne = snapTime(origEndMin + snapped);
-      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne);
-      if (err) toast({ title: "Conflict", description: err });
-    }
-    dragState.current = null;
-    setDraggingId(null);
-    setDragDeltaMin(0);
-  }
-
-  function onGripCancel() {
-    dragState.current = null;
-    setDraggingId(null);
-    setDragDeltaMin(0);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseDone, { once: true });
+    dragCleanupRef.current = () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseDone);
+    };
   }
 
   function handleSave(patch: Partial<AgendaItem> & { titleCustom?: string; endsNextDay?: boolean }) {
@@ -442,23 +559,26 @@ export function DayPlanner() {
     ? t.chronos.today.eyebrow
     : selectedDate.toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "short" });
 
-  const timelineHeight = totalHeight + topBadgeLane;
+  const needsBottomSleepLane = Boolean(eveningSleep && timeToMinutes(eveningSleep.start) >= 23 * 60 + 30);
+  const bottomBadgeLane = needsBottomSleepLane ? 28 : 0;
+  const timelineContentHeight = totalHeight + topBadgeLane;
+  const timelineHeight = timelineContentHeight + bottomBadgeLane;
 
   const positionedTimeline = useMemo(() => {
     return timeline.map((item, index) => {
-      const top = topFor(item.start, startMin) + topBadgeLane;
+      const top = topForProjected(item.start) + topBadgeLane;
       const desiredHeight = "type" in item
         ? (item.type === "free"
           ? freeHeight(item.start, item.end)
           : Math.max(12, ((timeToMinutes(item.end) - timeToMinutes(item.start)) / 60) * HOUR_PX - 2))
         : blockHeight(item.start, item.end);
       const nextTop = index < timeline.length - 1
-        ? topFor(timeline[index + 1].start, startMin) + topBadgeLane
-        : timelineHeight;
+        ? topForProjected(timeline[index + 1].start) + topBadgeLane
+        : timelineContentHeight;
       const maxHeightWithoutOverlap = Math.max(6, nextTop - top - 2);
       return { item, top, height: Math.min(desiredHeight, maxHeightWithoutOverlap) };
     });
-  }, [timeline, startMin, topBadgeLane, timelineHeight]);
+  }, [timeline, topBadgeLane, timelineContentHeight]);
 
   return (
     <div className="chronos-card p-0 overflow-hidden">
@@ -497,7 +617,7 @@ export function DayPlanner() {
           {hours.map((h) => {
             const hideLabel = isNowClamped && clampedNowMin === h * 60;
             return (
-              <div key={h} className="absolute left-0 right-0 border-t border-border/30 pointer-events-none" style={{ top: ((h * 60 - startMin) / 60) * HOUR_PX + topBadgeLane }}>
+              <div key={h} className="absolute left-0 right-0 border-t border-border/30 pointer-events-none" style={{ top: ((projectMinute(h * 60) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}>
                 {!hideLabel && (
                   <span className="absolute -top-2 left-3 text-[10px] num text-muted-foreground/50 bg-card px-1">{formatHourLabel(h, bcp47)}</span>
                 )}
@@ -509,7 +629,7 @@ export function DayPlanner() {
             <>
               <div
                 className="absolute left-[68px] right-4 z-[6] pointer-events-none"
-                style={{ top: ((clampedNowMin - startMin) / 60) * HOUR_PX + topBadgeLane }}
+                style={{ top: ((projectMinute(clampedNowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
               >
                 {isNowClamped
                   ? <div className="h-[3px] w-16 rounded-full bg-gradient-to-r from-primary/85 via-primary/60 to-transparent" />
@@ -519,7 +639,7 @@ export function DayPlanner() {
               </div>
               <div
                 className="absolute left-2 z-[12] pointer-events-none"
-                style={{ top: ((clampedNowMin - startMin) / 60) * HOUR_PX + topBadgeLane }}
+                style={{ top: ((projectMinute(clampedNowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
               >
                 <div className="relative -translate-y-1/2 flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-card" />
@@ -531,54 +651,71 @@ export function DayPlanner() {
             </>
           )}
 
+          {/* ── SLEEP BOUNDARY BADGES (top / bottom) ─────────────────────────
+               Small pill buttons at the edges, like before. Clicking opens
+               the global sleepWindow editor. */}
+
           {morningSleep && (
-            <div
-              className="absolute left-[68px] right-4 z-[20]"
-              style={{ top: 2, height: topBadgeLane }}
-            >
+            <div className="absolute left-[68px] right-4 z-[20]" style={{ top: 2, height: topBadgeLane }}>
               <button
                 onClick={() => setEditSleep(true)}
-                className="absolute right-0 bottom-[4px] block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
+                className="absolute right-0 bottom-[4px] text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
               >
                 {bcp47.toLowerCase().startsWith("pt") ? `Sono até ${formatClock(morningSleep.end, bcp47)}` : `Sleep until ${formatClock(morningSleep.end, bcp47)}`}
               </button>
             </div>
           )}
-          {eveningSleep && (
+          {eveningSleep && !sleepCutForDay && (
             <div
               className="absolute left-[68px] right-4 z-[20]"
-              style={{ top: topFor(eveningSleep.start, startMin) + topBadgeLane }}
+              style={{
+                top: timelineContentHeight - 24,
+              }}
             >
-              <button
-                onClick={() => setEditSleep(true)}
-                className="ml-auto block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
-              >
-                {bcp47.toLowerCase().startsWith("pt") ? `Sono às ${formatClock(eveningSleep.start, bcp47)}` : `Sleep at ${formatClock(eveningSleep.start, bcp47)}`}
-              </button>
+              <div className="flex items-center justify-end gap-1.5">
+                {!sleepCutForDay && (
+                  <button
+                    onClick={() => setEditSleepCut(true)}
+                    className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-dashed border-primary/25 text-primary/50 hover:bg-primary/10 hover:border-primary/40 hover:text-primary/80 transition-colors"
+                    title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar sono neste dia" : "Add sleep for this day"}
+                  >
+                    + {bcp47.toLowerCase().startsWith("pt") ? "Sono" : "Add sleep"}
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditSleep(true)}
+                  className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
+                >
+                  {bcp47.toLowerCase().startsWith("pt") ? `Sono às ${formatClock(eveningSleep.start, bcp47)}` : `Sleep at ${formatClock(eveningSleep.start, bcp47)}`}
+                </button>
+              </div>
             </div>
           )}
           {sameDaySleep && (
             <>
-              {/* Sleep at — at void start, same style as cross-day evening button */}
-              <div
-                className="absolute left-[68px] right-4 z-[20]"
-                style={{ top: topFor(sameDaySleep.start, startMin) + topBadgeLane }}
-              >
-                <button
-                  onClick={() => setEditSleep(true)}
-                  className="ml-auto block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
-                >
-                  {bcp47.toLowerCase().startsWith("pt") ? `Sono às ${formatClock(sameDaySleep.start, bcp47)}` : `Sleep at ${formatClock(sameDaySleep.start, bcp47)}`}
-                </button>
+              <div className="absolute left-[68px] right-4 z-[20]" style={{ top: topForProjected(sameDaySleep.start) + topBadgeLane }}>
+                <div className="flex items-center justify-end gap-1.5">
+                  {!sleepCutForDay && (
+                    <button
+                      onClick={() => setEditSleepCut(true)}
+                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-dashed border-primary/25 text-primary/50 hover:bg-primary/10 hover:border-primary/40 hover:text-primary/80 transition-colors"
+                      title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar sono neste dia" : "Add sleep for this day"}
+                    >
+                      + {bcp47.toLowerCase().startsWith("pt") ? "Sono" : "Add sleep"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setEditSleep(true)}
+                    className="ml-auto block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
+                  >
+                    {bcp47.toLowerCase().startsWith("pt") ? `Sono às ${formatClock(sameDaySleep.start, bcp47)}` : `Sleep at ${formatClock(sameDaySleep.start, bcp47)}`}
+                  </button>
+                </div>
               </div>
-              {/* Sleep until — at void end, same style as cross-day morning button */}
-              <div
-                className="absolute left-[68px] right-4 z-[20]"
-                style={{ top: topFor(sameDaySleep.end, startMin) + topBadgeLane - 22, height: 26 }}
-              >
+              <div className="absolute left-[68px] right-4 z-[20]" style={{ top: timelineContentHeight - 24, height: 24 }}>
                 <button
                   onClick={() => setEditSleep(true)}
-                  className="absolute right-0 bottom-[4px] block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
+                  className="absolute right-0 top-0 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
                 >
                   {bcp47.toLowerCase().startsWith("pt") ? `Sono até ${formatClock(sameDaySleep.end, bcp47)}` : `Sleep until ${formatClock(sameDaySleep.end, bcp47)}`}
                 </button>
@@ -586,26 +723,43 @@ export function DayPlanner() {
             </>
           )}
 
-          {sameDaySleepGap && (
-            <div
-              className="absolute left-[68px] right-4 z-[8] pointer-events-none rounded-xl border border-primary/25 bg-primary/[0.06] shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.05)] overflow-hidden"
-              style={{
-                top: ((sameDaySleepGap.startMin - startMin) / 60) * HOUR_PX + topBadgeLane,
-                height: Math.max(12, durationMin(snapTime(sameDaySleepGap.startMin), snapTime(sameDaySleepGap.endMin)) / 60 * HOUR_PX),
-              }}
-            >
-              <div className="absolute inset-x-0 top-0 h-px bg-primary/10" />
-              <div className="absolute inset-x-0 bottom-0 h-px bg-primary/10" />
-              <div className="relative h-full px-3 py-2 flex flex-col justify-between">
-                <span className="text-[10px] uppercase tracking-wider text-primary/60">
-                  {bcp47.toLowerCase().startsWith("pt") ? "Sono" : "Sleep"}
-                </span>
-                <span className="text-[10px] num uppercase tracking-wider text-muted-foreground/50 self-end">
-                  {fmtDur(durationMin(snapTime(sameDaySleepGap.startMin), snapTime(sameDaySleepGap.endMin)))}
-                </span>
-              </div>
-            </div>
-          )}
+          {/* ── SLEEP CUT DIVIDER (mid-day, per-date) ────────────────────────
+               A full-width bar that splits the timeline into two segments.
+               Clicking opens the SleepCutDialog for this specific day. */}
+          {sleepSplit && (() => {
+            const splitTop = topForProjected(snapTime(sleepSplit.startMin)) + topBadgeLane;
+            const splitBottom = topForProjected(snapTime(sleepSplit.endMin)) + topBadgeLane;
+            const splitHeight = Math.max(34, splitBottom - splitTop);
+            const isPt = bcp47.toLowerCase().startsWith("pt");
+            return (
+              <button
+                onClick={() => setEditSleepCut(true)}
+                className="group absolute left-[68px] right-4 z-[25] rounded-md border border-primary/30 bg-primary/10 text-primary/85 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/15 hover:border-primary/45 transition-colors"
+                style={{ top: splitTop, height: splitHeight }}
+                aria-label={isPt ? "Editar divisão de sono" : "Edit sleep split"}
+              >
+                <div className="absolute left-2 right-2 top-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider num">
+                  <span>{isPt ? "Sono" : "Sleep"}</span>
+                  <span>{formatClock(sleepCutForDay?.start ?? "00:00", bcp47)}</span>
+                </div>
+                <div className="absolute left-2 right-2 top-6 bottom-6 rounded border border-dashed border-primary/20 bg-primary/5" />
+                <div className="absolute left-2 right-2 bottom-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider num">
+                  <span>{formatClock(sleepCutForDay?.end ?? "00:00", bcp47)}</span>
+                  <span className="opacity-75">{fmtDur(sleepSplit.durMin)}</span>
+                </div>
+                <div
+                  className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => { e.stopPropagation(); removeSleepCut(selectedDateIso); }}
+                >
+                  <span className="text-[10px] uppercase tracking-wider text-primary/70 hover:text-rose-500 border border-primary/20 hover:border-rose-400/50 rounded px-1.5 py-0.5 bg-card transition-colors">
+                    {isPt ? "Remover" : "Remove"}
+                  </span>
+                </div>
+              </button>
+            );
+          })()}
+
+
 
           <div className="absolute left-[68px] right-4 top-0 bottom-0 z-10">
             {positionedTimeline.map(({ item, top, height }) => {
@@ -651,55 +805,76 @@ export function DayPlanner() {
               const sm = timeToMinutes(a.start);
               const em = timeToMinutes(a.end);
               const blockMinutes = Math.max(0, em - sm);
+              let displayStart = a.start;
+              let displayEnd = a.end;
+              let displaySpansNextDay = a.end <= a.start;
+              if (a.source === "routine" && a.sourceId) {
+                const src = routineById.get(a.sourceId);
+                if (src) {
+                  displayStart = src.start;
+                  displayEnd = src.end;
+                  displaySpansNextDay = src.endsNextDay ?? src.end <= src.start;
+                }
+              }
+              if (a.source === "commitment" && a.sourceId) {
+                const src = commitmentById.get(a.sourceId);
+                if (src) {
+                  displayStart = src.start;
+                  displayEnd = src.end;
+                  displaySpansNextDay = src.endsNextDay ?? (Boolean(src.endDate && src.endDate > src.date) || src.end <= src.start);
+                }
+              }
+              const displayDur = durationMin(displayStart, displayEnd);
               const isDragging = draggingId === a.id;
-              const preOffset = top - (topFor(a.start, startMin) + topBadgeLane);
-              const effectiveTop = isDragging ? topFor(snapTime(sm + dragDeltaMin), startMin) + topBadgeLane + preOffset : top;
+              const preOffset = top - (topForProjected(a.start) + topBadgeLane);
+              const effectiveTop = isDragging ? topForProjected(snapTime(sm + dragDeltaMin)) + topBadgeLane + preOffset : top;
               const bh = height;
               const s = kindStyle[a.kind];
               const live = a.id === liveId;
-              // Size tiers — drive all layout choices
-              const microBlock   = bh < 20;  // strip: no grip icon, ultra-tight padding
-              // Tiny mode is duration-based: only true 15-minute blocks.
-              const tinyBlock    = blockMinutes <= 15;
-              // 45-minute blocks should behave like normal blocks.
-              const compactBlock = blockMinutes < 45;
-              const thirtyBlock = blockMinutes === 30;
-              const isFortyFiveBlock = blockMinutes === 45;
+
+              // ── Block size tiers ──────────────────────────────────────────
+              // "full"    ≥75 min  → full layout: time row + chip + title + notes below
+              // "hour"    60 min   → chip + title inline, notes as pills to the right
+              // "compact" 30 min   → chip + title + compact time meta on right; no notes below
+              // "micro"   ≤15 min  → single dense row: color square + title + sticky icon
+              const tier: "full" | "hour" | "compact" | "micro" =
+                blockMinutes >= 75 ? "full"
+                : blockMinutes === 60 ? "hour"
+                : blockMinutes <= 15 ? "micro"
+                : "compact"; // 30 and 45
+
               const noteLines = parseNotes(a.notes);
               const hasNotes = noteLines.length > 0;
-              const preferRightNoteLane = blockMinutes === 60;
-              const showInlineOneHourNotes = hasNotes && !tinyBlock && preferRightNoteLane;
-              // Progressive notes visibility: 2 lines -> 1 line -> icon only
-              const previewLineCount = bh >= 62 ? 2 : bh >= 38 ? 1 : 0;
-              const showStickyPreview = hasNotes && !tinyBlock && previewLineCount > 0 && !preferRightNoteLane;
-              const showStickyBadge = hasNotes && !showInlineOneHourNotes;
-              const showStickyMetaFallback = hasNotes && !tinyBlock && !showStickyPreview && blockMinutes > 60;
-              const showTinySticky = hasNotes;
-              const showCompactMeta = compactBlock && !tinyBlock && bh >= 28 && !thirtyBlock;
-              const showRightMetaLane = showStickyMetaFallback || showCompactMeta;
-              const showCategoryChip = !tinyBlock;
               const flatTop = Boolean(a.continuesFromPrevDay) || a.start === "00:00";
               const flatBottom = Boolean(a.continuesToNextDay) || a.end === "24:00";
               const firstNoteTone = hasNotes ? noteLines[0].tone : "amber";
               const noteTone = noteToneStyles[firstNoteTone];
               const blockTitle = scheduleText.blockTitle(a.title, a.titleCustom);
 
-              // Graduated layout values keyed to block height tier
+              // Derived layout flags per tier
+              const isMicro   = tier === "micro";
+              const isCompact = tier === "compact";
+              const isHour    = tier === "hour";
+              const isFull    = tier === "full";
+
+              // Notes display
+              const showNotesRight  = isHour && hasNotes;   // pills to the right of title
+              const previewLineCount = bh >= 62 ? 2 : bh >= 38 ? 1 : 0;
+              const showNotesBelow  = isFull && hasNotes && previewLineCount > 0;
+              const showStickyBadge = hasNotes && !showNotesRight && !showNotesBelow;
+
+              // Layout constants per tier
               const gripW    = "w-7";
               const dotLeft  = "left-7";
-              const cPl      = microBlock ? "pl-3" : "pl-4";
-              const cPy      = (microBlock || tinyBlock) ? "py-0.5" : "py-1.5";
-              const titleSz  = microBlock ? "text-[9px] leading-none" : tinyBlock ? "text-[10px] leading-tight" : compactBlock ? "text-xs" : "text-sm";
-              const editW    = tinyBlock ? "w-9" : compactBlock ? "w-6" : "w-9";
-              // Keep edit visible on 30/45-minute compact blocks; only tiny keeps hover reveal.
-              const editVis  = tinyBlock ? "opacity-0 group-hover:opacity-100" : "";
-              const editIcon = microBlock ? "h-2.5 w-2.5" : "h-3.5 w-3.5";
-              const titleRowMt = "mt-0.5";
-              const railShape = microBlock
+              const cPl      = isMicro ? "pl-2" : "pl-4";
+              const cPy      = isMicro ? "py-0" : "py-1.5";
+              const titleSz  = isMicro ? "text-[10px] leading-none" : isCompact ? "text-xs" : isHour ? "text-sm" : "text-sm";
+              const editW    = isMicro ? "w-7" : isCompact ? "w-7" : "w-9";
+              const editVis  = isMicro ? "opacity-0 group-hover:opacity-100" : "";
+              const editIcon = isMicro ? "h-2.5 w-2.5" : "h-3.5 w-3.5";
+              const railShape = isMicro
                 ? "top-0.5 bottom-0.5 w-[2px] rounded-none"
-                : tinyBlock
-                  ? "top-0.5 bottom-0.5 w-[2px] rounded-none"
-                  : "top-1.5 bottom-1.5 w-[2px] rounded-full";
+                : "top-1.5 bottom-1.5 w-[2px] rounded-full";
 
               return (
                 <div
@@ -730,18 +905,13 @@ export function DayPlanner() {
                   <div className="flex items-center h-full overflow-hidden">
                     <div
                       className={`${gripW} h-full shrink-0 flex items-center justify-center touch-none ${
-                        a.source === "routine" && a.derived
-                          ? "text-muted-foreground/20 cursor-not-allowed"
-                          : "text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing"
+                        "text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing"
                       }`}
                       data-no-open="true"
-                      onPointerDown={(e) => onGripDown(e, a)}
-                      onPointerMove={onGripMove}
-                      onPointerUp={onGripUp}
-                      onPointerCancel={onGripCancel}
+                      onMouseDown={(e) => onGripDown(e, a)}
                     >
-                      {tinyBlock ? (
-                        <div className="h-3.5 w-3.5 grid place-items-center">
+                      {isMicro ? (
+                        <div className="h-3 w-3 grid place-items-center">
                           <div className="flex items-center gap-[1px]">
                             <span className="h-[2px] w-[2px] rounded-full bg-current" />
                             <span className="h-[2px] w-[2px] rounded-full bg-current" />
@@ -752,122 +922,140 @@ export function DayPlanner() {
                       )}
                     </div>
 
-                    <div className={`flex-1 min-w-0 h-full ${cPy} ${cPl} pr-0.5 text-left overflow-hidden`}>
-                      {tinyBlock ? (
-                        <div className="h-full flex items-center gap-1.5 leading-none">
-                          {/* Fixed category lane preserves title alignment while using a true square marker. */}
-                          <span className="w-11 shrink-0 flex items-center" aria-hidden="true">
-                            <span className={`inline-block h-3 w-8 rounded-[2px] border ${s.chip} ${s.blockBorder} mx-1`} />
-                          </span>
-                          <span className="font-medium text-primary text-[10px] leading-none truncate">
-                            {blockTitle}
-                          </span>
-                          {showTinySticky && (
-                            <span
-                              className={`shrink-0 rounded p-0.5 ${noteTone.chip}`}
-                              title={noteLines.map((n) => n.text).join("\n")}
-                              aria-label={t.chronos.today.notes}
-                            >
-                              <StickyNote className="h-2.5 w-2.5" />
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className={isFortyFiveBlock && !showStickyPreview ? "h-full flex flex-col justify-center" : ""}>
-                      {!compactBlock && (
-                        <div className="flex items-center gap-1.5 text-[11px] num text-muted-foreground flex-wrap">
-                          <span>{formatClock(a.start, bcp47)}–{formatClock(a.end, bcp47)}</span>
-                          <span>·</span>
-                          <span>{fmtDur(em - sm)}</span>
-                          {live && <span className="text-secondary font-medium uppercase tracking-wider">· {t.chronos.today.now}</span>}
-                          {a.source === "commitment" && <span className="text-[10px] uppercase tracking-wider text-amber-500/80">· {t.chronos.today.commitmentTag}</span>}
-                        </div>
-                      )}
-                      <div className={`${titleRowMt} flex items-center gap-1.5`}>
-                        {showCategoryChip && (
-                          <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
-                            {t.common.kinds[a.kind]}
-                          </span>
-                        )}
-                        {!showCategoryChip && (
-                          <span className={`w-3 h-3 rounded-sm ${s.chip} shrink-0`} aria-hidden="true" />
-                        )}
-                        <span className={`${showInlineOneHourNotes ? "shrink min-w-0 max-w-[9rem]" : "min-w-0 flex-1"} font-medium text-primary truncate ${titleSz}`}>
-                          {blockTitle}
-                        </span>
-                        {showInlineOneHourNotes && (
-                          <span className="ml-0.5 flex min-w-0 max-w-[12.5rem] items-center gap-1 overflow-hidden" title={noteLines.map((n) => n.text).join("\n")}>
-                            {noteLines.slice(0, 3).map((line, idx) => {
-                              const tone = noteToneStyles[line.tone];
-                              return (
-                                <span key={`${line.text}-${idx}`} className={`min-w-0 rounded px-1 py-0.5 text-[9px] ${tone.bg} ${tone.text}`}>
-                                  <span className="inline-flex min-w-0 items-center gap-1 align-middle">
-                                    <span className={`h-1.5 w-1.5 rounded-[2px] ${tone.solid} shrink-0`} />
-                                    <span className="truncate max-w-[5.25rem]">{line.text}</span>
-                                  </span>
-                                </span>
-                              );
-                            })}
-                          </span>
-                        )}
-                        {showStickyBadge && (
-                          <span
-                            className={`shrink-0 rounded p-0.5 ${noteTone.chip}`}
-                            title={noteLines.map((n) => n.text).join("\n")}
-                            aria-label={t.chronos.today.notes}
-                          >
-                            <StickyNote className="h-2.5 w-2.5" />
-                          </span>
-                        )}
-                        {showRightMetaLane && (
-                        <div className="ml-auto shrink-0 flex items-center gap-1">
-                          {showStickyMetaFallback && (
-                            <span className={`max-w-[9.5rem] rounded px-1 py-0.5 text-[9px] ${noteTone.bg} ${noteTone.text}`} title={noteLines.map((n) => n.text).join("\n")}>
-                              <span className="inline-flex items-center gap-1">
-                                <StickyNote className="h-2.5 w-2.5 shrink-0" />
-                                <span className="truncate">{noteLines[0].text}</span>
-                              </span>
-                            </span>
-                          )}
-                          {showCompactMeta && (
-                            <span className="num text-[9px] text-muted-foreground/70">
-                              {bh >= 30 ? `${formatClock(a.start, bcp47)} · ${fmtDur(em - sm)}` : formatClock(a.start, bcp47)}
-                            </span>
-                          )}
-                        </div>
-                        )}
+                    {isDragging && dragLimitHint && (
+                      <div className="absolute right-10 top-1 z-[40] rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-200">
+                        {dragLimitHint}
                       </div>
-                      {showStickyPreview && (
-                        noteLines.length === 1 ? (
-                          <div className={`mt-0.5 max-w-full rounded px-1.5 py-1 text-[10px] ${noteTone.bg} ${noteTone.text}`}>
-                            <div className="inline-flex items-center gap-1">
-                              <StickyNote className="h-2.5 w-2.5 shrink-0" />
-                              <span className="line-clamp-1 leading-tight">
-                                {renderLinkedText(noteLines[0].text)}
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mt-0.5 max-w-full rounded px-1.5 py-1 text-[10px] bg-muted/25">
-                            <div className="space-y-0.5 leading-tight">
-                              {noteLines.slice(0, previewLineCount).map((line, idx) => {
-                                const tone = noteToneStyles[line.tone];
-                                return (
-                                  <div key={`${line.text}-${idx}`} className={`flex items-center gap-1 rounded px-1 py-0.5 ${tone.bg} ${tone.text}`}>
-                                    <span className={`h-1.5 w-1.5 rounded-[2px] ${tone.solid} shrink-0`} />
-                                    <span className="line-clamp-1">{renderLinkedText(line.text)}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )
+                    )}
+
+                    <div className={`flex-1 min-w-0 h-full ${cPy} ${cPl} pr-0.5 text-left overflow-hidden`}>
+
+                      {/* ── MICRO TIER (≤15 min) ──────────────────────────────── */}
+                      {isMicro && (
+                        <div className="h-full flex items-center gap-1.5 leading-none">
+                          <span className={`inline-block h-3 w-3 rounded-[2px] shrink-0 ${s.chip}`} aria-hidden="true" />
+                          <span className={`font-medium text-primary truncate ${titleSz}`}>{blockTitle}</span>
+                          {hasNotes && (
+                            <span className={`shrink-0 rounded p-0.5 ${noteTone.chip}`} title={noteLines.map((n) => n.text).join("\n")}>
+                              <StickyNote className="h-2 w-2" />
+                            </span>
+                          )}
+                        </div>
                       )}
+
+                      {/* ── COMPACT TIER (30–45 min) ──────────────────────────── */}
+                      {isCompact && (
+                        <div className="h-full flex flex-col justify-center gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
+                              {t.common.kinds[a.kind]}
+                            </span>
+                            <span className={`min-w-0 flex-1 font-medium text-primary truncate ${titleSz}`}>{blockTitle}</span>
+                            <span className="num text-[9px] text-muted-foreground/60 shrink-0 ml-auto">
+                              {formatClock(displayStart, bcp47)}–{formatClock(displayEnd, bcp47)}
+                              {displaySpansNextDay && <span className="ml-1 uppercase tracking-wider text-secondary/80">+1d</span>}
+                              <span className="mx-1 opacity-50">·</span>
+                              {fmtDur(displayDur)}
+                            </span>
+                            {showStickyBadge && (
+                              <span className={`shrink-0 rounded p-0.5 ${noteTone.chip}`} title={noteLines.map((n) => n.text).join("\n")}>
+                                <StickyNote className="h-2.5 w-2.5" />
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── HOUR TIER (60 min) ─────────────────────────────────── */}
+                      {isHour && (
+                        <div className="h-full flex flex-col justify-center gap-0.5">
+                          <div className="num text-[10px] text-muted-foreground/70 truncate">
+                            {formatClock(displayStart, bcp47)}–{formatClock(displayEnd, bcp47)}
+                            {displaySpansNextDay && <span className="ml-1 uppercase tracking-wider text-secondary/80">+1d</span>}
+                            <span className="mx-1 opacity-50">·</span>
+                            {fmtDur(displayDur)}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
+                              {t.common.kinds[a.kind]}
+                            </span>
+                            <span className={`shrink min-w-0 font-medium text-primary truncate ${titleSz} max-w-[8rem]`}>{blockTitle}</span>
+                            {/* Notes inline to the right */}
+                            {showNotesRight && (
+                              <span className="ml-0.5 flex min-w-0 flex-1 items-center gap-1 overflow-hidden" title={noteLines.map((n) => n.text).join("\n")}>
+                                {noteLines.slice(0, 3).map((line, idx) => {
+                                  const tone = noteToneStyles[line.tone];
+                                  return (
+                                    <span key={`${line.text}-${idx}`} className={`min-w-0 rounded px-1.5 py-0.5 text-[9px] ${tone.bg} ${tone.text} shrink-0`}>
+                                      <span className="inline-flex items-center gap-1">
+                                        <span className={`h-1.5 w-1.5 rounded-[2px] ${tone.solid} shrink-0`} />
+                                        <span className="truncate max-w-[5rem]">{line.text}</span>
+                                      </span>
+                                    </span>
+                                  );
+                                })}
+                              </span>
+                            )}
+                            {!showNotesRight && showStickyBadge && (
+                              <span className={`shrink-0 rounded p-0.5 ${noteTone.chip}`} title={noteLines.map((n) => n.text).join("\n")}>
+                                <StickyNote className="h-2.5 w-2.5" />
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── FULL TIER (≥75 min) ────────────────────────────────── */}
+                      {isFull && (
+                        <div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] num text-muted-foreground">
+                            <span>{formatClock(displayStart, bcp47)}–{formatClock(displayEnd, bcp47)}</span>
+                            {displaySpansNextDay && <span className="text-[10px] uppercase tracking-wider text-secondary/80">+1d</span>}
+                            <span>·</span>
+                            <span>{fmtDur(displayDur)}</span>
+                            {live && <span className="text-secondary font-medium uppercase tracking-wider">· {t.chronos.today.now}</span>}
+                            {a.source === "commitment" && <span className="text-[10px] uppercase tracking-wider text-amber-500/80">· {t.chronos.today.commitmentTag}</span>}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
+                              {t.common.kinds[a.kind]}
+                            </span>
+                            <span className={`min-w-0 flex-1 font-medium text-primary truncate ${titleSz}`}>{blockTitle}</span>
+                            {showStickyBadge && (
+                              <span className={`shrink-0 rounded p-0.5 ${noteTone.chip}`} title={noteLines.map((n) => n.text).join("\n")}>
+                                <StickyNote className="h-2.5 w-2.5" />
+                              </span>
+                            )}
+                          </div>
+                          {showNotesBelow && (
+                            noteLines.length === 1 ? (
+                              <div className={`mt-1 max-w-full rounded px-1.5 py-1 text-[10px] ${noteTone.bg} ${noteTone.text}`}>
+                                <div className="inline-flex items-center gap-1">
+                                  <StickyNote className="h-2.5 w-2.5 shrink-0" />
+                                  <span className="line-clamp-1 leading-tight">{renderLinkedText(noteLines[0].text)}</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-1 max-w-full rounded px-1.5 py-1 text-[10px] bg-muted/25">
+                                <div className="space-y-0.5 leading-tight">
+                                  {noteLines.slice(0, previewLineCount).map((line, idx) => {
+                                    const tone = noteToneStyles[line.tone];
+                                    return (
+                                      <div key={`${line.text}-${idx}`} className={`flex items-center gap-1 rounded px-1 py-0.5 ${tone.bg} ${tone.text}`}>
+                                        <span className={`h-1.5 w-1.5 rounded-[2px] ${tone.solid} shrink-0`} />
+                                        <span className="line-clamp-1">{renderLinkedText(line.text)}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {!(a.source === "routine" && a.derived) && (
+                    {!(a.kind === "sleep" && isBoundarySleepBlock(a)) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setEditItem(a); }}
                         data-no-open="true"
@@ -930,6 +1118,16 @@ export function DayPlanner() {
             setEditSleep(false);
           }}
           onClose={() => setEditSleep(false)}
+        />
+      )}
+      {editSleepCut && (
+        <SleepCutDialog
+          dateIso={selectedDateIso}
+          existing={sleepCutForDay}
+          bcp47={bcp47}
+          onSave={(cut) => { addSleepCut(cut); setEditSleepCut(false); }}
+          onRemove={() => { removeSleepCut(selectedDateIso); setEditSleepCut(false); }}
+          onClose={() => setEditSleepCut(false)}
         />
       )}
       {inspectItem && (
@@ -1240,6 +1438,77 @@ function SleepEditDialog({
         <DialogFooter className="flex-row justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" onClick={onClose}>{t.chronos.dialog.cancel}</Button>
           <Button size="sm" onClick={save}>{t.common.save}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function SleepCutDialog({
+  dateIso,
+  existing,
+  bcp47,
+  onSave,
+  onRemove,
+  onClose,
+}: {
+  dateIso: string;
+  existing: { start: string; end: string } | null;
+  bcp47: string;
+  onSave: (cut: { date: string; start: string; end: string }) => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const fmtDur = useFmtDur();
+  const [start, setStart] = useState(existing?.start ?? "02:00");
+  const [end, setEnd]     = useState(existing?.end   ?? "08:00");
+  const isPt = bcp47.toLowerCase().startsWith("pt");
+  const durMin = timeToMinutes(end) - timeToMinutes(start);
+  const valid  = durMin > 0;
+
+  function save() {
+    if (!valid) return;
+    onSave({ date: dateIso, start, end });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl text-primary">
+            {isPt ? "Divisão de sono" : "Sleep split"}
+          </DialogTitle>
+          <DialogDescription>
+            {isPt
+              ? "Define um intervalo a ocultar na timeline deste dia, criando duas seções compactas."
+              : "Define a hidden interval for this day timeline, creating two compact sections."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.start}</Label>
+              <TimeSelect value={start} onValueChange={setStart} bcp47={bcp47} className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.end}</Label>
+              <TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} className="h-9" />
+            </div>
+          </div>
+          {valid
+            ? <p className="text-[11px] text-muted-foreground num">{isPt ? "Duração" : "Duration"}: {fmtDur(durMin)}</p>
+            : <p className="text-[11px] text-rose-500">{isPt ? "O fim deve ser após o início." : "End must be after start."}</p>}
+        </div>
+        <DialogFooter className="flex-row items-center justify-between gap-2 pt-2">
+          {existing ? (
+            <Button variant="ghost" size="sm" onClick={onRemove} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />{isPt ? "Remover" : "Remove"}
+            </Button>
+          ) : <div />}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>{t.chronos.dialog.cancel}</Button>
+            <Button size="sm" onClick={save} disabled={!valid}>{t.common.save}</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
