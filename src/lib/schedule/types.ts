@@ -14,6 +14,7 @@ export interface RoutineBlock {
   day: number; // 0 Sun ... 6 Sat
   start: string; // "HH:MM"
   end: string;
+  endsNextDay?: boolean;
   kind: BlockKind;
   title: string;
   titleCustom?: string;
@@ -74,7 +75,11 @@ export function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 export function durationMin(start: string, end: string): number {
-  return Math.max(0, timeToMinutes(end) - timeToMinutes(start));
+  const startMin = timeToMinutes(start);
+  const endMin = timeToMinutes(end);
+  if (endMin === startMin) return 24 * 60;
+  if (endMin < startMin) return 24 * 60 - startMin + endMin;
+  return Math.max(0, endMin - startMin);
 }
 export function fmtDur(min: number): string {
   const h = Math.floor(min / 60), m = min % 60;

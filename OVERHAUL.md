@@ -96,6 +96,97 @@
 - [ ] Decide whether derived routine segments should gain a dedicated visual explanation in Today
 - [ ] Add automated tests for commitment-overrides-routine behavior
 
+## 10. Session Log - 2026-05-21 (round 2)
+
+### Solved in this session
+
+- [x] Allowed recurring routine blocks to span midnight through `endsNextDay`
+- [x] Updated routine conflict validation so overnight routine blocks are checked correctly against other routine blocks
+- [x] Relaxed the daily planner visible-range logic so it is no longer hard-clamped by sleep boundaries
+- [x] Improved `Jump to now` reliability by forcing the current time into the visible range on the current day
+- [x] Updated compose flow so new blocks use the currently visible day/date instead of always defaulting to today
+- [x] Added explicit end-date input for commitments in the creation dialog
+- [x] Made notes visible inside blocks as highlighted inline reminders instead of only hidden below on expand
+- [x] Reduced small-block UI breakage by adapting note rendering and lowering the free-slot `+` threshold
+- [x] Localized sleep markers with locale-aware time formatting instead of raw 24h strings everywhere
+
+### Still open from this round
+
+- [ ] Validate and polish the weekly grid for overnight routine blocks across all edge cases
+- [ ] Add drag and rescheduling directly on the weekly grid
+- [ ] Add expand/detail behavior inside the weekly grid itself
+- [ ] Review other locale inconsistencies beyond sleep markers
+- [ ] Re-test commitment editing with explicit end date and overnight routines mixed together
+- [ ] Re-test exports (JSON / XLSX / ICS) against overnight routine + multi-day commitment cases
+
 ---
 
-**Current step: 3 - Weekly Agenda polish and export validation** <- in progress
+**Current step: 3 - Weekly Agenda polish, overnight edge cases, and export validation** <- in progress
+
+## 11. Session Log - 2026-05-21 (round 3)
+
+### Solved in this session
+
+- [x] Fixed Dashboard crash caused by stale `expanded` reference in `DayPlanner.tsx`
+- [x] Revalidated Dashboard rendering after auth/login flow
+- [x] Fixed Today timeline end-cap regression: when sleep starts at `22:15`, the visible time bar now stops correctly and no longer shows `23:00`
+- [x] Kept "jump to now" behavior while respecting explicit sleep boundaries (`morningSleep.end` / `eveningSleep.start`)
+
+### Small-block polish backlog (next)
+
+- [ ] Audit very short block rendering (`< 44px`) for text/icon overlap in all locales (PT/EN)
+- [ ] Keep title, kind chip, and notes indicator stable for compact blocks (prevent jitter on hover/drag)
+- [ ] Recheck free-slot add (`+`) visibility thresholds to avoid clipped buttons in narrow slots
+- [ ] Ensure drag handle and edit affordance remain usable for tiny blocks on touch + mouse
+- [ ] Revisit compact-note truncation/line-clamp behavior so notes do not collide with controls
+
+### Cross-day backlog (next)
+
+- [ ] Re-test cross-day commitments with explicit end date across create/edit/remove flows
+- [ ] Validate day-splitting visuals at midnight boundaries in Today and Week views
+- [ ] Verify duration and label correctness for overnight segments (including derived routine fragments)
+- [ ] Confirm drag/reschedule behavior does not corrupt `endsNextDay` semantics
+- [ ] Re-test exports (JSON/XLSX/ICS) with overnight routine + cross-day commitment combinations
+- [ ] Add focused automated tests for cross-day overlap/conflict and timeline clipping edge cases
+
+### Resume starting point
+
+- [ ] Start with small-block audit in Today, then run cross-day regression sweep (Today -> Week -> exports)
+
+---
+
+**Current step: 3 - Weekly Agenda polish + small-block and cross-day regression fixes** <- in progress
+
+## 12. Session Log - 2026-05-22 (round 4)
+
+### Solved in this session
+
+- [x] Fixed small-block/free-slot visual overlap in Today by clamping rendered heights to the next timeline item's top
+- [x] Improved tiny/compact block rendering so title + controls remain visible without clipping
+- [x] Reworked sticky notes in Today blocks:
+	- [x] tiny blocks show a visible sticky badge icon
+	- [x] larger blocks show inline sticky preview text
+	- [x] notes are no longer effectively hidden in compact states
+- [x] Implemented explicit cross-day segment boundaries using `24:00` -> `00:00` split semantics in agenda building
+- [x] Added continuation flags for cross-day segments and rendered flat top/bottom edges where midnight split joins occur
+- [x] Updated weekly routine split rendering to use `24:00` segment end (instead of `23:59`)
+- [x] Upgraded sleep editing to full window editing (`start` + `end`) in one dialog
+- [x] Added same-day sleep support path (e.g. `03:00` to `13:00`) while preserving overnight behavior
+
+### Still open from this round
+
+- [ ] Validate cross-day flat-edge visuals in all block kinds on Week grid (not only Today)
+- [ ] Re-test drag/move behavior for cross-day commitments after `24:00` boundary normalization
+- [ ] Re-test exports (JSON/XLSX/ICS) with `24:00` boundary segments and same-day sleep windows
+- [ ] Add automated tests for:
+	- [ ] non-overlapping visual layout in dense tiny-block timelines
+	- [ ] same-day sleep window rendering and editing
+	- [ ] midnight-split continuation edge styling
+
+### Resume starting point
+
+- [ ] Run full regression sweep: Today (tiny blocks + notes) -> Week (cross-day visuals) -> exports
+
+---
+
+**Current step: 3 - Weekly Agenda polish + cross-day and tiny-block regression validation** <- in progress

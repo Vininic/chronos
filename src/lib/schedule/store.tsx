@@ -33,9 +33,15 @@ function normalizeNamingModel(data: ScheduleData): ScheduleData {
     return { ...c, labelCustom, descriptionCustom };
   });
 
+  const routine = data.routine.map((r) => ({
+    ...r,
+    endsNextDay: r.endsNextDay ?? r.end <= r.start,
+  }));
+
   return {
     ...data,
     categories,
+    routine,
     meta: {
       ...data.meta,
       version: SCHEMA_VERSION,
@@ -84,8 +90,25 @@ function toDateTime(isoDate: string, time: string) {
   return new Date(`${isoDate}T${time}:00`);
 }
 
+function sanitizeSleepWindow(
+  sleepWindow: { start: string; end: string },
+  fallbackMorningEnd: string,
+) {
+  const s = timeToMinutes(sleepWindow.start);
+  const e = timeToMinutes(sleepWindow.end);
+
+  // Legacy UI bug could save cross-day sleep endings as 23:59.
+  // If sleep starts at night and ends at the very end of the same day,
+  // restore a cross-day morning end anchored to workday start.
+  if (s >= 18 * 60 && e >= s && e >= 23 * 60 + 45) {
+    return { start: sleepWindow.start, end: fallbackMorningEnd };
+  }
+
+  return sleepWindow;
+}
+
 function normalizeSleepWindow(data: ScheduleData): { start: string; end: string } {
-  if (data.meta.sleepWindow) return data.meta.sleepWindow;
+  if (data.meta.sleepWindow) return sanitizeSleepWindow(data.meta.sleepWindow, data.meta.workdayStart);
   const sleep = data.routine.filter((r) => r.kind === "sleep");
   const morningEnd = sleep
     .filter((r) => timeToMinutes(r.end) <= 12 * 60)
@@ -106,6 +129,21 @@ function commitmentInterval(c: Pick<Commitment, "date" | "start" | "end" | "endD
   const start = toDateTime(c.date, c.start);
   const end = toDateTime(resolveCommitmentEndDate(c), c.end);
   return { start, end };
+}
+
+function buildRoutineWeeklySegments(r: Pick<RoutineBlock, "day" | "start" | "end" | "endsNextDay">) {
+  const startMin = timeToMinutes(r.start);
+  const endMin = timeToMinutes(r.end);
+  const spans = r.endsNextDay ?? endMin <= startMin;
+
+  if (!spans) {
+    return [{ day: r.day, startMin, endMin }];
+  }
+
+  return [
+    { day: r.day, startMin, endMin: 24 * 60 },
+    { day: (r.day + 1) % 7, startMin: 0, endMin },
+  ];
 }
 
 function intersectsClockRange(
@@ -166,8 +204,11 @@ function buildSleepSegmentsForDate(
         notes: undefined,
         start: "00:00",
         end: sleepWindow.end,
+        continuesFromPrevDay: true,
+        continuesToNextDay: false,
         kind: "sleep" as const,
         source: "routine" as const,
+        sleepBoundary: true,
       },
       {
         id: `sleep-pm-${iso}`,
@@ -175,9 +216,12 @@ function buildSleepSegmentsForDate(
         titleCustom: undefined,
         notes: undefined,
         start: sleepWindow.start,
-        end: "23:59",
+        end: "24:00",
+        continuesFromPrevDay: false,
+        continuesToNextDay: true,
         kind: "sleep" as const,
         source: "routine" as const,
+        sleepBoundary: true,
       },
     ];
   }
@@ -190,8 +234,11 @@ function buildSleepSegmentsForDate(
         notes: undefined,
         start: sleepWindow.start,
         end: sleepWindow.end,
+        continuesFromPrevDay: false,
+        continuesToNextDay: false,
         kind: "sleep" as const,
         source: "routine" as const,
+        sleepBoundary: true,
       },
     ];
   }
@@ -477,24 +524,51 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   }, [locale, data, withDerivedLocale]);
 
   const addRoutine = useCallback((b: Omit<RoutineBlock, "id">) => {
-    const conflict = data.routine.find((r) => r.day === b.day && overlap(r.start, r.end, b.start, b.end));
+    const candidate = { ...b, endsNextDay: b.endsNextDay ?? b.end <= b.start };
+    const candidateSegments = buildRoutineWeeklySegments(candidate);
+    const conflict = data.routine.find((r) => {
+      const existingSegments = buildRoutineWeeklySegments(r);
+      return candidateSegments.some((candidateSegment) =>
+        existingSegments.some((existingSegment) =>
+          candidateSegment.day === existingSegment.day
+          && candidateSegment.startMin < existingSegment.endMin
+          && existingSegment.startMin < candidateSegment.endMin,
+        ),
+      );
+    });
     if (conflict) {
       return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
     }
-    setData((d) => withDerived({ ...d, routine: [...d.routine, { ...b, id: uid("r") }] }));
+    setData((d) => withDerived({ ...d, routine: [...d.routine, { ...candidate, id: uid("r") }] }));
     return null;
   }, [data]);
   const updateRoutine = useCallback((id: string, patch: Partial<RoutineBlock>) => {
     const current = data.routine.find((r) => r.id === id);
     if (!current) return null;
-    const next = { ...current, ...patch };
-    const conflict = data.routine.find(
-      (r) => r.id !== id && r.day === next.day && overlap(r.start, r.end, next.start, next.end),
-    );
+    const next = {
+      ...current,
+      ...patch,
+      endsNextDay: patch.endsNextDay ?? current.endsNextDay ?? ((patch.end ?? current.end) <= (patch.start ?? current.start)),
+    };
+    const nextSegments = buildRoutineWeeklySegments(next);
+    const conflict = data.routine.find((r) => {
+      if (r.id === id) return false;
+      const existingSegments = buildRoutineWeeklySegments(r);
+      return nextSegments.some((candidateSegment) =>
+        existingSegments.some((existingSegment) =>
+          candidateSegment.day === existingSegment.day
+          && candidateSegment.startMin < existingSegment.endMin
+          && existingSegment.startMin < candidateSegment.endMin,
+        ),
+      );
+    });
     if (conflict) {
       return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
     }
-    setData((d) => withDerived({ ...d, routine: d.routine.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+    setData((d) => withDerived({
+      ...d,
+      routine: d.routine.map((r) => (r.id === id ? { ...r, ...patch, endsNextDay: next.endsNextDay } : r)),
+    }));
     return null;
   }, [data]);
   const removeRoutine = useCallback((id: string) => {
@@ -538,7 +612,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
 
   const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string) => {
     const day = date.getDay();
-    const dayAgenda = buildAgendaForDate(data, date).filter((a) => a.kind !== "sleep");
+    const dayAgenda = buildAgendaForDate(data, date).filter((a) => !(a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary));
     const moved = dayAgenda.find((a) => a.id === id && a.source === source);
     if (!moved) return "Block not found.";
 
@@ -547,7 +621,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     const movedDur = Math.max(15, movedEnd - movedStart);
 
     // Clamp the moved block to the day's sleep boundaries so it can never overlap sleep
-    const sleepForDay = buildAgendaForDate(data, date).filter((a) => a.kind === "sleep");
+    const sleepForDay = buildAgendaForDate(data, date).filter((a) => a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary);
     const wakeMin = sleepForDay
       .filter((a) => timeToMinutes(a.end) <= 12 * 60)
       .reduce((m, a) => Math.max(m, timeToMinutes(a.end)), 0);
@@ -643,7 +717,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   const updateSleepWindow = useCallback((patch: Partial<{ start: string; end: string }>) => {
     setData((d) => {
       const current = d.meta.sleepWindow ?? normalizeSleepWindow(d);
-      const next = { ...current, ...patch };
+      const next = sanitizeSleepWindow({ ...current, ...patch }, d.meta.workdayStart);
       return withDerived({ ...d, meta: { ...d.meta, sleepWindow: next } });
     });
   }, []);
@@ -747,10 +821,11 @@ export function useSchedule() {
 export function buildAgendaForDate(data: ScheduleData, date: Date) {
   const day = date.getDay();
   const iso = date.toISOString().slice(0, 10);
+  const prevDay = (day + 6) % 7;
   const dayStart = toDateTime(iso, "00:00");
   const dayEnd = toDateTime(addDaysToIso(iso, 1), "00:00");
   const toTime = (d: Date, isEnd = false) => {
-    if (isEnd && d.getTime() === dayEnd.getTime()) return "23:59";
+    if (isEnd && d.getTime() === dayEnd.getTime()) return "24:00";
     const h = String(d.getHours()).padStart(2, "0");
     const m = String(d.getMinutes()).padStart(2, "0");
     return `${h}:${m}`;
@@ -768,6 +843,8 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
       titleCustom: c.titleCustom,
       start: toTime(segStart),
       end: toTime(segEnd, true),
+      continuesFromPrevDay: segStart.getTime() === dayStart.getTime() && interval.start < dayStart,
+      continuesToNextDay: segEnd.getTime() === dayEnd.getTime() && interval.end > dayEnd,
       kind: c.kind,
       source: "commitment" as const,
       notes: c.notes,
@@ -776,17 +853,24 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
 
   const routineBlockers = fromCommit.map((c) => ({ start: c.start, end: c.end }));
   const fromRoutine = data.routine
-    .filter((r) => r.day === day && r.kind !== "sleep")
+    .filter((r) => r.day === day || ((r.endsNextDay ?? r.end <= r.start) && r.day === prevDay))
     .flatMap((r) => {
-      const visibleSegments = subtractRanges({ start: r.start, end: r.end }, routineBlockers);
+      const spans = r.endsNextDay ?? r.end <= r.start;
+      const baseSegment =
+        r.day === day
+          ? { start: r.start, end: spans ? "24:00" : r.end }
+          : { start: "00:00", end: r.end };
+      const visibleSegments = subtractRanges(baseSegment, routineBlockers);
       return visibleSegments.map((segment, index) => ({
         id: visibleSegments.length === 1 ? r.id : `${r.id}::segment-${index}`,
         sourceId: r.id,
-        derived: visibleSegments.length > 1 || segment.start !== r.start || segment.end !== r.end,
+        derived: spans || visibleSegments.length > 1 || segment.start !== baseSegment.start || segment.end !== baseSegment.end,
         title: r.title,
         titleCustom: r.titleCustom,
         start: segment.start,
         end: segment.end,
+        continuesFromPrevDay: r.day !== day && spans && segment.start === "00:00",
+        continuesToNextDay: r.day === day && spans && segment.end === "24:00",
         kind: r.kind,
         source: "routine" as const,
         notes: r.notes,

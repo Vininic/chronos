@@ -225,25 +225,35 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
   const rowHeight = 36;
   const gridHeight = totalHours * rowHeight;
   const tickHours = [7, 9, 11, 13, 15, 17, 19];
+  const routineSegments = data.routine.flatMap((block) => {
+    const spans = block.endsNextDay ?? block.end <= block.start;
+    if (!spans) {
+      return [{ ...block, renderDay: block.day, renderStart: block.start, renderEnd: block.end, derived: false }];
+    }
+    return [
+      { ...block, renderDay: block.day, renderStart: block.start, renderEnd: "24:00", derived: true },
+      { ...block, renderDay: (block.day + 1) % 7, renderStart: "00:00", renderEnd: block.end, derived: true },
+    ];
+  });
 
   const freeSlotsForDay = (day: number) => {
-    const dayBlocks = data.routine
-      .filter((b) => b.day === day && b.kind !== "sleep")
+    const dayBlocks = routineSegments
+      .filter((b) => b.renderDay === day)
       .slice()
-      .sort((a, b) => a.start.localeCompare(b.start));
+      .sort((a, b) => a.renderStart.localeCompare(b.renderStart));
     const slots: { start: string; end: string }[] = [];
     let cursor = startHour * 60;
     const dayEnd = endHour * 60;
 
     for (const block of dayBlocks) {
-      const originalStart = timeToMinutes(block.start);
+      const originalStart = timeToMinutes(block.renderStart);
       if (originalStart - cursor >= 15) {
         slots.push({
           start: `${String(Math.floor(cursor / 60)).padStart(2, "0")}:${String(cursor % 60).padStart(2, "0")}`,
           end: `${String(Math.floor(originalStart / 60)).padStart(2, "0")}:${String(originalStart % 60).padStart(2, "0")}`,
         });
       }
-      cursor = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.end)));
+      cursor = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.renderEnd)));
     }
 
     if (dayEnd - cursor >= 15) {

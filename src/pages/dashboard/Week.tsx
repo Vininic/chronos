@@ -121,15 +121,10 @@ function WeekBlockEditDialog({
   const [start, setStart] = useState(item.start);
   const [end, setEnd] = useState(item.end);
   const [notes, setNotes] = useState(item.notes ?? "");
-  const duration = start < end ? durationMin(start, end) : 0;
+  const duration = durationMin(start, end);
 
   function save() {
     if (!title.trim()) return;
-    if (start >= end) {
-      toast({ title: t.chronos.dialog.endAfterStart });
-      return;
-    }
-
     onSave({
       title: item.titleCustom ? item.title : title.trim(),
       titleCustom: item.titleCustom || item.title !== title.trim() ? title.trim() : undefined,
@@ -137,6 +132,7 @@ function WeekBlockEditDialog({
       day,
       start,
       end,
+      endsNextDay: end <= start,
       notes: notes.trim() || undefined,
     });
   }

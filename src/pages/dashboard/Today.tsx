@@ -20,7 +20,7 @@ export default function Today() {
   const dateStr = new Date().toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "long" });
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const todayAgenda = buildAgendaForDate(data, new Date()).sort((a, b) => a.start.localeCompare(b.start));
-  const currentBlock = todayAgenda.find((a) => a.kind !== "sleep" && timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end));
+  const currentBlock = todayAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end));
   const nextBlock = todayAgenda.find((a) => timeToMinutes(a.start) > nowMin);
   const nextLabel = bcp47.toLowerCase().startsWith("pt") ? "Próximo" : "Next";
   const emptyNowLabel = bcp47.toLowerCase().startsWith("pt") ? "Sem bloco atual" : "No current block";
