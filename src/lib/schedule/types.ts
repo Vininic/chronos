@@ -46,10 +46,18 @@ export interface Suggestion {
     | { type: "remove-routine"; match: Partial<RoutineBlock> };
 }
 
-/** A mid-day sleep cut for a specific date.
- *  Splits the day's timeline into two visible segments separated by a sleep divider bar.
- *  start/end are clock times ("HH:MM") within the same calendar day.
- *  This is purely a visual/structural cut — not a block category. */
+/** A sleep schedule entry — defines a sleep window, optionally for specific days of week.
+ *  days: 0=Sun..6=Sat. Omitting days means it applies to all days.
+ *  start/end crossing midnight (start > end) means the sleep spans into the next calendar day.
+ *  Multiple entries are allowed; the first matching entry for a given day wins. */
+export interface SleepScheduleEntry {
+  start: string;   // "HH:MM" — when sleep begins
+  end: string;     // "HH:MM" — when sleep ends (may be next-day if start > end)
+  days?: number[]; // 0=Sun..6=Sat; absent = all days
+}
+
+/** A per-date sleep cut: overrides the sleep schedule for a specific calendar date.
+ *  Splits the day's timeline into two visible segments. */
 export interface SleepCut {
   date: string;   // YYYY-MM-DD
   start: string;  // "HH:MM" — when sleep begins
@@ -63,7 +71,11 @@ export interface ScheduleData {
     cycle: { name: string; number: number; week: number; progress: number };
     workdayStart: string;
     workdayEnd: string;
+    /** Legacy single sleep window — migrated to sleepSchedule on load */
     sleepWindow?: { start: string; end: string };
+    /** New: per-day-of-week sleep schedule, replaces sleepWindow */
+    sleepSchedule?: SleepScheduleEntry[];
+    /** Per-date overrides — splits the timeline mid-day */
     sleepCuts?: SleepCut[];
   };
   categories: Category[];

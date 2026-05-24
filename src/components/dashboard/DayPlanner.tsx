@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
+import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
+import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { isKnownDefaultBlockTitle, useScheduleText } from "@/lib/i18n/scheduleText";
@@ -16,6 +17,7 @@ import { TimeSelect } from "@/components/ui/time-select";
 
 const HOUR_PX = 64;
 const SNAP = 15;
+const STACK_GAP_PX = 4;
 
 type AgendaItem = {
   id: string;
@@ -243,18 +245,7 @@ function useNowMin() {
 }
 
 export function DayPlanner() {
-  const {
-    data,
-    addRoutine,
-    pushMoveDayChain,
-    updateRoutine,
-    updateSleepWindow,
-    addSleepCut,
-    removeSleepCut,
-    removeRoutine,
-    updateCommitment,
-    removeCommitment,
-  } = useSchedule();
+  const { data, addRoutine, pushMoveDayChain, updateRoutine, updateSleepWindow, updateSleepSchedule, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
   const { bcp47 } = useI18n();
@@ -273,114 +264,162 @@ export function DayPlanner() {
     : undefined;
 
   const nonSleepAgenda = useMemo(
-    () => rawAgenda.filter((a) => !isBoundarySleepBlock(a)).sort((a, b) => a.start.localeCompare(b.start)),
+    () => rawAgenda.filter((a) => a.kind !== "sleep").sort((a, b) => a.start.localeCompare(b.start)),
     [rawAgenda],
   );
 
-  const sleepWindow = data.meta.sleepWindow;
-  const sleepStartMin = timeToMinutes(sleepWindow.start);
-  const sleepEndMin = timeToMinutes(sleepWindow.end);
+  // ── Sleep schedule for this day ─────────────────────────────────────────────
+  // Read from sleepSchedule (new) falling back to sleepWindow (legacy).
+  const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
+  const sleepEntry = getSleepWindowForDay(sleepSchedule, selectedDate.getDay()) ?? sleepSchedule[0];
+
+  const sleepStartMin = timeToMinutes(sleepEntry.start);
+  const sleepEndMin   = timeToMinutes(sleepEntry.end);
+  // Cross-day sleep: sleep starts in the evening and ends the next morning (start > end)
   const hasCrossDaySleep = sleepStartMin > sleepEndMin;
-  const hasSameDaySleep = sleepStartMin < sleepEndMin;
+  // Same-day sleep: sleep starts and ends within the same calendar day (start < end)
+  const hasSameDaySleep  = sleepStartMin < sleepEndMin;
 
-  const morningSleep = hasCrossDaySleep
-    ? { start: "00:00", end: sleepWindow.end }
-    : null;
-  const eveningSleep = hasCrossDaySleep
-    ? { start: sleepWindow.start, end: "24:00" }
-    : null;
-  const sameDaySleep = hasSameDaySleep
-    ? { start: sleepWindow.start, end: sleepWindow.end }
-    : null;
+  // Visual boundary markers
+  const morningSleep = hasCrossDaySleep ? { start: "00:00", end: sleepEntry.end } : null;
+  const eveningSleep = hasCrossDaySleep ? { start: sleepEntry.start, end: "24:00" } : null;
+  const sameDaySleep = hasSameDaySleep  ? { start: sleepEntry.start, end: sleepEntry.end } : null;
 
-  // Sleep cut for this specific date (mid-day divider, independent of sleepWindow)
-  const sleepCutForDay = (data.meta.sleepCuts ?? []).find((c) => c.date === selectedDateIso) ?? null;
+  // Per-date sleep cuts (mid-day dividers)
+  const sleepCutsForDay = useMemo(
+    () => (data.meta.sleepCuts ?? [])
+      .filter((c) => c.date === selectedDateIso)
+      .sort((a, b) => a.start.localeCompare(b.start)),
+    [data.meta.sleepCuts, selectedDateIso],
+  );
 
   const defaultStartMin = timeToMinutes(data.meta.workdayStart);
-  const defaultEndMin = timeToMinutes(data.meta.workdayEnd);
+  const defaultEndMin   = timeToMinutes(data.meta.workdayEnd);
 
-  // Timeline boundaries: driven by content, not by sleepWindow.
-  // sleepWindow only controls the visual boundary badges (top/bottom),
-  // not where the scrollable timeline starts/ends.
-  // This allows crossday blocks to reach 24:00 naturally.
+  // ── Timeline boundaries ───────────────────────────────────────────────────
+  // The visible range is determined by content, not hard-capped by sleep.
+  // Sleep boundaries appear as visual badges/dividers, not timeline clamps.
+  // This allows crossday blocks to occupy 00:00–24:00 naturally.
+
+  // Start: wake time (morning end of sleep) or workday start
   let startMin = hasCrossDaySleep ? sleepEndMin : defaultStartMin;
-  let endMin = defaultEndMin;
+  // End: bed time (evening start of sleep) or workday end
+  let endMin   = hasCrossDaySleep ? sleepStartMin : defaultEndMin;
 
+  // For same-day sleep, show the full sleep zone
   if (hasSameDaySleep) {
     startMin = Math.min(startMin, sleepStartMin);
-    endMin = Math.max(endMin, sleepEndMin);
+    endMin   = Math.max(endMin,   sleepEndMin);
   }
 
+  // Expand to fit actual blocks (crossday blocks may push past default bounds)
   const firstWorkStart = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[0].start) : defaultStartMin;
-  const lastWorkEnd = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[nonSleepAgenda.length - 1].end) : defaultEndMin;
-
+  const lastWorkEnd    = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[nonSleepAgenda.length - 1].end) : defaultEndMin;
   startMin = Math.min(startMin, firstWorkStart);
-  endMin = Math.max(endMin, lastWorkEnd);
+  endMin   = Math.max(endMin,   lastWorkEnd);
 
-  // Extend to show sleep cut zone if it falls outside computed bounds
-  if (sleepCutForDay) {
-    startMin = Math.min(startMin, timeToMinutes(sleepCutForDay.start));
-    endMin = Math.max(endMin, timeToMinutes(sleepCutForDay.end));
+  // Expand to show all sleep cut zones
+  if (sleepCutsForDay.length > 0) {
+    const earliestCut = sleepCutsForDay[0];
+    const latestCut = sleepCutsForDay[sleepCutsForDay.length - 1];
+    startMin = Math.min(startMin, timeToMinutes(earliestCut.start));
+    endMin = Math.max(endMin, timeToMinutes(latestCut.end));
   }
 
-  // Cross-day sleep: extend to include the evening sleep zone visually
-  if (hasCrossDaySleep) {
-    endMin = Math.max(endMin, sleepStartMin);
-  }
+  // Safety: always show at least 1 hour
+  if (endMin - startMin < 60) { startMin = defaultStartMin; endMin = defaultEndMin; }
+  if (endMin - startMin < 60) { startMin = 0; endMin = 24 * 60; }
 
-  if (endMin - startMin < 60) {
-    startMin = defaultStartMin;
-    endMin = defaultEndMin;
-  }
-  if (endMin - startMin < 60) {
-    startMin = 0;
-    endMin = 24 * 60;
-  }
-
+  // For today: ensure "now" is always in view
   if (isToday) {
     startMin = Math.min(startMin, Math.max(0, nowMin - 60));
-    endMin = Math.max(endMin, Math.min(24 * 60, nowMin + 60));
+    endMin   = Math.max(endMin,   Math.min(24 * 60, nowMin + 60));
   }
 
-  const sleepSplit = useMemo(() => {
-    if (!sleepCutForDay) return null;
-    const cutStart = Math.max(startMin, timeToMinutes(sleepCutForDay.start));
-    const cutEnd = Math.min(endMin, timeToMinutes(sleepCutForDay.end));
-    if (cutEnd - cutStart < SNAP) return null;
-    return { startMin: cutStart, endMin: cutEnd, durMin: cutEnd - cutStart };
-  }, [sleepCutForDay, startMin, endMin]);
+  const sleepSplits = useMemo(() => {
+    return sleepCutsForDay
+      .map((cut) => {
+        const cutStartMin = timeToMinutes(cut.start);
+        const cutEndMin = timeToMinutes(cut.end);
+        if (cutEndMin <= cutStartMin) return null;
+        const cutStart = Math.max(startMin, cutStartMin);
+        const cutEnd = Math.min(endMin, cutEndMin);
+        const durMin = cutEnd - cutStart;
+        if (durMin < SNAP) return null;
+        return {
+          cut,
+          startMin: cutStart,
+          endMin: cutEnd,
+          durMin,
+          laneMin: Math.min(30, durMin),
+        };
+      })
+      .filter((cut): cut is {
+        cut: SleepCut;
+        startMin: number;
+        endMin: number;
+        durMin: number;
+        laneMin: number;
+      } => Boolean(cut));
+  }, [sleepCutsForDay, startMin, endMin]);
 
   const projectMinute = (minute: number) => {
-    if (!sleepSplit) return minute;
-    if (minute >= sleepSplit.endMin) return minute - sleepSplit.durMin;
-    if (minute > sleepSplit.startMin) return sleepSplit.startMin;
-    return minute;
+    if (sleepSplits.length === 0) return minute;
+    let hiddenBefore = 0;
+    for (const cut of sleepSplits) {
+      if (minute >= cut.endMin) {
+        hiddenBefore += cut.durMin - cut.laneMin;
+        continue;
+      }
+      if (minute > cut.startMin) {
+        // Keep a thin visible lane for each cut and map current time proportionally inside it.
+        const ratio = (minute - cut.startMin) / cut.durMin;
+        return cut.startMin - hiddenBefore + ratio * cut.laneMin;
+      }
+      return minute - hiddenBefore;
+    }
+    return minute - hiddenBefore;
   };
 
   const topForProjected = (time: string) => ((projectMinute(timeToMinutes(time)) - projectMinute(startMin)) / 60) * HOUR_PX;
 
   const timeline = useMemo(() => {
-    if (sleepSplit) {
-      const before = sleepSplit.startMin - startMin >= SNAP
-        ? buildTimeline(nonSleepAgenda, startMin, sleepSplit.startMin)
-        : [];
-      const after = endMin - sleepSplit.endMin >= SNAP
-        ? buildTimeline(nonSleepAgenda, sleepSplit.endMin, endMin)
-        : [];
-      return [...before, ...after];
+    if (sleepSplits.length > 0) {
+      const pieces: (AgendaItem | FreeSlot)[] = [];
+      let cursor = startMin;
+      for (const cut of sleepSplits) {
+        if (cut.startMin - cursor >= SNAP) {
+          pieces.push(...buildTimeline(nonSleepAgenda, cursor, cut.startMin));
+        }
+        cursor = Math.max(cursor, cut.endMin);
+      }
+      if (endMin - cursor >= SNAP) {
+        pieces.push(...buildTimeline(nonSleepAgenda, cursor, endMin));
+      }
+      return pieces;
     }
     return buildTimeline(nonSleepAgenda, startMin, endMin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(nonSleepAgenda), startMin, endMin, selectedDateIso, sleepSplit]);
+  }, [JSON.stringify(nonSleepAgenda), startMin, endMin, selectedDateIso, sleepSplits]);
 
-  const totalHeight = ((endMin - startMin - (sleepSplit?.durMin ?? 0)) / 60) * HOUR_PX;
+  const totalHiddenSleepMinutes = sleepSplits.reduce((sum, cut) => sum + (cut.durMin - cut.laneMin), 0);
+  const totalHeight = ((endMin - startMin - totalHiddenSleepMinutes) / 60) * HOUR_PX;
   const firstVisibleHour = Math.ceil(startMin / 60);
   const lastVisibleHour = Math.floor(endMin / 60);
   const hours = Array.from(
     { length: Math.max(0, lastVisibleHour - firstVisibleHour + 1) },
     (_, i) => firstVisibleHour + i,
-  ).filter((h) => !sleepSplit || h * 60 <= sleepSplit.startMin || h * 60 >= sleepSplit.endMin);
+  ).filter((h) => {
+    const hourMin = h * 60;
+    return !sleepSplits.some((cut) => hourMin > cut.startMin && hourMin < cut.endMin);
+  });
   const clampedNowMin = Math.max(startMin, Math.min(nowMin, endMin));
+  const projectedNowMin = projectMinute(clampedNowMin);
+  const activeSleepSplit = sleepSplits.find((cut) => nowMin > cut.startMin && nowMin < cut.endMin) ?? null;
+  const nowInsideSleepCut = Boolean(activeSleepSplit);
+  const nowRenderMin = nowInsideSleepCut && activeSleepSplit
+    ? projectMinute(activeSleepSplit.startMin) + activeSleepSplit.laneMin / 2
+    : projectedNowMin;
   const isNowClamped = isToday && clampedNowMin !== nowMin;
   const topBadgeLane = morningSleep ? 26 : 0;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -401,9 +440,11 @@ export function DayPlanner() {
   const dragDeltaRef = useRef(0);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const [dragLimitHint, setDragLimitHint] = useState<string | null>(null);
+  const hasDraggedRef = useRef(false); // true once mouse moves during a drag session
 
   const [editItem, setEditItem] = useState<AgendaItem | null>(null);
   const [editSleep, setEditSleep] = useState(false);
+  const [selectedSleepCut, setSelectedSleepCut] = useState<SleepCut | null>(null);
   const [editSleepCut, setEditSleepCut] = useState(false);
   const [inspectItem, setInspectItem] = useState<AgendaItem | null>(null);
 
@@ -435,13 +476,28 @@ export function DayPlanner() {
     setDragDeltaMin(0);
     dragDeltaRef.current = 0;
     setDragLimitHint(null);
+    // hasDraggedRef is reset after onClick fires (with a small delay)
+  }
+
+  function clampSnappedAwayFromSleepCut(snapped: number) {
+    if (sleepSplits.length === 0 || !dragState.current) return snapped;
+    const candidateStart = dragState.current.origStartMin + snapped;
+    const candidateEnd = candidateStart + dragState.current.origDurMin;
+    const overlap = sleepSplits.find((cut) => candidateStart < cut.endMin && candidateEnd > cut.startMin);
+    if (!overlap) return snapped;
+
+    const pushAfterCut = overlap.endMin - dragState.current.origStartMin;
+    const pushBeforeCut = overlap.startMin - dragState.current.origDurMin - dragState.current.origStartMin;
+    const preferForward = snapped >= 0;
+    return preferForward ? pushAfterCut : pushBeforeCut;
   }
 
   function updateDragPreview(snapped: number) {
-    setDragDeltaMin(snapped);
-    dragDeltaRef.current = snapped;
+    const adjusted = clampSnappedAwayFromSleepCut(snapped);
+    setDragDeltaMin(adjusted);
+    dragDeltaRef.current = adjusted;
     if (dragState.current?.sourceSpansNextDay) {
-      const candidateStart = dragState.current.origStartMin + snapped;
+      const candidateStart = dragState.current.origStartMin + adjusted;
       if (candidateStart < dragState.current.minStartMin) {
         setDragLimitHint(bcp47.toLowerCase().startsWith("pt") ? "Limite superior" : "Top limit");
       } else if (candidateStart > dragState.current.maxStartMin) {
@@ -457,16 +513,18 @@ export function DayPlanner() {
   function commitDrag(snapped: number) {
     if (!dragState.current) return;
     const { sourceId, source, origStartMin, origDurMin } = dragState.current;
-    if (snapped !== 0) {
-      const ns = clockTimeFromMin(origStartMin + snapped);
-      const ne = clockTimeFromMin(origStartMin + origDurMin + snapped);
-      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne, snapped);
+    const adjusted = clampSnappedAwayFromSleepCut(snapped);
+    if (adjusted !== 0) {
+      const ns = clockTimeFromMin(origStartMin + adjusted);
+      const ne = clockTimeFromMin(origStartMin + origDurMin + adjusted);
+      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne, adjusted);
       if (err) toast({ title: "Conflict", description: err });
     }
   }
 
   function onGripDown(e: React.MouseEvent, a: AgendaItem) {
     e.preventDefault();
+    if (a.kind === "sleep") return;
     if (dragCleanupRef.current) {
       dragCleanupRef.current();
       dragCleanupRef.current = null;
@@ -507,16 +565,22 @@ export function DayPlanner() {
     setDraggingId(a.id);
     setDragDeltaMin(0);
     dragDeltaRef.current = 0;
+    hasDraggedRef.current = false;
     setDragLimitHint(null);
 
     const handleMouseMove = (ev: MouseEvent) => {
       if (!dragState.current) return;
-      const snapped = Math.round(((ev.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
+      hasDraggedRef.current = true;
+      const rawDeltaPx = ev.clientY - dragState.current.originY;
+      const rawDeltaMin = (rawDeltaPx / HOUR_PX) * 60;
+      const snapped = Math.round(rawDeltaMin / SNAP) * SNAP;
       updateDragPreview(snapped);
     };
     const handleMouseDone = (ev: MouseEvent) => {
       if (!dragState.current) return;
-      const fallbackSnapped = Math.round(((ev.clientY - dragState.current.originY) / HOUR_PX) * 60 / SNAP) * SNAP;
+      const rawDeltaPx = ev.clientY - dragState.current.originY;
+      const rawDeltaMin = (rawDeltaPx / HOUR_PX) * 60;
+      const fallbackSnapped = Math.round(rawDeltaMin / SNAP) * SNAP;
       const snapped = dragDeltaRef.current !== 0 ? dragDeltaRef.current : fallbackSnapped;
       commitDrag(snapped);
       if (dragCleanupRef.current) {
@@ -524,6 +588,8 @@ export function DayPlanner() {
         dragCleanupRef.current = null;
       }
       clearDragState();
+      // Reset hasDraggedRef after onClick has had a chance to fire
+      setTimeout(() => { hasDraggedRef.current = false; }, 0);
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -559,7 +625,8 @@ export function DayPlanner() {
     ? t.chronos.today.eyebrow
     : selectedDate.toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "short" });
 
-  const needsBottomSleepLane = Boolean(eveningSleep && timeToMinutes(eveningSleep.start) >= 23 * 60 + 30);
+  // Always reserve bottom badge lane when evening sleep exists
+  const needsBottomSleepLane = Boolean(eveningSleep);
   const bottomBadgeLane = needsBottomSleepLane ? 28 : 0;
   const timelineContentHeight = totalHeight + topBadgeLane;
   const timelineHeight = timelineContentHeight + bottomBadgeLane;
@@ -575,7 +642,7 @@ export function DayPlanner() {
       const nextTop = index < timeline.length - 1
         ? topForProjected(timeline[index + 1].start) + topBadgeLane
         : timelineContentHeight;
-      const maxHeightWithoutOverlap = Math.max(6, nextTop - top - 2);
+      const maxHeightWithoutOverlap = Math.max(6, nextTop - top - STACK_GAP_PX);
       return { item, top, height: Math.min(desiredHeight, maxHeightWithoutOverlap) };
     });
   }, [timeline, topBadgeLane, timelineContentHeight]);
@@ -615,7 +682,7 @@ export function DayPlanner() {
       <div ref={scrollRef} className="max-h-[640px] overflow-y-auto">
         <div className="relative" style={{ height: timelineHeight, userSelect: draggingId ? "none" : undefined }}>
           {hours.map((h) => {
-            const hideLabel = isNowClamped && clampedNowMin === h * 60;
+            const hideLabel = isToday && projectMinute(h * 60) === projectedNowMin;
             return (
               <div key={h} className="absolute left-0 right-0 border-t border-border/30 pointer-events-none" style={{ top: ((projectMinute(h * 60) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}>
                 {!hideLabel && (
@@ -628,22 +695,24 @@ export function DayPlanner() {
           {isToday && (
             <>
               <div
-                className="absolute left-[68px] right-4 z-[6] pointer-events-none"
-                style={{ top: ((projectMinute(clampedNowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
+                className="absolute left-[68px] right-4 z-[32] pointer-events-none -translate-y-1/2"
+                style={{ top: ((nowRenderMin - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
               >
-                {isNowClamped
+                {nowInsideSleepCut
+                  ? <div className="h-[3px] w-16 rounded-full bg-gradient-to-r from-primary/85 via-primary/60 to-transparent" />
+                  : isNowClamped
                   ? <div className="h-[3px] w-16 rounded-full bg-gradient-to-r from-primary/85 via-primary/60 to-transparent" />
                   : (draggingId !== null || nonSleepAgenda.some((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end))
                     ? <div className="h-[3px] w-7 rounded-full bg-primary/80" />
                     : <div className="h-[3px] w-full rounded-full bg-primary/80" />)}
               </div>
               <div
-                className="absolute left-2 z-[12] pointer-events-none"
-                style={{ top: ((projectMinute(clampedNowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
+                className="absolute left-2 z-[33] pointer-events-none"
+                style={{ top: ((nowRenderMin - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
               >
-                <div className="relative -translate-y-1/2 flex items-center gap-1.5">
+                <div className="relative -translate-y-1/2 flex flex-row-reverse items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-card" />
-                  <span className="text-[10px] num font-medium text-primary bg-card border border-primary/30 px-1 rounded shadow-sm">
+                  <span className="text-[10px] num font-medium text-primary bg-card/95 border border-primary/40 px-1 rounded shadow-sm">
                     {`${String(Math.floor(nowMin / 60)).padStart(2, "0")}:${String(nowMin % 60).padStart(2, "0")}`}
                   </span>
                 </div>
@@ -665,99 +734,76 @@ export function DayPlanner() {
               </button>
             </div>
           )}
-          {eveningSleep && !sleepCutForDay && (
+          {eveningSleep && (
             <div
               className="absolute left-[68px] right-4 z-[20]"
-              style={{
-                top: timelineContentHeight - 24,
-              }}
+              style={{ top: topForProjected(eveningSleep.start) + topBadgeLane + 4 }}
             >
               <div className="flex items-center justify-end gap-1.5">
-                {!sleepCutForDay && (
-                  <button
-                    onClick={() => setEditSleepCut(true)}
-                    className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-dashed border-primary/25 text-primary/50 hover:bg-primary/10 hover:border-primary/40 hover:text-primary/80 transition-colors"
-                    title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar sono neste dia" : "Add sleep for this day"}
-                  >
-                    + {bcp47.toLowerCase().startsWith("pt") ? "Sono" : "Add sleep"}
-                  </button>
-                )}
+                <button
+                  onClick={() => { setSelectedSleepCut(null); setEditSleepCut(true); }}
+                  className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-dashed border-primary/35 text-primary/70 hover:bg-primary/10 hover:border-primary/50 hover:text-primary/90 transition-colors"
+                  title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar pausa de descanso neste dia" : "Add a rest gap for this day"}
+                >
+                  <Plus className="h-3 w-3" />
+                  {bcp47.toLowerCase().startsWith("pt") ? "Pausa de descanso" : "Rest gap"}
+                </button>
                 <button
                   onClick={() => setEditSleep(true)}
                   className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
                 >
-                  {bcp47.toLowerCase().startsWith("pt") ? `Sono às ${formatClock(eveningSleep.start, bcp47)}` : `Sleep at ${formatClock(eveningSleep.start, bcp47)}`}
+                  {bcp47.toLowerCase().startsWith("pt") ? `Horário de sono: ${formatClock(eveningSleep.start, bcp47)}` : `Sleep hours: ${formatClock(eveningSleep.start, bcp47)}`}
                 </button>
               </div>
             </div>
           )}
-          {sameDaySleep && (
-            <>
-              <div className="absolute left-[68px] right-4 z-[20]" style={{ top: topForProjected(sameDaySleep.start) + topBadgeLane }}>
-                <div className="flex items-center justify-end gap-1.5">
-                  {!sleepCutForDay && (
-                    <button
-                      onClick={() => setEditSleepCut(true)}
-                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-dashed border-primary/25 text-primary/50 hover:bg-primary/10 hover:border-primary/40 hover:text-primary/80 transition-colors"
-                      title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar sono neste dia" : "Add sleep for this day"}
-                    >
-                      + {bcp47.toLowerCase().startsWith("pt") ? "Sono" : "Add sleep"}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setEditSleep(true)}
-                    className="ml-auto block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
-                  >
-                    {bcp47.toLowerCase().startsWith("pt") ? `Sono às ${formatClock(sameDaySleep.start, bcp47)}` : `Sleep at ${formatClock(sameDaySleep.start, bcp47)}`}
-                  </button>
-                </div>
-              </div>
-              <div className="absolute left-[68px] right-4 z-[20]" style={{ top: timelineContentHeight - 24, height: 24 }}>
-                <button
-                  onClick={() => setEditSleep(true)}
-                  className="absolute right-0 top-0 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
-                >
-                  {bcp47.toLowerCase().startsWith("pt") ? `Sono até ${formatClock(sameDaySleep.end, bcp47)}` : `Sleep until ${formatClock(sameDaySleep.end, bcp47)}`}
-                </button>
-              </div>
-            </>
-          )}
-
           {/* ── SLEEP CUT DIVIDER (mid-day, per-date) ────────────────────────
                A full-width bar that splits the timeline into two segments.
                Clicking opens the SleepCutDialog for this specific day. */}
-          {sleepSplit && (() => {
+          {sleepSplits.map((sleepSplit, index) => {
             const splitTop = topForProjected(snapTime(sleepSplit.startMin)) + topBadgeLane;
-            const splitBottom = topForProjected(snapTime(sleepSplit.endMin)) + topBadgeLane;
-            const splitHeight = Math.max(34, splitBottom - splitTop);
             const isPt = bcp47.toLowerCase().startsWith("pt");
+            const splitBottom = topForProjected(snapTime(sleepSplit.endMin)) + topBadgeLane;
+            const splitAvailable = Math.max(0, splitBottom - splitTop);
+            const splitTarget = Math.max(30, splitAvailable - 2);
+            const splitHeight = Math.min(splitTarget, splitAvailable);
+            // Center against neighboring card outlets (not raw lane edges)
+            // so the visual gap above and below the Sono strip matches.
+            const centeredTop = (splitBottom + splitTop - STACK_GAP_PX - splitHeight) / 2;
+            const splitTopOffset = Math.max(splitTop - STACK_GAP_PX, Math.min(centeredTop, splitBottom - splitHeight));
             return (
               <button
-                onClick={() => setEditSleepCut(true)}
-                className="group absolute left-[68px] right-4 z-[25] rounded-md border border-primary/30 bg-primary/10 text-primary/85 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/15 hover:border-primary/45 transition-colors"
-                style={{ top: splitTop, height: splitHeight }}
-                aria-label={isPt ? "Editar divisão de sono" : "Edit sleep split"}
+                key={`${sleepSplit.cut.date}-${sleepSplit.cut.start}-${sleepSplit.cut.end}-${index}`}
+                onClick={() => { setSelectedSleepCut(sleepSplit.cut); setEditSleepCut(true); }}
+                className="group absolute left-[68px] right-4 z-[25] rounded-md border border-dashed border-primary/35 bg-muted/45 text-primary/85 hover:bg-muted/65 hover:border-primary/50 transition-colors"
+                style={{ top: splitTopOffset, height: splitHeight }}
+                aria-label={isPt ? "Editar pausa de descanso" : "Edit rest gap"}
               >
-                <div className="absolute left-2 right-2 top-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider num">
-                  <span>{isPt ? "Sono" : "Sleep"}</span>
-                  <span>{formatClock(sleepCutForDay?.start ?? "00:00", bcp47)}</span>
-                </div>
-                <div className="absolute left-2 right-2 top-6 bottom-6 rounded border border-dashed border-primary/20 bg-primary/5" />
-                <div className="absolute left-2 right-2 bottom-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider num">
-                  <span>{formatClock(sleepCutForDay?.end ?? "00:00", bcp47)}</span>
-                  <span className="opacity-75">{fmtDur(sleepSplit.durMin)}</span>
+                <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider num pointer-events-none">
+                  <span className="font-medium">{isPt ? "Pausa" : "Gap"}</span>
+                  <span className="opacity-75">{formatClock(sleepSplit.cut.start, bcp47)}–{formatClock(sleepSplit.cut.end, bcp47)}</span>
                 </div>
                 <div
-                  className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => { e.stopPropagation(); removeSleepCut(selectedDateIso); }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-primary/70 hover:text-rose-500 border border-primary/20 hover:border-rose-400/50 rounded px-1.5 py-0.5 bg-card opacity-0 group-hover:opacity-100 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeSleepCut({ date: sleepSplit.cut.date, start: sleepSplit.cut.start, end: sleepSplit.cut.end });
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeSleepCut({ date: sleepSplit.cut.date, start: sleepSplit.cut.start, end: sleepSplit.cut.end });
+                  }}
                 >
-                  <span className="text-[10px] uppercase tracking-wider text-primary/70 hover:text-rose-500 border border-primary/20 hover:border-rose-400/50 rounded px-1.5 py-0.5 bg-card transition-colors">
-                    {isPt ? "Remover" : "Remove"}
-                  </span>
+                  <Trash2 className="h-3 w-3" />
+                  <span>{isPt ? "Remover" : "Remove"}</span>
                 </div>
               </button>
             );
-          })()}
+          })}
 
 
 
@@ -897,6 +943,11 @@ export function DayPlanner() {
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.closest('[data-no-open="true"]')) return;
+                    if (a.kind === "sleep") {
+                      setEditSleep(true);
+                      return;
+                    }
+                    if (hasDraggedRef.current) return;
                     if (draggingId) return;
                     setInspectItem(a);
                   }}
@@ -1091,9 +1142,27 @@ export function DayPlanner() {
       )}
       {editSleep && (
         <SleepEditDialog
-          sleepWindow={data.meta.sleepWindow}
+          sleepWindow={sleepEntry}
           onSaveWindow={(patch) => {
-            updateSleepWindow(patch);
+            const dow = selectedDate.getDay();
+            const prevSchedule: SleepScheduleEntry[] = data.meta.sleepSchedule ?? [{ start: sleepEntry.start, end: sleepEntry.end }];
+            const hasSpecificEntry = prevSchedule.some((e) => e.days?.includes(dow));
+            let nextSchedule: SleepScheduleEntry[];
+            if (hasSpecificEntry) {
+              nextSchedule = prevSchedule.map((e): SleepScheduleEntry =>
+                e.days?.includes(dow) ? { ...e, start: patch.start ?? e.start, end: patch.end ?? e.end } : e
+              );
+            } else {
+              const allDay = prevSchedule.find((e) => !e.days);
+              if (allDay) {
+                nextSchedule = prevSchedule.map((e): SleepScheduleEntry =>
+                  !e.days ? { ...e, start: patch.start ?? e.start, end: patch.end ?? e.end } : e
+                );
+              } else {
+                nextSchedule = [...prevSchedule, { start: patch.start ?? sleepEntry.start, end: patch.end ?? sleepEntry.end, days: [dow] }];
+              }
+            }
+            updateSleepSchedule(nextSchedule);
             setEditSleep(false);
           }}
           onAddInstance={(start, end) => {
@@ -1123,11 +1192,32 @@ export function DayPlanner() {
       {editSleepCut && (
         <SleepCutDialog
           dateIso={selectedDateIso}
-          existing={sleepCutForDay}
+          existing={selectedSleepCut}
           bcp47={bcp47}
-          onSave={(cut) => { addSleepCut(cut); setEditSleepCut(false); }}
-          onRemove={() => { removeSleepCut(selectedDateIso); setEditSleepCut(false); }}
-          onClose={() => setEditSleepCut(false)}
+          onSave={(cut) => {
+            if (selectedSleepCut) {
+              removeSleepCut({
+                date: selectedSleepCut.date,
+                start: selectedSleepCut.start,
+                end: selectedSleepCut.end,
+              });
+            }
+            addSleepCut(cut);
+            setEditSleepCut(false);
+            setSelectedSleepCut(null);
+          }}
+          onRemove={() => {
+            if (selectedSleepCut) {
+              removeSleepCut({
+                date: selectedSleepCut.date,
+                start: selectedSleepCut.start,
+                end: selectedSleepCut.end,
+              });
+            }
+            setEditSleepCut(false);
+            setSelectedSleepCut(null);
+          }}
+          onClose={() => { setEditSleepCut(false); setSelectedSleepCut(null); }}
         />
       )}
       {inspectItem && (
@@ -1388,8 +1478,8 @@ function SleepEditDialog({
   onAddInstance,
   onClose,
 }: {
-  sleepWindow: { start: string; end: string };
-  onSaveWindow: (patch: Partial<{ start: string; end: string }>) => void;
+  sleepWindow: { start: string; end: string; days?: number[] };
+  onSaveWindow: (patch: Partial<{ start: string; end: string; days?: number[] }>) => void;
   onAddInstance: (start: string, end: string) => void;
   onClose: () => void;
 }) {
@@ -1452,7 +1542,7 @@ function SleepCutDialog({
   onClose,
 }: {
   dateIso: string;
-  existing: { start: string; end: string } | null;
+  existing: SleepCut | null;
   bcp47: string;
   onSave: (cut: { date: string; start: string; end: string }) => void;
   onRemove: () => void;
@@ -1476,12 +1566,12 @@ function SleepCutDialog({
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="font-display text-xl text-primary">
-            {isPt ? "Divisão de sono" : "Sleep split"}
+            {isPt ? "Pausa de descanso" : "Rest gap"}
           </DialogTitle>
           <DialogDescription>
             {isPt
-              ? "Define um intervalo a ocultar na timeline deste dia, criando duas seções compactas."
-              : "Define a hidden interval for this day timeline, creating two compact sections."}
+              ? "Define uma pausa de descanso para compactar a timeline deste dia."
+              : "Define a rest gap that compacts this day's timeline."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-1">

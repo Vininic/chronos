@@ -1,12 +1,20 @@
 import { DayPlanner } from "@/components/dashboard/DayPlanner";
 import { BalanceCard, FocusBlocksCard, AetherisCard } from "@/components/dashboard/widgets";
 import { useAuth } from "@/lib/auth";
-import { buildAgendaForDate, useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
 import { durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { kindStyle } from "@/components/dashboard/widgets";
 import { ChevronDown } from "lucide-react";
+
+function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0 && m > 0) return isPt ? `${h}h ${m}min` : `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return isPt ? `${m}min` : `${m}m`;
+}
 
 export default function Today() {
   const { session } = useAuth();
@@ -20,9 +28,30 @@ export default function Today() {
   const dateStr = new Date().toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "long" });
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const todayAgenda = buildAgendaForDate(data, new Date()).sort((a, b) => a.start.localeCompare(b.start));
-  const currentBlock = todayAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end));
-  const nextBlock = todayAgenda.find((a) => timeToMinutes(a.start) > nowMin);
+  const timelineAgenda = todayAgenda.filter((a) => !(a.kind === "sleep" && (a.continuesFromPrevDay || a.continuesToNextDay)));
+  const currentBlock = timelineAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end));
+  const nextTimelineBlock = timelineAgenda.find((a) => timeToMinutes(a.start) > nowMin);
+  const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
+  const sleepEntry = getSleepWindowForDay(sleepSchedule, new Date().getDay()) ?? sleepSchedule[0];
+  const sleepStartMin = timeToMinutes(sleepEntry.start);
+  const sleepEndMin = timeToMinutes(sleepEntry.end);
+  const sleepSpansNextDay = sleepEndMin <= sleepStartMin;
+  const nextSleepWindow = sleepSpansNextDay && nowMin < sleepStartMin
+    ? {
+        id: "next-sleep-window",
+        source: "routine" as const,
+        kind: "sleep" as const,
+        title: "sleep",
+        titleCustom: undefined,
+        start: sleepEntry.start,
+        end: sleepEntry.end,
+        synthetic: true,
+      }
+    : null;
+  const nextBlock = nextTimelineBlock ?? nextSleepWindow;
+  const nextBlockSpansNextDay = nextBlock ? timeToMinutes(nextBlock.end) <= timeToMinutes(nextBlock.start) : false;
   const nextLabel = bcp47.toLowerCase().startsWith("pt") ? "Próximo" : "Next";
+  const isPt = bcp47.toLowerCase().startsWith("pt");
   const emptyNowLabel = bcp47.toLowerCase().startsWith("pt") ? "Sem bloco atual" : "No current block";
   const emptyNextLabel = bcp47.toLowerCase().startsWith("pt") ? "Sem próximo bloco" : "No next block";
 
@@ -56,7 +85,7 @@ export default function Today() {
                 {currentBlock ? scheduleText.blockTitle(currentBlock.title, currentBlock.titleCustom) : emptyNowLabel}
               </div>
               <div className="mt-1 text-xs num text-muted-foreground">
-                {currentBlock ? `${currentBlock.start}–${currentBlock.end} · ${durationMin(currentBlock.start, currentBlock.end)}m` : "--:--"}
+                {currentBlock ? `${currentBlock.start}–${currentBlock.end} · ${fmtFriendlyDuration(durationMin(currentBlock.start, currentBlock.end), isPt)}` : "--:--"}
               </div>
             </div>
             <button
@@ -87,13 +116,15 @@ export default function Today() {
                   : emptyNextLabel}
               </div>
               <div className="mt-1 text-xs num text-muted-foreground">
-                {nextBlock ? `${nextBlock.start}–${nextBlock.end} · ${durationMin(nextBlock.start, nextBlock.end)}m` : "--:--"}
+                {nextBlock
+                  ? `${nextBlock.start}–${nextBlock.end}${nextBlockSpansNextDay ? ` (${isPt ? "amanhã" : "tomorrow"})` : ""} · ${fmtFriendlyDuration(durationMin(nextBlock.start, nextBlock.end), isPt)}`
+                  : "--:--"}
               </div>
             </div>
             <button
               type="button"
-              onClick={() => nextBlock && jumpToBlock(nextBlock.id, nextBlock.source)}
-              disabled={!nextBlock}
+              onClick={() => nextBlock && !("synthetic" in nextBlock) && jumpToBlock(nextBlock.id, nextBlock.source)}
+              disabled={!nextBlock || ("synthetic" in nextBlock)}
               className="h-7 w-7 rounded-md border border-border/60 grid place-items-center text-muted-foreground enabled:hover:text-primary enabled:hover:border-secondary/50 disabled:opacity-40"
               aria-label="Jump to next block"
             >

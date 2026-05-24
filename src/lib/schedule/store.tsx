@@ -1,16 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, RoutineBlock, ScheduleData, Suggestion, SleepCut } from "./types";
+import type { Category, Commitment, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
 import { durationMin, timeToMinutes } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { DICTIONARIES } from "@/lib/i18n/dictionaries";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { isDefaultCategoryDescription, isDefaultCategoryLabel } from "@/lib/i18n/scheduleText";
 
-const SCHEMA_VERSION = 2;
-const STORAGE_KEY = "chronos.schedule.v2";
-const LEGACY_STORAGE_KEYS = ["chronos.schedule.v1"];
+const SCHEMA_VERSION = 3;
+const STORAGE_KEY = "chronos.schedule.v3";
+const LEGACY_STORAGE_KEYS = ["chronos.schedule.v2", "chronos.schedule.v1"];
 
 function getSeedForLocale(locale: Locale): ScheduleData {
   return locale === "pt" ? (seedPt as ScheduleData) : (seedEn as ScheduleData);
@@ -33,10 +33,15 @@ function normalizeNamingModel(data: ScheduleData): ScheduleData {
     return { ...c, labelCustom, descriptionCustom };
   });
 
-  const routine = data.routine.map((r) => ({
-    ...r,
-    endsNextDay: r.endsNextDay ?? r.end <= r.start,
-  }));
+  const routine = data.routine
+    // Strip legacy boundary sleep blocks — sleep is now a schedule concept, not routine blocks
+    .filter((r) => r.kind !== "sleep" || r.id.startsWith("r-custom-sleep"))
+    .map((r) => ({
+      ...r,
+      endsNextDay: r.endsNextDay ?? r.end <= r.start,
+    }));
+
+  const sleepSchedule = migrateSleepSchedule(data);
 
   return {
     ...data,
@@ -45,7 +50,8 @@ function normalizeNamingModel(data: ScheduleData): ScheduleData {
     meta: {
       ...data.meta,
       version: SCHEMA_VERSION,
-      sleepWindow: normalizeSleepWindow(data),
+      sleepSchedule,
+      sleepWindow: normalizeSleepWindow(data), // keep for legacy compat
     },
   };
 }
@@ -107,8 +113,8 @@ function sanitizeSleepWindow(
   return sleepWindow;
 }
 
-function normalizeSleepWindow(data: ScheduleData): { start: string; end: string } {
-  if (data.meta.sleepWindow) return sanitizeSleepWindow(data.meta.sleepWindow, data.meta.workdayStart);
+/** Derive a single legacy sleepWindow from routine sleep blocks (for old data migration). */
+function legacySleepWindowFromRoutine(data: ScheduleData): { start: string; end: string } {
   const sleep = data.routine.filter((r) => r.kind === "sleep");
   const morningEnd = sleep
     .filter((r) => timeToMinutes(r.end) <= 12 * 60)
@@ -117,6 +123,28 @@ function normalizeSleepWindow(data: ScheduleData): { start: string; end: string 
     .filter((r) => timeToMinutes(r.start) >= 18 * 60)
     .reduce((m, r) => Math.min(m, timeToMinutes(r.start)), timeToMinutes(data.meta.workdayEnd));
   return { start: minutesToTime(eveningStart), end: minutesToTime(morningEnd) };
+}
+
+/** Migrate legacy sleepWindow or routine sleep blocks to SleepScheduleEntry[]. */
+function migrateSleepSchedule(data: ScheduleData): SleepScheduleEntry[] {
+  if (data.meta.sleepSchedule && data.meta.sleepSchedule.length > 0) {
+    return data.meta.sleepSchedule;
+  }
+  // Migrate from sleepWindow
+  const win = data.meta.sleepWindow ?? legacySleepWindowFromRoutine(data);
+  return [{ start: win.start, end: win.end }]; // all days
+}
+
+/** Get the sleep window for a specific day-of-week (0=Sun..6=Sat).
+ *  Returns the first matching SleepScheduleEntry, or null if none. */
+export function getSleepWindowForDay(schedule: SleepScheduleEntry[], dayOfWeek: number): SleepScheduleEntry | null {
+  return schedule.find((e) => !e.days || e.days.includes(dayOfWeek)) ?? null;
+}
+
+/** Normalize sleepWindow (legacy compat). */
+function normalizeSleepWindow(data: ScheduleData): { start: string; end: string } {
+  if (data.meta.sleepWindow) return sanitizeSleepWindow(data.meta.sleepWindow, data.meta.workdayStart);
+  return legacySleepWindowFromRoutine(data);
 }
 
 function resolveCommitmentEndDate(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
@@ -475,8 +503,9 @@ interface Ctx {
   updateCommitment: (id: string, patch: Partial<Commitment>) => string | null;
   pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number) => string | null;
   updateSleepWindow: (patch: Partial<{ start: string; end: string }>) => void;
+  updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
-  removeSleepCut: (date: string) => void;
+  removeSleepCut: (target: { date: string; start?: string; end?: string }) => void;
   updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone">>) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
   applySuggestion: (id: string) => void;
@@ -614,6 +643,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
 
   const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number) => {
     const day = date.getDay();
+    const dayIso = dateToIso(date);
     const dayAgenda = buildAgendaForDate(data, date).filter((a) => !(a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary));
     const moved = dayAgenda.find((a) => a.id === id && a.source === source);
     if (!moved) return "Block not found.";
@@ -644,6 +674,48 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       .filter((a) => timeToMinutes(a.start) >= 18 * 60)
       .reduce((m, a) => Math.min(m, timeToMinutes(a.start)), 23 * 60 + 45);
     const boundarySnapTol = 15;
+    const sleepCuts = (data.meta.sleepCuts ?? [])
+      .filter((c) => c.date === dayIso)
+      .map((c) => ({ start: timeToMinutes(c.start), end: timeToMinutes(c.end) }))
+      .filter((c) => c.end > c.start)
+      .sort((a, b) => a.start - b.start);
+
+    const findOverlappingSleepCut = (start: number, end: number) =>
+      sleepCuts.find((c) => start < c.end && end > c.start) ?? null;
+
+    const avoidSleepCut = (candidate: number, dur: number, preferForward: boolean) => {
+      let nextStart = candidate;
+      let guard = 0;
+      while (guard < sleepCuts.length + 2) {
+        guard += 1;
+        const nextEnd = nextStart + dur;
+        const overlap = findOverlappingSleepCut(nextStart, nextEnd);
+        if (!overlap) return nextStart;
+
+        const beforeStart = Math.max(wakeMin, Math.min(nextStart, overlap.start - dur));
+        const beforeEnd = beforeStart + dur;
+        const beforeValid = beforeStart >= wakeMin && beforeEnd <= overlap.start && !findOverlappingSleepCut(beforeStart, beforeEnd);
+
+        const afterStart = Math.min(bedMin - dur, Math.max(nextStart, overlap.end));
+        const afterEnd = afterStart + dur;
+        const afterValid = afterStart >= overlap.end && afterEnd <= bedMin && !findOverlappingSleepCut(afterStart, afterEnd);
+
+        if (beforeValid && afterValid) {
+          nextStart = preferForward ? afterStart : beforeStart;
+          continue;
+        }
+        if (afterValid) {
+          nextStart = afterStart;
+          continue;
+        }
+        if (beforeValid) {
+          nextStart = beforeStart;
+          continue;
+        }
+        return null;
+      }
+      return null;
+    };
 
     const sourceSpansNextDay = sourceRoutine
       ? (sourceRoutine.endsNextDay ?? sourceRoutine.end <= sourceRoutine.start)
@@ -729,7 +801,11 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     if (movedEnd > bedMin && movedEnd - bedMin <= boundarySnapTol) {
       candidateStart = bedMin - movedDur;
     }
-    const clampedStart = Math.max(wakeMin, Math.min(candidateStart, bedMin - movedDur));
+    const boundedStart = Math.max(wakeMin, Math.min(candidateStart, bedMin - movedDur));
+    const preferredForward = movedStart >= sourceStartMin;
+    const safeStart = avoidSleepCut(boundedStart, movedDur, preferredForward);
+    if (safeStart === null) return "Cannot place block outside sleep cut.";
+    const clampedStart = safeStart;
     const clampedEnd = clampedStart + movedDur;
 
     const reordered = dayAgenda
@@ -786,6 +862,27 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       if (adjusted[adjusted.length - 1].e > MAX_END) return "Cannot push more. Day limit reached.";
     }
 
+    // Final safety pass: no adjusted block can end up inside the per-day sleep cut.
+    if (sleepCuts.length > 0) {
+      for (let i = 0; i < adjusted.length; i += 1) {
+        const prevEnd = i > 0 ? adjusted[i - 1].e : wakeMin;
+        let nextStart = Math.max(adjusted[i].s, prevEnd);
+        let nextEnd = nextStart + adjusted[i].dur;
+
+        const overlap = findOverlappingSleepCut(nextStart, nextEnd);
+        if (overlap) {
+          nextStart = overlap.end;
+          nextEnd = nextStart + adjusted[i].dur;
+          if (findOverlappingSleepCut(nextStart, nextEnd)) return "Cannot place block outside sleep cut.";
+        }
+
+        if (nextEnd > MAX_END) return "Cannot place block outside sleep cut.";
+
+        adjusted[i].s = nextStart;
+        adjusted[i].e = nextEnd;
+      }
+    }
+
     const agendaMap = new Map(adjusted.map((a) => [
       `${a.source}:${a.id}`,
       { start: minutesToTime(Math.max(0, a.s)), end: minutesToTime(Math.min(MAX_END, a.e)) },
@@ -822,21 +919,54 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     setData((d) => {
       const current = d.meta.sleepWindow ?? normalizeSleepWindow(d);
       const next = sanitizeSleepWindow({ ...current, ...patch }, d.meta.workdayStart);
-      return withDerived({ ...d, meta: { ...d.meta, sleepWindow: next } });
+      // Also update sleepSchedule to stay in sync (replace all-day entry)
+      const prevSchedule = d.meta.sleepSchedule ?? migrateSleepSchedule(d);
+      const nextSchedule = prevSchedule.some((e) => !e.days)
+        ? prevSchedule.map((e) => !e.days ? { ...e, start: next.start, end: next.end } : e)
+        : [{ start: next.start, end: next.end }, ...prevSchedule];
+      return withDerived({ ...d, meta: { ...d.meta, sleepWindow: next, sleepSchedule: nextSchedule } });
+    });
+  }, []);
+
+  const updateSleepSchedule = useCallback((schedule: SleepScheduleEntry[]) => {
+    setData((d) => {
+      // Keep sleepWindow in sync with the first all-day entry for legacy compat
+      const allDay = schedule.find((e) => !e.days);
+      const sleepWindow = allDay
+        ? sanitizeSleepWindow({ start: allDay.start, end: allDay.end }, d.meta.workdayStart)
+        : d.meta.sleepWindow;
+      return withDerived({ ...d, meta: { ...d.meta, sleepSchedule: schedule, sleepWindow } });
     });
   }, []);
 
   const addSleepCut = useCallback((cut: SleepCut) => {
     setData((d) => {
-      // Remove any existing cut for this date, then add the new one
-      const cuts = (d.meta.sleepCuts ?? []).filter((c) => c.date !== cut.date);
-      return withDerived({ ...d, meta: { ...d.meta, sleepCuts: [...cuts, cut] } });
+      const incomingStart = timeToMinutes(cut.start);
+      const incomingEnd = timeToMinutes(cut.end);
+      const sameDate = (d.meta.sleepCuts ?? []).filter((c) => c.date === cut.date);
+      const otherDates = (d.meta.sleepCuts ?? []).filter((c) => c.date !== cut.date);
+
+      // Keep multiple per-day cuts, but drop any that overlap the new one.
+      const sameDateWithoutOverlap = sameDate.filter((c) => {
+        const start = timeToMinutes(c.start);
+        const end = timeToMinutes(c.end);
+        return end <= incomingStart || start >= incomingEnd;
+      });
+
+      const next = [...sameDateWithoutOverlap, cut].sort((a, b) => a.start.localeCompare(b.start));
+      return withDerived({ ...d, meta: { ...d.meta, sleepCuts: [...otherDates, ...next] } });
     });
   }, []);
 
-  const removeSleepCut = useCallback((date: string) => {
+  const removeSleepCut = useCallback((target: { date: string; start?: string; end?: string }) => {
     setData((d) => {
-      const cuts = (d.meta.sleepCuts ?? []).filter((c) => c.date !== date);
+      const cuts = (d.meta.sleepCuts ?? []).filter((c) => {
+        if (c.date !== target.date) return true;
+        if (target.start && target.end) {
+          return !(c.start === target.start && c.end === target.end);
+        }
+        return false;
+      });
       return withDerived({ ...d, meta: { ...d.meta, sleepCuts: cuts } });
     });
   }, []);
@@ -900,6 +1030,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCommitment,
       pushMoveDayChain,
       updateSleepWindow,
+      updateSleepSchedule,
       addSleepCut,
       removeSleepCut,
       updateCategory,
@@ -920,6 +1051,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCommitment,
       pushMoveDayChain,
       updateSleepWindow,
+      updateSleepSchedule,
       addSleepCut,
       removeSleepCut,
       updateCategory,
@@ -1002,7 +1134,9 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
     });
 
   const sleepTitle = data.categories.find((c) => c.id === "sleep")?.label ?? "Sleep";
-  const sleepWindow = data.meta.sleepWindow ?? normalizeSleepWindow(data);
+  const sleepSchedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
+  const sleepEntry = getSleepWindowForDay(sleepSchedule, day);
+  const sleepWindow = sleepEntry ?? normalizeSleepWindow(data);
   const sleepSegments = buildSleepSegmentsForDate(sleepWindow, date, sleepTitle);
 
   return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
