@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TimeSelect } from "@/components/ui/time-select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useSchedule } from "@/lib/schedule/store";
-import { BlockKind } from "@/lib/schedule/types";
+import { BlockKind, durationMin } from "@/lib/schedule/types";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
@@ -34,6 +35,21 @@ function serializeNotes(lines: NoteLine[]) {
     .filter((line) => line.text.length > 0)
     .map((line) => (line.tone === "amber" ? line.text : `${line.tone}: ${line.text}`))
     .join("\n");
+}
+
+function addIsoDays(isoDate: string, days: number) {
+  const date = new Date(`${isoDate}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDurationLabel(start: string, end: string, isPt: boolean) {
+  const total = durationMin(start, end);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h > 0 && m > 0) return isPt ? `${h}h ${m}min` : `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return isPt ? `${m}min` : `${m}m`;
 }
 
 interface Props {
@@ -66,6 +82,8 @@ export function ComposeBlockDialog({
   const [start, setStart] = useState(defaultStart ?? "09:00");
   const [end, setEnd] = useState(defaultEnd ?? "10:00");
   const [endDate, setEndDate] = useState(defaultDateIso ?? new Date().toISOString().slice(0, 10));
+  const [routineEndsNextDay, setRoutineEndsNextDay] = useState(false);
+  const [commitmentEndsNextDay, setCommitmentEndsNextDay] = useState(false);
   const [noteLines, setNoteLines] = useState<NoteLine[]>([]);
 
   const toneOptions: { value: NoteTone; label: string }[] = [
@@ -102,6 +120,8 @@ export function ComposeBlockDialog({
     setDay(String(defaultDay ?? new Date().getDay()));
     setDate(baseDate);
     setEndDate(baseDate);
+    setRoutineEndsNextDay(false);
+    setCommitmentEndsNextDay(false);
   }
 
   useEffect(() => {
@@ -113,29 +133,50 @@ export function ComposeBlockDialog({
     setStart(defaultStart ?? "09:00");
     setEnd(defaultEnd ?? "10:00");
     setKind(defaultKind);
+    setRoutineEndsNextDay(false);
+    setCommitmentEndsNextDay(false);
   }, [open, defaultDateIso, defaultDay, defaultEnd, defaultKind, defaultStart]);
+
+  useEffect(() => {
+    if (end <= start) {
+      setRoutineEndsNextDay(true);
+      setCommitmentEndsNextDay(true);
+    }
+  }, [start, end]);
+
+  useEffect(() => {
+    if (mode !== "commitment") return;
+    if (commitmentEndsNextDay && endDate <= date) {
+      setEndDate(addIsoDays(date, 1));
+    }
+    if (!commitmentEndsNextDay && endDate !== date) {
+      setEndDate(date);
+    }
+  }, [mode, commitmentEndsNextDay, date, endDate]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) { toast({ title: t.chronos.dialog.needsTitle }); return; }
+    const isPt = bcp47.toLowerCase().startsWith("pt");
     if (mode === "routine") {
-      const endsNextDay = end <= start;
+      const endsNextDay = routineEndsNextDay || end <= start;
       const error = addRoutine({ day: Number(day), start, end, endsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines) });
       if (error) {
         toast({ title: "Scheduling conflict", description: error });
         return;
       }
-      toast({ title: t.chronos.dialog.routineAdded, description: `${t.common.days.long[Number(day)]} · ${start}–${end}${endsNextDay ? " (+1d)" : ""}` });
+      toast({ title: t.chronos.dialog.routineAdded, description: `${t.common.days.long[Number(day)]} · ${start}–${end}${endsNextDay ? ` (${isPt ? "amanhã" : "tomorrow"})` : ""}` });
     } else {
-      const endsNextDay = endDate > date || end <= start;
-      const error = addCommitment({ date, start, end, endDate: endsNextDay ? endDate : undefined, endsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines) });
+      const endsNextDay = commitmentEndsNextDay || endDate > date || end <= start;
+      const normalizedEndDate = endsNextDay ? (endDate > date ? endDate : addIsoDays(date, 1)) : undefined;
+      const error = addCommitment({ date, start, end, endDate: normalizedEndDate, endsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines) });
       if (error) {
         toast({ title: "Scheduling conflict", description: error });
         return;
       }
       toast({
         title: t.chronos.dialog.commitmentAdded,
-        description: `${date} · ${start}–${end}${endsNextDay ? " (+1d)" : ""}`,
+        description: `${date} · ${start}–${end}${endsNextDay ? ` (${isPt ? "amanhã" : "tomorrow"})` : ""}`,
       });
     }
     reset();
@@ -204,12 +245,33 @@ export function ComposeBlockDialog({
                 <TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} />
               </div>
             </div>
+            <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id={mode === "routine" ? "routine-ends-next-day" : "commitment-ends-next-day"}
+                  checked={mode === "routine" ? routineEndsNextDay : commitmentEndsNextDay}
+                  onCheckedChange={(checked) => {
+                    const next = checked === true;
+                    if (mode === "routine") setRoutineEndsNextDay(next);
+                    else setCommitmentEndsNextDay(next);
+                  }}
+                />
+                <Label htmlFor={mode === "routine" ? "routine-ends-next-day" : "commitment-ends-next-day"} className="text-[11px] text-muted-foreground">
+                  {bcp47.toLowerCase().startsWith("pt") ? "Termina no dia seguinte" : "Ends next day"}
+                </Label>
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground/80 num">
+                {bcp47.toLowerCase().startsWith("pt")
+                  ? `Duração: ${formatDurationLabel(start, end, true)}`
+                  : `Duration: ${formatDurationLabel(start, end, false)}`}
+              </p>
+            </div>
             {mode === "commitment" && (
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                   {bcp47.toLowerCase().startsWith("pt") ? "Data de término" : "End date"}
                 </Label>
-                <Input type="date" value={endDate} min={date} onChange={(e) => setEndDate(e.target.value)} />
+                <Input type="date" value={endDate} min={date} onChange={(e) => setEndDate(e.target.value)} disabled={!commitmentEndsNextDay && end > start} />
               </div>
             )}
             <div className="space-y-1.5">

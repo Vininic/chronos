@@ -1,5 +1,21 @@
 # Chronos System Overhaul Checklist
 
+## TOP PRIORITY - 2026-05-24 Crossday drag symmetry blocker (must fix next)
+
+- [ ] Critical blocker: crossday drag behavior is still asymmetric and unstable around `00:00`.
+- [ ] Repro 1: dragging from `00:00` on the next-day side can ignore or fake the lower-limit cue and still move into a broken state.
+- [ ] Repro 2: detaching from the top-origin crossday path can still break the block state in some drag sequences.
+- [ ] Repro 3: lower-limit warning may render but not represent true commit behavior (preview/commit mismatch).
+- [ ] Root-cause focus for next session: unify preview clamp rules with commit transfer rules so limits, glow state, and persisted result always match.
+- [ ] Keep glow bar anchor fixed per originating edge; only icon direction may change.
+- [ ] Add deterministic regression tests for both directions at `00:00` thresholds (15m hint and 30m solid states).
+
+### Related in-progress changes to carry forward
+
+- [ ] `DayPlanner.tsx`: multiple drag preview/commit threshold iterations (raw vs clamped delta handling, crossday hint behavior).
+- [ ] `store.tsx`: crossday transfer/retention rules changed several times and require consolidation.
+- [ ] `Today.tsx` and schedule type/dialog files were updated during this same refactor window and should be validated together in the next pass.
+
 ## 1. Daily Agenda (Today page) - `DayPlanner.tsx`
 
 - [x] Fix expand/collapse - any block can toggle; only the live block expands by default

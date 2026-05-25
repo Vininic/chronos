@@ -21,19 +21,70 @@ function load(locale: Locale = "en"): ScheduleData {
     const raw = localStorage.getItem(STORAGE_KEY)
       ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean)
       ?? null;
-    if (raw) return normalizeNamingModel(JSON.parse(raw) as ScheduleData);
+    if (raw) return normalizeNamingModel(JSON.parse(raw) as ScheduleData, locale);
   } catch {}
-  return normalizeNamingModel(getSeedForLocale(locale));
+  return normalizeNamingModel(getSeedForLocale(locale), locale);
 }
 
-function normalizeNamingModel(data: ScheduleData): ScheduleData {
+function ensureAroundTodayCrossdayExamples(data: ScheduleData, routine: RoutineBlock[], locale: Locale): RoutineBlock[] {
+  const base = routine.filter((r) => r.id !== "r-demo-cross-prev" && r.id !== "r-demo-cross-next");
+
+  const schedule = migrateSleepSchedule(data);
+  const today = new Date().getDay();
+  const tomorrow = (today + 1) % 7;
+  const todaySleep = getSleepWindowForDay(schedule, today) ?? schedule[0];
+  const tomorrowSleep = getSleepWindowForDay(schedule, tomorrow) ?? schedule[0];
+  const blocksMidnightToday = timeToMinutes(todaySleep.start) > timeToMinutes(todaySleep.end);
+  const blocksEarlyTomorrow = timeToMinutes(tomorrowSleep.start) > timeToMinutes(tomorrowSleep.end);
+
+  const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
+  // If sleep is enforced and spans midnight, crossday work demos are invalid by design.
+  if (enforceSleepBoundary && (blocksMidnightToday || blocksEarlyTomorrow)) return base;
+
+  const hasPrevDemo = base.some((r) => r.id === "r-demo-cross-prev");
+  const hasNextDemo = base.some((r) => r.id === "r-demo-cross-next");
+  if (hasPrevDemo && hasNextDemo) return base;
+
+  const prevDay = (today + 6) % 7;
+  const next = [...base];
+
+  if (!hasPrevDemo) {
+    next.push({
+      id: "r-demo-cross-prev",
+      day: prevDay,
+      start: "23:15",
+      end: "01:15",
+      endsNextDay: true,
+      kind: "shallow",
+      title: locale === "pt" ? "Fechamento tardio (demo)" : "Late wrap-up (demo)",
+      notes: locale === "pt" ? "Exemplo: vem do dia anterior." : "Example: continues from previous day.",
+    });
+  }
+
+  if (!hasNextDemo) {
+    next.push({
+      id: "r-demo-cross-next",
+      day: today,
+      start: "22:40",
+      end: "00:40",
+      endsNextDay: true,
+      kind: "deep",
+      title: locale === "pt" ? "Estratégia noturna (demo)" : "Night strategy (demo)",
+      notes: locale === "pt" ? "Exemplo: atravessa para o próximo dia." : "Example: crosses into next day.",
+    });
+  }
+
+  return next;
+}
+
+function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
   const categories = data.categories.map((c) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
     return { ...c, labelCustom, descriptionCustom };
   });
 
-  const routine = data.routine
+  const routine = ensureAroundTodayCrossdayExamples(data, data.routine, locale)
     // Strip legacy boundary sleep blocks — sleep is now a schedule concept, not routine blocks
     .filter((r) => r.kind !== "sleep" || r.id.startsWith("r-custom-sleep"))
     .map((r) => ({
@@ -50,6 +101,7 @@ function normalizeNamingModel(data: ScheduleData): ScheduleData {
     meta: {
       ...data.meta,
       version: SCHEMA_VERSION,
+      enforceSleepBoundary: data.meta.enforceSleepBoundary ?? true,
       sleepSchedule,
       sleepWindow: normalizeSleepWindow(data), // keep for legacy compat
     },
@@ -80,6 +132,7 @@ function dateToIso(date: Date) {
 }
 
 function minutesToTime(min: number) {
+  if (min >= 24 * 60) return "24:00";
   const clamped = Math.max(0, Math.min(23 * 60 + 59, min));
   const h = Math.floor(clamped / 60);
   const m = clamped % 60;
@@ -172,6 +225,78 @@ function buildRoutineWeeklySegments(r: Pick<RoutineBlock, "day" | "start" | "end
     { day: r.day, startMin, endMin: 24 * 60 },
     { day: (r.day + 1) % 7, startMin: 0, endMin },
   ];
+}
+
+function sleepBlockedIntervalsForDay(
+  schedule: SleepScheduleEntry[],
+  day: number,
+  sleepCuts?: SleepCut[],
+  dateIso?: string,
+) {
+  const entry = getSleepWindowForDay(schedule, day) ?? schedule[0];
+  const start = timeToMinutes(entry.start);
+  const end = timeToMinutes(entry.end);
+  const intervals: Array<{ start: number; end: number }> = [];
+
+  if (start > end) {
+    intervals.push({ start: 0, end });
+    intervals.push({ start, end: 24 * 60 });
+  } else if (start < end) {
+    intervals.push({ start, end });
+  }
+
+  if (dateIso && sleepCuts) {
+    intervals.push(
+      ...sleepCuts
+        .filter((c) => c.date === dateIso)
+        .map((c) => ({ start: timeToMinutes(c.start), end: timeToMinutes(c.end) }))
+        .filter((i) => i.end > i.start),
+    );
+  }
+
+  return intervals;
+}
+
+function overlapsBlockedIntervals(startMin: number, endMin: number, blocked: Array<{ start: number; end: number }>) {
+  return blocked.some((i) => startMin < i.end && endMin > i.start);
+}
+
+function validateRoutineSleepOverlap(data: ScheduleData, candidate: Pick<RoutineBlock, "day" | "start" | "end" | "endsNextDay">) {
+  if (data.meta.enforceSleepBoundary === false) return null;
+  const schedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
+  const segments = buildRoutineWeeklySegments(candidate);
+  for (const segment of segments) {
+    const blocked = sleepBlockedIntervalsForDay(schedule, segment.day);
+    if (overlapsBlockedIntervals(segment.startMin, segment.endMin, blocked)) {
+      return "Conflicts with sleep hours.";
+    }
+  }
+  return null;
+}
+
+function commitmentDaySlices(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  const startDate = c.date;
+  const resolvedEndDate = resolveCommitmentEndDate(c);
+  const spans = resolvedEndDate > startDate || c.end <= c.start || c.endsNextDay;
+  if (!spans) {
+    return [{ dateIso: startDate, day: dayFromIsoDate(startDate), startMin: timeToMinutes(c.start), endMin: timeToMinutes(c.end) }];
+  }
+  return [
+    { dateIso: startDate, day: dayFromIsoDate(startDate), startMin: timeToMinutes(c.start), endMin: 24 * 60 },
+    { dateIso: resolvedEndDate, day: dayFromIsoDate(resolvedEndDate), startMin: 0, endMin: timeToMinutes(c.end) },
+  ];
+}
+
+function validateCommitmentSleepOverlap(data: ScheduleData, candidate: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  if (data.meta.enforceSleepBoundary === false) return null;
+  const schedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
+  for (const slice of commitmentDaySlices(candidate)) {
+    const blocked = sleepBlockedIntervalsForDay(schedule, slice.day, data.meta.sleepCuts, slice.dateIso);
+    if (overlapsBlockedIntervals(slice.startMin, slice.endMin, blocked)) {
+      return "Conflicts with sleep hours.";
+    }
+  }
+  return null;
 }
 
 function intersectsClockRange(
@@ -501,7 +626,8 @@ interface Ctx {
   addCommitment: (c: Omit<Commitment, "id">) => string | null;
   removeCommitment: (id: string) => void;
   updateCommitment: (id: string, patch: Partial<Commitment>) => string | null;
-  pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number) => string | null;
+  pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number, dragEdge?: "top" | "bottom") => string | null;
+  setSleepBoundaryEnforced: (enforced: boolean) => void;
   updateSleepWindow: (patch: Partial<{ start: string; end: string }>) => void;
   updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
@@ -556,6 +682,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
 
   const addRoutine = useCallback((b: Omit<RoutineBlock, "id">) => {
     const candidate = { ...b, endsNextDay: b.endsNextDay ?? b.end <= b.start };
+    const sleepErr = validateRoutineSleepOverlap(data, candidate);
+    if (sleepErr) return sleepErr;
     const candidateSegments = buildRoutineWeeklySegments(candidate);
     const conflict = data.routine.find((r) => {
       const existingSegments = buildRoutineWeeklySegments(r);
@@ -581,6 +709,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       ...patch,
       endsNextDay: patch.endsNextDay ?? current.endsNextDay ?? ((patch.end ?? current.end) <= (patch.start ?? current.start)),
     };
+    const sleepErr = validateRoutineSleepOverlap(data, next);
+    if (sleepErr) return sleepErr;
     const nextSegments = buildRoutineWeeklySegments(next);
     const conflict = data.routine.find((r) => {
       if (r.id === id) return false;
@@ -610,6 +740,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       ...c,
       endsNextDay: c.endsNextDay ?? c.end <= c.start,
     };
+    const sleepErr = validateCommitmentSleepOverlap(data, next);
+    if (sleepErr) return sleepErr;
     const nextInterval = commitmentInterval(next);
 
     const conflictCommitment = data.commitments.find((x) => intervalsOverlap(commitmentInterval(x), nextInterval));
@@ -631,6 +763,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       ...patch,
       endsNextDay: patch.endsNextDay ?? current.endsNextDay ?? ((patch.end ?? current.end) <= (patch.start ?? current.start)),
     };
+    const sleepErr = validateCommitmentSleepOverlap(data, next);
+    if (sleepErr) return sleepErr;
     const nextInterval = commitmentInterval(next);
     const conflictCommitment = data.commitments.find((c) => c.id !== id && intervalsOverlap(commitmentInterval(c), nextInterval));
     if (conflictCommitment) {
@@ -641,7 +775,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     return null;
   }, [data]);
 
-  const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number) => {
+  const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number, dragEdge?: "top" | "bottom") => {
     const day = date.getDay();
     const dayIso = dateToIso(date);
     const dayAgenda = buildAgendaForDate(data, date).filter((a) => !(a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary));
@@ -665,14 +799,17 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     const movedEnd = timeToMinutes(newEnd);
     const movedDur = Math.max(15, sourceDuration);
 
-    // Clamp the moved block to the day's sleep boundaries so it can never overlap sleep
-    const sleepForDay = buildAgendaForDate(data, date).filter((a) => a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary);
+    const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
+    // Clamp the moved block to the day's sleep boundaries only when enforcement is enabled.
+    const sleepForDay = enforceSleepBoundary
+      ? buildAgendaForDate(data, date).filter((a) => a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary)
+      : [];
     const wakeMin = sleepForDay
       .filter((a) => timeToMinutes(a.end) <= 12 * 60)
       .reduce((m, a) => Math.max(m, timeToMinutes(a.end)), 0);
     const bedMin = sleepForDay
       .filter((a) => timeToMinutes(a.start) >= 18 * 60)
-      .reduce((m, a) => Math.min(m, timeToMinutes(a.start)), 23 * 60 + 45);
+      .reduce((m, a) => Math.min(m, timeToMinutes(a.start)), 24 * 60);
     const boundarySnapTol = 15;
     const sleepCuts = (data.meta.sleepCuts ?? [])
       .filter((c) => c.date === dayIso)
@@ -723,10 +860,85 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
         ? (sourceCommitment.endsNextDay || resolveCommitmentEndDate(sourceCommitment) > sourceCommitment.date || sourceCommitment.end <= sourceCommitment.start)
         : false;
 
-    // Cross-day blocks keep total duration. Dragging changes how much spills into next day.
-    if (sourceSpansNextDay) {
-      let crossStart = typeof dragDeltaMin === "number" ? sourceStartMin + dragDeltaMin : movedStart;
-      const clampedCrossStart = Math.max(wakeMin, Math.min(crossStart, bedMin - 15));
+    const commitCrossdayMove = (absoluteStartMin: number) => {
+      // Dragging a crossday segment fully below 00:00 transfers the block to the next day.
+      if (absoluteStartMin >= 24 * 60) {
+        const shiftedStartMin = absoluteStartMin - 24 * 60;
+        const shiftedEndAbs = shiftedStartMin + movedDur;
+        const shiftedStart = minutesToTime(shiftedStartMin);
+        const shiftedEnd = minutesToTime(shiftedEndAbs % (24 * 60));
+        const shiftedEndsNextDay = shiftedEndAbs > 24 * 60;
+
+        if (sourceRoutine) {
+          const shiftedDay = (sourceRoutine.day + 1) % 7;
+          const candidate: RoutineBlock = {
+            ...sourceRoutine,
+            day: shiftedDay,
+            start: shiftedStart,
+            end: shiftedEnd,
+            endsNextDay: shiftedEndsNextDay,
+          };
+          const sleepErr = validateRoutineSleepOverlap(data, candidate);
+          if (sleepErr) return sleepErr;
+          const candidateSegments = buildRoutineWeeklySegments(candidate);
+          const conflict = data.routine.find((r) => {
+            if (r.id === sourceRoutine.id) return false;
+            const existingSegments = buildRoutineWeeklySegments(r);
+            return candidateSegments.some((candidateSegment) =>
+              existingSegments.some((existingSegment) =>
+                candidateSegment.day === existingSegment.day
+                && candidateSegment.startMin < existingSegment.endMin
+                && existingSegment.startMin < candidateSegment.endMin,
+              ),
+            );
+          });
+          if (conflict) {
+            return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
+          }
+
+          setData((d) => withDerived({
+            ...d,
+            routine: d.routine.map((r) =>
+              r.id === sourceRoutine.id
+                ? { ...r, day: shiftedDay, start: shiftedStart, end: shiftedEnd, endsNextDay: shiftedEndsNextDay }
+                : r,
+            ),
+          }));
+          return null;
+        }
+
+        if (sourceCommitment) {
+          const shiftedDate = addDaysToIso(sourceCommitment.date, 1);
+          const shiftedEndDate = shiftedEndsNextDay ? addDaysToIso(shiftedDate, 1) : shiftedDate;
+          const candidate: Commitment = {
+            ...sourceCommitment,
+            date: shiftedDate,
+            start: shiftedStart,
+            end: shiftedEnd,
+            endsNextDay: shiftedEndsNextDay,
+            endDate: shiftedEndDate,
+          };
+          const sleepErr = validateCommitmentSleepOverlap(data, candidate);
+          if (sleepErr) return sleepErr;
+          const conflict = data.commitments.find((c) => c.id !== sourceCommitment.id && intervalsOverlap(commitmentInterval(c), commitmentInterval(candidate)));
+          if (conflict) {
+            return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
+          }
+
+          setData((d) => withDerived({
+            ...d,
+            commitments: d.commitments.map((c) =>
+              c.id === sourceCommitment.id
+                ? { ...c, date: shiftedDate, start: shiftedStart, end: shiftedEnd, endsNextDay: shiftedEndsNextDay, endDate: shiftedEndDate }
+                : c,
+            ),
+          }));
+          return null;
+        }
+      }
+
+      const maxCrossStart = bedMin;
+      const clampedCrossStart = Math.max(wakeMin, Math.min(absoluteStartMin, maxCrossStart));
       const absoluteEnd = clampedCrossStart + movedDur;
       const nextStart = minutesToTime(clampedCrossStart);
       const nextEnd = minutesToTime(absoluteEnd % (24 * 60));
@@ -739,6 +951,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
           end: nextEnd,
           endsNextDay: nextEndsNextDay,
         };
+        const sleepErr = validateRoutineSleepOverlap(data, candidate);
+        if (sleepErr) return sleepErr;
         const candidateSegments = buildRoutineWeeklySegments(candidate);
         const conflict = data.routine.find((r) => {
           if (r.id === sourceRoutine.id) return false;
@@ -776,6 +990,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
           endsNextDay: nextEndsNextDay,
           endDate: nextEndDate,
         };
+        const sleepErr = validateCommitmentSleepOverlap(data, candidate);
+        if (sleepErr) return sleepErr;
         const conflict = data.commitments.find((c) => c.id !== sourceCommitment.id && intervalsOverlap(commitmentInterval(c), commitmentInterval(candidate)));
         if (conflict) {
           return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
@@ -791,20 +1007,35 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
         }));
         return null;
       }
+
+      return "Block not found.";
+    };
+
+    // Cross-day blocks keep total duration. Dragging changes how much spills into next day.
+    if (sourceSpansNextDay) {
+      const crossStart = typeof dragDeltaMin === "number" ? sourceStartMin + dragDeltaMin : movedStart;
+      return commitCrossdayMove(crossStart);
     }
 
-    let candidateStart = movedStart;
+    const rawCandidateStart = typeof dragDeltaMin === "number" ? sourceStartMin + dragDeltaMin : movedStart;
+    const rawCandidateEnd = rawCandidateStart + movedDur;
+    let candidateStart = rawCandidateStart;
     // Snap only when crossing into sleep, not when merely near the boundary.
-    if (movedStart < wakeMin && wakeMin - movedStart <= boundarySnapTol) {
+    if (rawCandidateStart < wakeMin && wakeMin - rawCandidateStart <= boundarySnapTol) {
       candidateStart = wakeMin;
     }
-    if (movedEnd > bedMin && movedEnd - bedMin <= boundarySnapTol) {
+    if (rawCandidateEnd > bedMin && rawCandidateEnd - bedMin <= boundarySnapTol) {
       candidateStart = bedMin - movedDur;
     }
+
+    if (!enforceSleepBoundary && candidateStart + movedDur > 24 * 60) {
+      return commitCrossdayMove(candidateStart);
+    }
+
     const boundedStart = Math.max(wakeMin, Math.min(candidateStart, bedMin - movedDur));
     const preferredForward = movedStart >= sourceStartMin;
     const safeStart = avoidSleepCut(boundedStart, movedDur, preferredForward);
-    if (safeStart === null) return "Cannot place block outside sleep cut.";
+    if (safeStart === null) return "Cannot place block: overlaps a sleep break.";
     const clampedStart = safeStart;
     const clampedEnd = clampedStart + movedDur;
 
@@ -854,12 +1085,12 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
         adjusted[i].s -= overflow;
         adjusted[i].e -= overflow;
       }
-      if (adjusted[idx].s < 0) return "Cannot push more. Day limit reached.";
+      if (adjusted[idx].s < 0) return "Cannot push more: reached day boundary.";
       for (let i = idx + 1; i < adjusted.length; i += 1) {
         adjusted[i].s = adjusted[i - 1].e;
         adjusted[i].e = adjusted[i].s + adjusted[i].dur;
       }
-      if (adjusted[adjusted.length - 1].e > MAX_END) return "Cannot push more. Day limit reached.";
+      if (adjusted[adjusted.length - 1].e > MAX_END) return "Cannot push more: reached sleep boundary.";
     }
 
     // Final safety pass: no adjusted block can end up inside the per-day sleep cut.
@@ -873,10 +1104,10 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
         if (overlap) {
           nextStart = overlap.end;
           nextEnd = nextStart + adjusted[i].dur;
-          if (findOverlappingSleepCut(nextStart, nextEnd)) return "Cannot place block outside sleep cut.";
+          if (findOverlappingSleepCut(nextStart, nextEnd)) return "Cannot place block: overlaps a sleep break.";
         }
 
-        if (nextEnd > MAX_END) return "Cannot place block outside sleep cut.";
+        if (nextEnd > MAX_END) return "Cannot place block: exceeds sleep boundary.";
 
         adjusted[i].s = nextStart;
         adjusted[i].e = nextEnd;
@@ -927,6 +1158,23 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       return withDerived({ ...d, meta: { ...d.meta, sleepWindow: next, sleepSchedule: nextSchedule } });
     });
   }, []);
+
+  const setSleepBoundaryEnforced = useCallback((enforced: boolean) => {
+    setData((d) => withDerived(
+      normalizeNamingModel(
+        {
+          ...d,
+          meta: {
+            ...d.meta,
+            enforceSleepBoundary: enforced,
+          },
+        },
+        locale,
+      ),
+      false,
+      locale,
+    ));
+  }, [locale]);
 
   const updateSleepSchedule = useCallback((schedule: SleepScheduleEntry[]) => {
     setData((d) => {
@@ -1016,8 +1264,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     setData((d) => withDerived(d, true, locale));
   }, [locale]);
 
-  const resetToSeed = useCallback(() => setData(withDerived(normalizeNamingModel(getSeedForLocale(locale) as ScheduleData), true, locale)), [locale]);
-  const replace = useCallback((next: ScheduleData) => setData(withDerived(normalizeNamingModel(next), true, locale)), [locale]);
+  const resetToSeed = useCallback(() => setData(withDerived(normalizeNamingModel(getSeedForLocale(locale) as ScheduleData, locale), true, locale)), [locale]);
+  const replace = useCallback((next: ScheduleData) => setData(withDerived(normalizeNamingModel(next, locale), true, locale)), [locale]);
 
   const value = useMemo(
     () => ({
@@ -1029,6 +1277,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       removeCommitment,
       updateCommitment,
       pushMoveDayChain,
+      setSleepBoundaryEnforced,
       updateSleepWindow,
       updateSleepSchedule,
       addSleepCut,
@@ -1050,6 +1299,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       removeCommitment,
       updateCommitment,
       pushMoveDayChain,
+      setSleepBoundaryEnforced,
       updateSleepWindow,
       updateSleepSchedule,
       addSleepCut,
@@ -1137,7 +1387,9 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
   const sleepSchedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
   const sleepEntry = getSleepWindowForDay(sleepSchedule, day);
   const sleepWindow = sleepEntry ?? normalizeSleepWindow(data);
-  const sleepSegments = buildSleepSegmentsForDate(sleepWindow, date, sleepTitle);
+  const sleepSegments = data.meta.enforceSleepBoundary === false
+    ? []
+    : buildSleepSegmentsForDate(sleepWindow, date, sleepTitle);
 
   return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
 }

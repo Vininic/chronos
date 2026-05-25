@@ -31,12 +31,13 @@ export default function Today() {
   const timelineAgenda = todayAgenda.filter((a) => !(a.kind === "sleep" && (a.continuesFromPrevDay || a.continuesToNextDay)));
   const currentBlock = timelineAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end));
   const nextTimelineBlock = timelineAgenda.find((a) => timeToMinutes(a.start) > nowMin);
+  const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
   const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
   const sleepEntry = getSleepWindowForDay(sleepSchedule, new Date().getDay()) ?? sleepSchedule[0];
   const sleepStartMin = timeToMinutes(sleepEntry.start);
   const sleepEndMin = timeToMinutes(sleepEntry.end);
   const sleepSpansNextDay = sleepEndMin <= sleepStartMin;
-  const nextSleepWindow = sleepSpansNextDay && nowMin < sleepStartMin
+  const nextSleepWindow = enforceSleepBoundary && sleepSpansNextDay && nowMin < sleepStartMin
     ? {
         id: "next-sleep-window",
         source: "routine" as const,
@@ -54,6 +55,26 @@ export default function Today() {
   const isPt = bcp47.toLowerCase().startsWith("pt");
   const emptyNowLabel = bcp47.toLowerCase().startsWith("pt") ? "Sem bloco atual" : "No current block";
   const emptyNextLabel = bcp47.toLowerCase().startsWith("pt") ? "Sem próximo bloco" : "No next block";
+
+  const routineById = new Map(data.routine.map((r) => [r.id, r]));
+  const commitmentById = new Map(data.commitments.map((c) => [c.id, c]));
+
+  function resolveDisplayBlock<T extends { id: string; source: "routine" | "commitment"; sourceId?: string; start: string; end: string; title: string; titleCustom?: string; kind: keyof typeof kindStyle }>(block: T | null) {
+    if (!block) return null;
+    const sourceId = block.sourceId ?? block.id;
+    if (block.source === "routine") {
+      const src = routineById.get(sourceId);
+      if (src) return { ...block, start: src.start, end: src.end };
+    }
+    if (block.source === "commitment") {
+      const src = commitmentById.get(sourceId);
+      if (src) return { ...block, start: src.start, end: src.end };
+    }
+    return block;
+  }
+
+  const displayCurrentBlock = resolveDisplayBlock(currentBlock ?? null);
+  const displayNextBlock = nextBlock && !("synthetic" in nextBlock) ? resolveDisplayBlock(nextBlock) : nextBlock;
 
   function jumpToBlock(id: string, source: "routine" | "commitment") {
     const target = document.getElementById(`day-block-${source}-${id}`);
@@ -74,8 +95,8 @@ export default function Today() {
 
       <section className="mb-4 grid grid-cols-1 lg:grid-cols-2 gap-3 animate-fade-up">
         <div className={`rounded-lg border px-4 py-3 ${
-          currentBlock
-            ? `${kindStyle[currentBlock.kind].blockBorder} ${kindStyle[currentBlock.kind].blockBg}`
+          displayCurrentBlock
+            ? `${kindStyle[displayCurrentBlock.kind].blockBorder} ${kindStyle[displayCurrentBlock.kind].blockBg}`
             : "border-dashed border-border/60 bg-muted/5"
         }`}>
           <div className="flex items-start justify-between gap-3">
@@ -85,7 +106,7 @@ export default function Today() {
                 {currentBlock ? scheduleText.blockTitle(currentBlock.title, currentBlock.titleCustom) : emptyNowLabel}
               </div>
               <div className="mt-1 text-xs num text-muted-foreground">
-                {currentBlock ? `${currentBlock.start}–${currentBlock.end} · ${fmtFriendlyDuration(durationMin(currentBlock.start, currentBlock.end), isPt)}` : "--:--"}
+                {displayCurrentBlock ? `${displayCurrentBlock.start}–${displayCurrentBlock.end} · ${fmtFriendlyDuration(durationMin(displayCurrentBlock.start, displayCurrentBlock.end), isPt)}` : "--:--"}
               </div>
             </div>
             <button
@@ -101,23 +122,23 @@ export default function Today() {
         </div>
 
         <div className={`rounded-lg border px-4 py-3 ${
-          nextBlock
-            ? `${kindStyle[nextBlock.kind].blockBorder} ${kindStyle[nextBlock.kind].blockBg}`
+          displayNextBlock
+            ? `${kindStyle[displayNextBlock.kind].blockBorder} ${kindStyle[displayNextBlock.kind].blockBg}`
             : "border-dashed border-border/60 bg-muted/5"
         }`}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{nextLabel}</div>
               <div className="mt-1 text-sm font-medium text-primary truncate">
-                {nextBlock
-                  ? (nextBlock.kind === "sleep"
+                {displayNextBlock
+                  ? (displayNextBlock.kind === "sleep"
                     ? (bcp47.toLowerCase().startsWith("pt") ? "Sono" : "Sleep")
-                    : scheduleText.blockTitle(nextBlock.title, nextBlock.titleCustom))
+                    : scheduleText.blockTitle(displayNextBlock.title, displayNextBlock.titleCustom))
                   : emptyNextLabel}
               </div>
               <div className="mt-1 text-xs num text-muted-foreground">
-                {nextBlock
-                  ? `${nextBlock.start}–${nextBlock.end}${nextBlockSpansNextDay ? ` (${isPt ? "amanhã" : "tomorrow"})` : ""} · ${fmtFriendlyDuration(durationMin(nextBlock.start, nextBlock.end), isPt)}`
+                {displayNextBlock
+                  ? `${displayNextBlock.start}–${displayNextBlock.end} · ${fmtFriendlyDuration(durationMin(displayNextBlock.start, displayNextBlock.end), isPt)}`
                   : "--:--"}
               </div>
             </div>

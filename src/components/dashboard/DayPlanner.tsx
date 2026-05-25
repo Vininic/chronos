@@ -5,12 +5,13 @@ import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { isKnownDefaultBlockTitle, useScheduleText } from "@/lib/i18n/scheduleText";
-import { ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { TimeSelect } from "@/components/ui/time-select";
@@ -47,6 +48,14 @@ function clockTimeFromMin(min: number) {
   const day = 24 * 60;
   const wrapped = ((Math.round(min / SNAP) * SNAP) % day + day) % day;
   return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+}
+
+function fmtPreviewMinutes(totalMin: number, isPt: boolean) {
+  const hours = Math.floor(totalMin / 60);
+  const minutes = totalMin % 60;
+  if (hours > 0 && minutes > 0) return isPt ? `${hours}h ${minutes}min` : `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  return isPt ? `${minutes}min` : `${minutes}m`;
 }
 
 function addDays(d: Date, n: number): Date {
@@ -245,7 +254,7 @@ function useNowMin() {
 }
 
 export function DayPlanner() {
-  const { data, addRoutine, pushMoveDayChain, updateRoutine, updateSleepWindow, updateSleepSchedule, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment } = useSchedule();
+  const { data, addRoutine, pushMoveDayChain, updateRoutine, updateSleepWindow, updateSleepSchedule, setSleepBoundaryEnforced, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
   const { bcp47 } = useI18n();
@@ -270,15 +279,16 @@ export function DayPlanner() {
 
   // ── Sleep schedule for this day ─────────────────────────────────────────────
   // Read from sleepSchedule (new) falling back to sleepWindow (legacy).
+  const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
   const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
   const sleepEntry = getSleepWindowForDay(sleepSchedule, selectedDate.getDay()) ?? sleepSchedule[0];
 
   const sleepStartMin = timeToMinutes(sleepEntry.start);
   const sleepEndMin   = timeToMinutes(sleepEntry.end);
   // Cross-day sleep: sleep starts in the evening and ends the next morning (start > end)
-  const hasCrossDaySleep = sleepStartMin > sleepEndMin;
+  const hasCrossDaySleep = enforceSleepBoundary && sleepStartMin > sleepEndMin;
   // Same-day sleep: sleep starts and ends within the same calendar day (start < end)
-  const hasSameDaySleep  = sleepStartMin < sleepEndMin;
+  const hasSameDaySleep  = enforceSleepBoundary && sleepStartMin < sleepEndMin;
 
   // Visual boundary markers
   const morningSleep = hasCrossDaySleep ? { start: "00:00", end: sleepEntry.end } : null;
@@ -296,15 +306,18 @@ export function DayPlanner() {
   const defaultStartMin = timeToMinutes(data.meta.workdayStart);
   const defaultEndMin   = timeToMinutes(data.meta.workdayEnd);
 
-  // ── Timeline boundaries ───────────────────────────────────────────────────
-  // The visible range is determined by content, not hard-capped by sleep.
-  // Sleep boundaries appear as visual badges/dividers, not timeline clamps.
-  // This allows crossday blocks to occupy 00:00–24:00 naturally.
-
   // Start: wake time (morning end of sleep) or workday start
   let startMin = hasCrossDaySleep ? sleepEndMin : defaultStartMin;
   // End: bed time (evening start of sleep) or workday end
   let endMin   = hasCrossDaySleep ? sleepStartMin : defaultEndMin;
+
+  // ── Timeline boundaries ───────────────────────────────────────────────────
+  // When overnight sleep is not enforced, keep the day frame stable at 00:00–24:00
+  // so dragging crossday blocks does not keep redefining the visible bottom edge.
+  if (!enforceSleepBoundary) {
+    startMin = 0;
+    endMin = 24 * 60;
+  }
 
   // For same-day sleep, show the full sleep zone
   if (hasSameDaySleep) {
@@ -312,11 +325,13 @@ export function DayPlanner() {
     endMin   = Math.max(endMin,   sleepEndMin);
   }
 
-  // Expand to fit actual blocks (crossday blocks may push past default bounds)
-  const firstWorkStart = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[0].start) : defaultStartMin;
-  const lastWorkEnd    = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[nonSleepAgenda.length - 1].end) : defaultEndMin;
-  startMin = Math.min(startMin, firstWorkStart);
-  endMin   = Math.max(endMin,   lastWorkEnd);
+  if (enforceSleepBoundary) {
+    // Expand to fit actual blocks only while the sleep frame is active.
+    const firstWorkStart = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[0].start) : defaultStartMin;
+    const lastWorkEnd    = nonSleepAgenda.length > 0 ? timeToMinutes(nonSleepAgenda[nonSleepAgenda.length - 1].end) : defaultEndMin;
+    startMin = Math.min(startMin, firstWorkStart);
+    endMin   = Math.max(endMin,   lastWorkEnd);
+  }
 
   // Expand to show all sleep cut zones
   if (sleepCutsForDay.length > 0) {
@@ -331,7 +346,7 @@ export function DayPlanner() {
   if (endMin - startMin < 60) { startMin = 0; endMin = 24 * 60; }
 
   // For today: ensure "now" is always in view
-  if (isToday) {
+  if (isToday && enforceSleepBoundary) {
     startMin = Math.min(startMin, Math.max(0, nowMin - 60));
     endMin   = Math.max(endMin,   Math.min(24 * 60, nowMin + 60));
   }
@@ -432,14 +447,17 @@ export function DayPlanner() {
     origStartMin: number;
     origDurMin: number;
     sourceSpansNextDay: boolean;
+    transitionEdge: "top" | "bottom";
     minStartMin: number;
     maxStartMin: number;
   } | null>(null);
   const [dragDeltaMin, setDragDeltaMin] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragDeltaRef = useRef(0);
+  const rawDragDeltaRef = useRef(0);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const [dragLimitHint, setDragLimitHint] = useState<string | null>(null);
+  const [dragTransitionHint, setDragTransitionHint] = useState<{ edge: "top" | "bottom"; direction: "up" | "down"; pending: boolean } | null>(null);
   const hasDraggedRef = useRef(false); // true once mouse moves during a drag session
 
   const [editItem, setEditItem] = useState<AgendaItem | null>(null);
@@ -475,12 +493,15 @@ export function DayPlanner() {
     setDraggingId(null);
     setDragDeltaMin(0);
     dragDeltaRef.current = 0;
+    rawDragDeltaRef.current = 0;
     setDragLimitHint(null);
+    setDragTransitionHint(null);
     // hasDraggedRef is reset after onClick fires (with a small delay)
   }
 
   function clampSnappedAwayFromSleepCut(snapped: number) {
     if (sleepSplits.length === 0 || !dragState.current) return snapped;
+    if (dragState.current.sourceSpansNextDay) return snapped;
     const candidateStart = dragState.current.origStartMin + snapped;
     const candidateEnd = candidateStart + dragState.current.origDurMin;
     const overlap = sleepSplits.find((cut) => candidateStart < cut.endMin && candidateEnd > cut.startMin);
@@ -493,31 +514,87 @@ export function DayPlanner() {
   }
 
   function updateDragPreview(snapped: number) {
+    if (!dragState.current) return;
+    const isPt = bcp47.toLowerCase().startsWith("pt");
     const adjusted = clampSnappedAwayFromSleepCut(snapped);
-    setDragDeltaMin(adjusted);
-    dragDeltaRef.current = adjusted;
-    if (dragState.current?.sourceSpansNextDay) {
-      const candidateStart = dragState.current.origStartMin + adjusted;
-      if (candidateStart < dragState.current.minStartMin) {
-        setDragLimitHint(bcp47.toLowerCase().startsWith("pt") ? "Limite superior" : "Top limit");
-      } else if (candidateStart > dragState.current.maxStartMin) {
-        setDragLimitHint(bcp47.toLowerCase().startsWith("pt") ? "Limite inferior" : "Bottom limit");
-      } else {
+    const previewEdge = dragState.current.transitionEdge;
+    const minStart = dragState.current.minStartMin;
+    const maxStart = dragState.current.maxStartMin;
+    const previewDirection: "up" | "down" = adjusted < 0 ? "up" : "down";
+    const rawCandidateStart = dragState.current.origStartMin + adjusted;
+    const clampedCandidateStart = Math.max(minStart, Math.min(rawCandidateStart, maxStart));
+    const previewDelta = clampedCandidateStart - dragState.current.origStartMin;
+    const candidateEnd = clampedCandidateStart + dragState.current.origDurMin;
+    const endsNextDay = candidateEnd > 24 * 60;
+
+    setDragDeltaMin(previewDelta);
+    dragDeltaRef.current = previewDelta;
+
+    if (rawCandidateStart <= minStart) {
+      setDragLimitHint(previewEdge === "top" ? (isPt ? "Limite superior" : "Top limit") : null);
+      const overshoot = minStart - rawCandidateStart;
+      setDragTransitionHint({ edge: previewEdge, direction: previewDirection, pending: overshoot < SNAP * 2 });
+      return;
+    }
+    if (rawCandidateStart >= maxStart) {
+      setDragLimitHint(previewEdge === "bottom" ? (isPt ? "Limite inferior" : "Bottom limit") : null);
+      const overshoot = rawCandidateStart - maxStart;
+      setDragTransitionHint({ edge: previewEdge, direction: previewDirection, pending: overshoot < SNAP * 2 });
+      return;
+    }
+
+    const spillMin = Math.max(0, candidateEnd - 24 * 60);
+    if (spillMin > 0) {
+      setDragTransitionHint({ edge: previewEdge, direction: previewDirection, pending: spillMin < 30 });
+      if (spillMin < 30) {
         setDragLimitHint(null);
+        return;
       }
     } else {
-      setDragLimitHint(null);
+      setDragTransitionHint(null);
     }
+
+    const upRoomMin = Math.max(0, clampedCandidateStart - minStart);
+    const downRoomMin = Math.max(0, maxStart - clampedCandidateStart);
+    if (endsNextDay) {
+      const nextDayUsedMin = candidateEnd - 24 * 60;
+      const nextDayFreeMin = Math.max(0, 24 * 60 - nextDayUsedMin);
+      const endLabel = clockTimeFromMin(candidateEnd);
+      const freeLabel = fmtPreviewMinutes(nextDayFreeMin, isPt);
+      const roomMin = previewEdge === "top" ? upRoomMin : downRoomMin;
+      const roomLabel = fmtPreviewMinutes(roomMin, isPt);
+      const roomText = previewEdge === "top"
+        ? (isPt ? `sobe mais ${roomLabel}` : `can move up ${roomLabel}`)
+        : (isPt ? `desce mais ${roomLabel}` : `can move down ${roomLabel}`);
+      setDragLimitHint(
+        isPt
+          ? `Termina amanhã ${endLabel} · livre amanhã ${freeLabel} · ${roomText}`
+          : `Ends tomorrow ${endLabel} · free tomorrow ${freeLabel} · ${roomText}`,
+      );
+      return;
+    }
+
+    setDragLimitHint(null);
   }
 
-  function commitDrag(snapped: number) {
+  function commitDrag(snapped: number, rawSnapped: number) {
     if (!dragState.current) return;
-    const { sourceId, source, origStartMin, origDurMin } = dragState.current;
+    const { sourceId, source, origStartMin, origDurMin, transitionEdge } = dragState.current;
     const adjusted = clampSnappedAwayFromSleepCut(snapped);
-    if (adjusted !== 0) {
-      const ns = clockTimeFromMin(origStartMin + adjusted);
-      const ne = clockTimeFromMin(origStartMin + origDurMin + adjusted);
-      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne, adjusted);
+    const rawAdjusted = clampSnappedAwayFromSleepCut(rawSnapped);
+
+    // Keep preview clamped at lower-limit for bottom-edge crossday drags, but allow commit transfer
+    // once the raw drag crosses midnight into next day.
+    const rawStart = origStartMin + rawAdjusted;
+    const allowBottomTransfer = dragState.current.sourceSpansNextDay
+      && transitionEdge === "bottom"
+      && rawStart >= (24 * 60 + SNAP);
+    const commitDelta = allowBottomTransfer ? rawAdjusted : adjusted;
+
+    if (commitDelta !== 0) {
+      const ns = clockTimeFromMin(origStartMin + commitDelta);
+      const ne = clockTimeFromMin(origStartMin + origDurMin + commitDelta);
+      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne, commitDelta, transitionEdge);
       if (err) toast({ title: "Conflict", description: err });
     }
   }
@@ -549,22 +626,28 @@ export function DayPlanner() {
       }
     }
     const wakeMin = sleepStartMin > sleepEndMin ? sleepEndMin : 0;
-    const minCrossStart = Math.max(wakeMin, 24 * 60 - durationMin(sourceStart, sourceEnd) + SNAP);
-    const maxCrossStart = 24 * 60 - SNAP;
+    const sourceDurMin = durationMin(sourceStart, sourceEnd);
+    const minVisibleInDayStart = Math.max(wakeMin, 24 * 60 - sourceDurMin + SNAP);
+    const transitionEdge: "top" | "bottom" = a.continuesFromPrevDay ? "top" : "bottom";
+    // Keep lower-limit guard for bottom edge; top edge can reach full 00:00 threshold.
+    const maxCrossStart = transitionEdge === "bottom" ? (24 * 60 - SNAP) : (24 * 60);
     dragState.current = {
       id: a.id,
       sourceId,
       source: a.source,
       originY: e.clientY,
       origStartMin: timeToMinutes(sourceStart),
-      origDurMin: durationMin(sourceStart, sourceEnd),
+      origDurMin: sourceDurMin,
       sourceSpansNextDay,
-      minStartMin: sourceSpansNextDay && minCrossStart <= maxCrossStart ? minCrossStart : wakeMin,
-      maxStartMin: sourceSpansNextDay && minCrossStart <= maxCrossStart ? maxCrossStart : 24 * 60 - SNAP,
+      transitionEdge,
+      // Keep carry-over (top edge) with at least one 15-minute slice visible in this day.
+      minStartMin: transitionEdge === "top" ? minVisibleInDayStart : wakeMin,
+      maxStartMin: maxCrossStart,
     };
     setDraggingId(a.id);
     setDragDeltaMin(0);
     dragDeltaRef.current = 0;
+    rawDragDeltaRef.current = 0;
     hasDraggedRef.current = false;
     setDragLimitHint(null);
 
@@ -574,15 +657,14 @@ export function DayPlanner() {
       const rawDeltaPx = ev.clientY - dragState.current.originY;
       const rawDeltaMin = (rawDeltaPx / HOUR_PX) * 60;
       const snapped = Math.round(rawDeltaMin / SNAP) * SNAP;
+      rawDragDeltaRef.current = snapped;
       updateDragPreview(snapped);
     };
     const handleMouseDone = (ev: MouseEvent) => {
       if (!dragState.current) return;
-      const rawDeltaPx = ev.clientY - dragState.current.originY;
-      const rawDeltaMin = (rawDeltaPx / HOUR_PX) * 60;
-      const fallbackSnapped = Math.round(rawDeltaMin / SNAP) * SNAP;
-      const snapped = dragDeltaRef.current !== 0 ? dragDeltaRef.current : fallbackSnapped;
-      commitDrag(snapped);
+      const snapped = dragDeltaRef.current;
+      const rawSnapped = rawDragDeltaRef.current;
+      commitDrag(snapped, rawSnapped);
       if (dragCleanupRef.current) {
         dragCleanupRef.current();
         dragCleanupRef.current = null;
@@ -625,8 +707,8 @@ export function DayPlanner() {
     ? t.chronos.today.eyebrow
     : selectedDate.toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "short" });
 
-  // Always reserve bottom badge lane when evening sleep exists
-  const needsBottomSleepLane = Boolean(eveningSleep);
+  // Keep the bottom controls visible even when overnight sleep is optional.
+  const needsBottomSleepLane = Boolean(eveningSleep) || !enforceSleepBoundary;
   const bottomBadgeLane = needsBottomSleepLane ? 28 : 0;
   const timelineContentHeight = totalHeight + topBadgeLane;
   const timelineHeight = timelineContentHeight + bottomBadgeLane;
@@ -683,10 +765,11 @@ export function DayPlanner() {
         <div className="relative" style={{ height: timelineHeight, userSelect: draggingId ? "none" : undefined }}>
           {hours.map((h) => {
             const hideLabel = isToday && projectMinute(h * 60) === projectedNowMin;
+            const isFirstHourLine = h === hours[0];
             return (
               <div key={h} className="absolute left-0 right-0 border-t border-border/30 pointer-events-none" style={{ top: ((projectMinute(h * 60) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}>
                 {!hideLabel && (
-                  <span className="absolute -top-2 left-3 text-[10px] num text-muted-foreground/50 bg-card px-1">{formatHourLabel(h, bcp47)}</span>
+                  <span className={`absolute left-3 text-[10px] num text-muted-foreground/50 bg-card px-1 ${isFirstHourLine ? "top-1" : "-top-2"}`}>{formatHourLabel(h, bcp47)}</span>
                 )}
               </div>
             );
@@ -734,25 +817,27 @@ export function DayPlanner() {
               </button>
             </div>
           )}
-          {eveningSleep && (
+          {(eveningSleep || !enforceSleepBoundary) && (
             <div
               className="absolute left-[68px] right-4 z-[20]"
-              style={{ top: topForProjected(eveningSleep.start) + topBadgeLane + 4 }}
+              style={{ top: eveningSleep ? topForProjected(eveningSleep.start) + topBadgeLane + 4 : timelineContentHeight + 4 }}
             >
               <div className="flex items-center justify-end gap-1.5">
                 <button
                   onClick={() => { setSelectedSleepCut(null); setEditSleepCut(true); }}
                   className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-dashed border-primary/35 text-primary/70 hover:bg-primary/10 hover:border-primary/50 hover:text-primary/90 transition-colors"
-                  title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar pausa de descanso neste dia" : "Add a rest gap for this day"}
+                  title={bcp47.toLowerCase().startsWith("pt") ? "Adicionar pausa de sono neste dia" : "Add a sleep break for this day"}
                 >
                   <Plus className="h-3 w-3" />
-                  {bcp47.toLowerCase().startsWith("pt") ? "Pausa de descanso" : "Rest gap"}
+                  {bcp47.toLowerCase().startsWith("pt") ? "Pausa de sono" : "Sleep break"}
                 </button>
                 <button
                   onClick={() => setEditSleep(true)}
                   className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary/80 shadow-[0_0_0_2px_hsl(var(--card))] hover:bg-primary/20 hover:border-primary/50 transition-colors"
                 >
-                  {bcp47.toLowerCase().startsWith("pt") ? `Horário de sono: ${formatClock(eveningSleep.start, bcp47)}` : `Sleep hours: ${formatClock(eveningSleep.start, bcp47)}`}
+                  {eveningSleep
+                    ? (bcp47.toLowerCase().startsWith("pt") ? `Horário de sono: ${formatClock(eveningSleep.start, bcp47)}` : `Sleep hours: ${formatClock(eveningSleep.start, bcp47)}`)
+                    : (bcp47.toLowerCase().startsWith("pt") ? "Hoje sem horário de sono" : "No sleep hours today")}
                 </button>
               </div>
             </div>
@@ -777,10 +862,10 @@ export function DayPlanner() {
                 onClick={() => { setSelectedSleepCut(sleepSplit.cut); setEditSleepCut(true); }}
                 className="group absolute left-[68px] right-4 z-[25] rounded-md border border-dashed border-primary/35 bg-muted/45 text-primary/85 hover:bg-muted/65 hover:border-primary/50 transition-colors"
                 style={{ top: splitTopOffset, height: splitHeight }}
-                aria-label={isPt ? "Editar pausa de descanso" : "Edit rest gap"}
+                aria-label={isPt ? "Editar pausa de sono" : "Edit sleep break"}
               >
                 <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider num pointer-events-none">
-                  <span className="font-medium">{isPt ? "Pausa" : "Gap"}</span>
+                  <span className="font-medium">{isPt ? "Pausa" : "Break"}</span>
                   <span className="opacity-75">{formatClock(sleepSplit.cut.start, bcp47)}–{formatClock(sleepSplit.cut.end, bcp47)}</span>
                 </div>
                 <div
@@ -873,10 +958,34 @@ export function DayPlanner() {
               const displayDur = durationMin(displayStart, displayEnd);
               const isDragging = draggingId === a.id;
               const preOffset = top - (topForProjected(a.start) + topBadgeLane);
-              const effectiveTop = isDragging ? topForProjected(snapTime(sm + dragDeltaMin)) + topBadgeLane + preOffset : top;
-              const bh = height;
+              let effectiveTop = isDragging ? topForProjected(snapTime(sm + dragDeltaMin)) + topBadgeLane + preOffset : top;
+              let bh = height;
               const s = kindStyle[a.kind];
               const live = a.id === liveId;
+
+              if (isDragging && dragState.current && dragState.current.sourceId === (a.sourceId ?? a.id)) {
+                const draggedSourceStart = dragState.current.origStartMin + dragDeltaMin;
+                const draggedSourceEnd = draggedSourceStart + dragState.current.origDurMin;
+
+                if (a.continuesFromPrevDay) {
+                  const visibleEnd = Math.min(24 * 60, draggedSourceEnd - 24 * 60);
+                  if (visibleEnd <= 0) {
+                    bh = 0;
+                  } else {
+                    effectiveTop = topForProjected("00:00") + topBadgeLane;
+                    bh = Math.max(12, (visibleEnd / 60) * HOUR_PX - 2);
+                  }
+                } else {
+                  const visibleStart = Math.max(0, draggedSourceStart);
+                  const visibleEnd = Math.min(24 * 60, draggedSourceEnd);
+                  if (visibleEnd <= visibleStart) {
+                    bh = 0;
+                  } else {
+                    effectiveTop = topForProjected(snapTime(visibleStart)) + topBadgeLane;
+                    bh = Math.max(12, ((visibleEnd - visibleStart) / 60) * HOUR_PX - 2);
+                  }
+                }
+              }
 
               // ── Block size tiers ──────────────────────────────────────────
               // "full"    ≥75 min  → full layout: time row + chip + title + notes below
@@ -891,11 +1000,19 @@ export function DayPlanner() {
 
               const noteLines = parseNotes(a.notes);
               const hasNotes = noteLines.length > 0;
-              const flatTop = Boolean(a.continuesFromPrevDay) || a.start === "00:00";
-              const flatBottom = Boolean(a.continuesToNextDay) || a.end === "24:00";
+              const flatTop = Boolean(a.continuesFromPrevDay);
+              const flatBottom = Boolean(a.continuesToNextDay);
               const firstNoteTone = hasNotes ? noteLines[0].tone : "amber";
               const noteTone = noteToneStyles[firstNoteTone];
               const blockTitle = scheduleText.blockTitle(a.title, a.titleCustom);
+              const isPt = bcp47.toLowerCase().startsWith("pt");
+              const crossdayHint = a.continuesToNextDay
+                ? (isPt ? `Termina amanhã ${formatClock(displayEnd, bcp47)}` : `Ends tomorrow ${formatClock(displayEnd, bcp47)}`)
+                : a.continuesFromPrevDay
+                  ? (isPt ? `Começou ontem ${formatClock(displayStart, bcp47)}` : `Started yesterday ${formatClock(displayStart, bcp47)}`)
+                  : null;
+              const crossdayMeta = isDragging ? dragLimitHint : crossdayHint;
+              const crossdayIconTitle = crossdayMeta ?? crossdayHint;
 
               // Derived layout flags per tier
               const isMicro   = tier === "micro";
@@ -928,7 +1045,7 @@ export function DayPlanner() {
                   id={`day-block-${a.source}-${a.id}`}
                   className={`group absolute left-0 right-0 border ${flatTop ? "rounded-t-none" : "rounded-t-lg"} ${flatBottom ? "rounded-b-none" : "rounded-b-lg"} ${s.blockBg} ${
                     isDragging
-                      ? "border-secondary/60 shadow-lg opacity-90 cursor-grabbing"
+                      ? `${s.blockBorder} shadow-lg opacity-90 cursor-grabbing`
                       : live
                         ? `${s.blockBorder} ring-2 ring-primary/60 shadow-[0_0_0_1px_hsl(var(--primary)/0.34)]`
                         : `${s.blockBorder} hover:border-secondary/50`
@@ -936,6 +1053,7 @@ export function DayPlanner() {
                   style={{
                     top: effectiveTop,
                     height: bh,
+                    display: bh <= 0 ? "none" : undefined,
                     zIndex: isDragging ? 35 : live ? 15 : 10,
                     overflow: "visible",
                     transition: isDragging ? "none" : "box-shadow 0.15s",
@@ -973,9 +1091,13 @@ export function DayPlanner() {
                       )}
                     </div>
 
-                    {isDragging && dragLimitHint && (
-                      <div className="absolute right-10 top-1 z-[40] rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-200">
-                        {dragLimitHint}
+                    {isDragging && dragTransitionHint && (
+                      <div className={`absolute left-2 right-2 z-[40] pointer-events-none ${dragTransitionHint.edge === "bottom" ? "bottom-0 translate-y-1/2" : "top-0 -translate-y-1/2"}`}>
+                        <div className={`mx-auto flex h-2 max-w-[140px] items-center justify-center rounded-full ${dragTransitionHint.pending ? "bg-primary/50" : "bg-primary/70"} shadow-[0_0_10px_hsl(var(--primary)/0.55)]`}>
+                          {dragTransitionHint.direction === "down"
+                            ? <ArrowDownToLine className="h-3 w-3 text-primary-foreground" />
+                            : <ArrowUpToLine className="h-3 w-3 text-primary-foreground" />}
+                        </div>
                       </div>
                     )}
 
@@ -983,9 +1105,22 @@ export function DayPlanner() {
 
                       {/* ── MICRO TIER (≤15 min) ──────────────────────────────── */}
                       {isMicro && (
-                        <div className="h-full flex items-center gap-1.5 leading-none">
+                        <div className="h-full flex items-center gap-1.5 leading-none min-w-0">
                           <span className={`inline-block h-3 w-3 rounded-[2px] shrink-0 ${s.chip}`} aria-hidden="true" />
-                          <span className={`font-medium text-primary truncate ${titleSz}`}>{blockTitle}</span>
+                          <span className="num text-[9px] text-primary/90 shrink-0" title={`${formatClock(displayStart, bcp47)}–${formatClock(displayEnd, bcp47)}`}>
+                            {formatClock(displayStart, bcp47)}–{formatClock(displayEnd, bcp47)}
+                          </span>
+                          {crossdayIconTitle && (
+                            <span className={`shrink-0 rounded p-0.5 ${s.chip}`} title={crossdayIconTitle}>
+                              {a.continuesFromPrevDay ? <ArrowUpToLine className="h-2 w-2" /> : <ArrowDownToLine className="h-2 w-2" />}
+                            </span>
+                          )}
+                          <span className={`font-medium text-primary truncate ${titleSz}`} title={blockTitle}>{blockTitle}</span>
+                          {crossdayMeta && (
+                            <span className={`ml-auto max-w-[7.5rem] truncate text-[8px] uppercase tracking-wider rounded px-1 py-[1px] ${s.chip}`} title={crossdayMeta}>
+                              {crossdayMeta}
+                            </span>
+                          )}
                           {hasNotes && (
                             <span className={`shrink-0 rounded p-0.5 ${noteTone.chip}`} title={noteLines.map((n) => n.text).join("\n")}>
                               <StickyNote className="h-2 w-2" />
@@ -1008,6 +1143,11 @@ export function DayPlanner() {
                               <span className="mx-1 opacity-50">·</span>
                               {fmtDur(displayDur)}
                             </span>
+                            {crossdayMeta && (
+                              <span className={`max-w-[11rem] truncate text-[9px] uppercase tracking-wider rounded px-1.5 py-0.5 ${s.chip}`} title={crossdayMeta}>
+                                {crossdayMeta}
+                              </span>
+                            )}
                             {showStickyBadge && (
                               <span className={`shrink-0 rounded p-0.5 ${noteTone.chip}`} title={noteLines.map((n) => n.text).join("\n")}>
                                 <StickyNote className="h-2.5 w-2.5" />
@@ -1025,6 +1165,7 @@ export function DayPlanner() {
                             {displaySpansNextDay && <span className="ml-1 uppercase tracking-wider text-secondary/80">+1d</span>}
                             <span className="mx-1 opacity-50">·</span>
                             {fmtDur(displayDur)}
+                            {crossdayMeta && <span className={`ml-2 text-[9px] uppercase tracking-wider rounded px-1.5 py-0.5 ${s.chip}`}>{crossdayMeta}</span>}
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
@@ -1064,6 +1205,7 @@ export function DayPlanner() {
                             {displaySpansNextDay && <span className="text-[10px] uppercase tracking-wider text-secondary/80">+1d</span>}
                             <span>·</span>
                             <span>{fmtDur(displayDur)}</span>
+                            {crossdayMeta && <span className={`text-[9px] uppercase tracking-wider rounded px-1.5 py-0.5 ${s.chip}`}>{crossdayMeta}</span>}
                             {live && <span className="text-secondary font-medium uppercase tracking-wider">· {t.chronos.today.now}</span>}
                             {a.source === "commitment" && <span className="text-[10px] uppercase tracking-wider text-amber-500/80">· {t.chronos.today.commitmentTag}</span>}
                           </div>
@@ -1143,6 +1285,7 @@ export function DayPlanner() {
       {editSleep && (
         <SleepEditDialog
           sleepWindow={sleepEntry}
+          enforceBoundary={enforceSleepBoundary}
           onSaveWindow={(patch) => {
             const dow = selectedDate.getDay();
             const prevSchedule: SleepScheduleEntry[] = data.meta.sleepSchedule ?? [{ start: sleepEntry.start, end: sleepEntry.end }];
@@ -1164,6 +1307,9 @@ export function DayPlanner() {
             }
             updateSleepSchedule(nextSchedule);
             setEditSleep(false);
+          }}
+          onSetEnforceBoundary={(enforced) => {
+            setSleepBoundaryEnforced(enforced);
           }}
           onAddInstance={(start, end) => {
             const sleepCategory = data.categories.find((c) => c.id === "sleep");
@@ -1322,8 +1468,13 @@ function BlockEditDialog({
   const [kind, setKind] = useState<BlockKind>(item.kind);
   const [start, setStart] = useState(item.start);
   const [end, setEnd] = useState(item.end);
+  const [endsNextDay, setEndsNextDay] = useState(Boolean(item.continuesToNextDay) || end <= start);
   const [noteLines, setNoteLines] = useState<NoteLine[]>(() => parseNotes(item.notes));
   const dur = durationMin(start, end);
+
+  useEffect(() => {
+    if (end <= start) setEndsNextDay(true);
+  }, [start, end]);
 
   const toneOptions: { value: NoteTone; label: string }[] = [
     { value: "amber", label: "Amber" },
@@ -1357,7 +1508,7 @@ function BlockEditDialog({
       start,
       end,
       kind,
-      endsNextDay: end <= start,
+      endsNextDay: endsNextDay || end <= start,
       notes: serializeNotes(noteLines),
       title: item.title,
       titleCustom: isKnownDefaultBlockTitle(item.title)
@@ -1401,6 +1552,18 @@ function BlockEditDialog({
             <div className="space-y-1.5">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.end}</Label>
               <TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} className="h-9" />
+            </div>
+          </div>
+          <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="edit-ends-next-day"
+                checked={endsNextDay}
+                onCheckedChange={(checked) => setEndsNextDay(checked === true)}
+              />
+              <Label htmlFor="edit-ends-next-day" className="text-[11px] text-muted-foreground">
+                {bcp47.toLowerCase().startsWith("pt") ? "Termina no dia seguinte" : "Ends next day"}
+              </Label>
             </div>
           </div>
           {dur > 0 && <p className="text-[11px] num text-secondary">{t.chronos.today.duration}: {fmtDur(dur)}</p>}
@@ -1474,12 +1637,16 @@ function BlockEditDialog({
 
 function SleepEditDialog({
   sleepWindow,
+  enforceBoundary,
   onSaveWindow,
+  onSetEnforceBoundary,
   onAddInstance,
   onClose,
 }: {
   sleepWindow: { start: string; end: string; days?: number[] };
+  enforceBoundary: boolean;
   onSaveWindow: (patch: Partial<{ start: string; end: string; days?: number[] }>) => void;
+  onSetEnforceBoundary: (enforced: boolean) => void;
   onAddInstance: (start: string, end: string) => void;
   onClose: () => void;
 }) {
@@ -1487,6 +1654,7 @@ function SleepEditDialog({
   const { bcp47 } = useI18n();
   const [start, setStart] = useState(sleepWindow.start);
   const [end, setEnd] = useState(sleepWindow.end);
+  const noNightBoundary = start === end;
   const spansMidnight = end <= start;
 
   function save() {
@@ -1507,6 +1675,18 @@ function SleepEditDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-1">
+          <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="enforce-sleep-boundary"
+                checked={enforceBoundary}
+                onCheckedChange={(checked) => onSetEnforceBoundary(checked === true)}
+              />
+              <Label htmlFor="enforce-sleep-boundary" className="text-[11px] text-muted-foreground">
+                {bcp47.toLowerCase().startsWith("pt") ? "Manter horário de sono" : "Keep sleep hours"}
+              </Label>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.start}</Label>
@@ -1519,8 +1699,10 @@ function SleepEditDialog({
           </div>
           <div className="space-y-1.5">
             <p className="text-[11px] text-muted-foreground">
-              {spansMidnight
-                ? (bcp47.toLowerCase().startsWith("pt") ? "Cruza para o dia seguinte: atualiza os limites de sono do dia." : "Crosses into next day: updates the day-boundary sleep window.")
+              {noNightBoundary
+                ? (bcp47.toLowerCase().startsWith("pt") ? "Início igual ao fim: deixa a madrugada livre e permite blocos até 00:00+." : "Start equals end: leaves the late night open and allows blocks up to/after midnight.")
+                : spansMidnight
+                ? (bcp47.toLowerCase().startsWith("pt") ? "Cruza para o dia seguinte: atualiza a pausa noturna deste dia." : "Crosses into next day: updates this day's overnight pause.")
                 : (bcp47.toLowerCase().startsWith("pt") ? "Mesmo dia: cria uma instancia separada de sono neste dia." : "Same day: creates a separate sleep instance for this day.")}
             </p>
           </div>
@@ -1566,12 +1748,12 @@ function SleepCutDialog({
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="font-display text-xl text-primary">
-            {isPt ? "Pausa de descanso" : "Rest gap"}
+            {isPt ? "Pausa de sono" : "Sleep break"}
           </DialogTitle>
           <DialogDescription>
             {isPt
-              ? "Define uma pausa de descanso para compactar a timeline deste dia."
-              : "Define a rest gap that compacts this day's timeline."}
+              ? "Define uma pausa de sono para compactar a timeline deste dia."
+              : "Define a sleep break that compacts this day's timeline."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-1">

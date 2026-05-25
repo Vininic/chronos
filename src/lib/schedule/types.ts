@@ -71,6 +71,8 @@ export interface ScheduleData {
     cycle: { name: string; number: number; week: number; progress: number };
     workdayStart: string;
     workdayEnd: string;
+    /** Whether sleep window is enforced as a hard scheduling boundary */
+    enforceSleepBoundary?: boolean;
     /** Legacy single sleep window — migrated to sleepSchedule on load */
     sleepWindow?: { start: string; end: string };
     /** New: per-day-of-week sleep schedule, replaces sleepWindow */
