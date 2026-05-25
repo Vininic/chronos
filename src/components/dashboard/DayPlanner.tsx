@@ -454,7 +454,6 @@ export function DayPlanner() {
   const [dragDeltaMin, setDragDeltaMin] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragDeltaRef = useRef(0);
-  const rawDragDeltaRef = useRef(0);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const [dragLimitHint, setDragLimitHint] = useState<string | null>(null);
   const [dragTransitionHint, setDragTransitionHint] = useState<{ edge: "top" | "bottom"; direction: "up" | "down"; pending: boolean } | null>(null);
@@ -493,108 +492,140 @@ export function DayPlanner() {
     setDraggingId(null);
     setDragDeltaMin(0);
     dragDeltaRef.current = 0;
-    rawDragDeltaRef.current = 0;
     setDragLimitHint(null);
     setDragTransitionHint(null);
-    // hasDraggedRef is reset after onClick fires (with a small delay)
   }
 
-  function clampSnappedAwayFromSleepCut(snapped: number) {
-    if (sleepSplits.length === 0 || !dragState.current) return snapped;
-    if (dragState.current.sourceSpansNextDay) return snapped;
-    const candidateStart = dragState.current.origStartMin + snapped;
-    const candidateEnd = candidateStart + dragState.current.origDurMin;
-    const overlap = sleepSplits.find((cut) => candidateStart < cut.endMin && candidateEnd > cut.startMin);
-    if (!overlap) return snapped;
+  // ── Unified crossday drag thresholds ─────────────────────────────────────
+  // TEASE_MIN: how far past midnight before showing the glow-arrow hint
+  // COMMIT_MIN: how far past midnight before solidifying a crossday split
+  // MIN_IN_DAY: minimum minutes that must remain in the originating day
+  const TEASE_MIN  = 15; // minutes past 00:00 → show glow hint (pending = true)
+  const COMMIT_MIN = 30; // minutes past 00:00 → solidify crossday
+  const MIN_IN_DAY = 15; // minimum minutes that must stay in the originating day
 
-    const pushAfterCut = overlap.endMin - dragState.current.origStartMin;
-    const pushBeforeCut = overlap.startMin - dragState.current.origDurMin - dragState.current.origStartMin;
-    const preferForward = snapped >= 0;
-    return preferForward ? pushAfterCut : pushBeforeCut;
-  }
-
-  function updateDragPreview(snapped: number) {
+  function updateDragPreview(rawDeltaMin: number) {
     if (!dragState.current) return;
     const isPt = bcp47.toLowerCase().startsWith("pt");
-    const adjusted = clampSnappedAwayFromSleepCut(snapped);
-    const previewEdge = dragState.current.transitionEdge;
-    const minStart = dragState.current.minStartMin;
-    const maxStart = dragState.current.maxStartMin;
-    const previewDirection: "up" | "down" = adjusted < 0 ? "up" : "down";
-    const rawCandidateStart = dragState.current.origStartMin + adjusted;
-    const clampedCandidateStart = Math.max(minStart, Math.min(rawCandidateStart, maxStart));
-    const previewDelta = clampedCandidateStart - dragState.current.origStartMin;
-    const candidateEnd = clampedCandidateStart + dragState.current.origDurMin;
-    const endsNextDay = candidateEnd > 24 * 60;
+    const { origStartMin, origDurMin, transitionEdge, minStartMin, maxStartMin } = dragState.current;
 
-    setDragDeltaMin(previewDelta);
-    dragDeltaRef.current = previewDelta;
+    // ── BOTTOM EDGE (normal block being pushed toward next day) ──────────
+    if (transitionEdge === "bottom") {
+      const rawEnd = origStartMin + origDurMin + rawDeltaMin;
+      const spillMin = rawEnd - 24 * 60; // positive = spill into next day
 
-    if (rawCandidateStart <= minStart) {
-      setDragLimitHint(previewEdge === "top" ? (isPt ? "Limite superior" : "Top limit") : null);
-      const overshoot = minStart - rawCandidateStart;
-      setDragTransitionHint({ edge: previewEdge, direction: previewDirection, pending: overshoot < SNAP * 2 });
-      return;
-    }
-    if (rawCandidateStart >= maxStart) {
-      setDragLimitHint(previewEdge === "bottom" ? (isPt ? "Limite inferior" : "Bottom limit") : null);
-      const overshoot = rawCandidateStart - maxStart;
-      setDragTransitionHint({ edge: previewEdge, direction: previewDirection, pending: overshoot < SNAP * 2 });
-      return;
-    }
-
-    const spillMin = Math.max(0, candidateEnd - 24 * 60);
-    if (spillMin > 0) {
-      setDragTransitionHint({ edge: previewEdge, direction: previewDirection, pending: spillMin < 30 });
-      if (spillMin < 30) {
+      if (spillMin >= COMMIT_MIN) {
+        // Past commit threshold — clamp so at least MIN_IN_DAY stays today
+        const maxSpill = origDurMin - MIN_IN_DAY;
+        const clampedSpill = Math.min(spillMin, maxSpill);
+        const previewDelta = 24 * 60 - origStartMin - origDurMin + clampedSpill;
+        setDragDeltaMin(previewDelta);
+        dragDeltaRef.current = previewDelta;
+        setDragTransitionHint({ edge: "bottom", direction: "down", pending: false });
+        const nextDayMin = Math.round(clampedSpill);
+        setDragLimitHint(isPt ? `${nextDayMin}m no próximo dia` : `${nextDayMin}m into next day`);
+        return;
+      }
+      if (spillMin >= TEASE_MIN) {
+        // Tease zone: clamp preview, show pending arrow
+        const previewDelta = 24 * 60 - origStartMin - origDurMin; // fills the day exactly
+        const clamped = Math.max(previewDelta, minStartMin - origStartMin);
+        setDragDeltaMin(clamped);
+        dragDeltaRef.current = clamped;
+        setDragTransitionHint({ edge: "bottom", direction: "down", pending: true });
         setDragLimitHint(null);
         return;
       }
-    } else {
+      // Normal drag within the day
+      const rawStart = origStartMin + rawDeltaMin;
+      const clampedStart = Math.max(minStartMin, Math.min(rawStart, maxStartMin));
+      const previewDelta = clampedStart - origStartMin;
+      setDragDeltaMin(previewDelta);
+      dragDeltaRef.current = previewDelta;
       setDragTransitionHint(null);
-    }
-
-    const upRoomMin = Math.max(0, clampedCandidateStart - minStart);
-    const downRoomMin = Math.max(0, maxStart - clampedCandidateStart);
-    if (endsNextDay) {
-      const nextDayUsedMin = candidateEnd - 24 * 60;
-      const nextDayFreeMin = Math.max(0, 24 * 60 - nextDayUsedMin);
-      const endLabel = clockTimeFromMin(candidateEnd);
-      const freeLabel = fmtPreviewMinutes(nextDayFreeMin, isPt);
-      const roomMin = previewEdge === "top" ? upRoomMin : downRoomMin;
-      const roomLabel = fmtPreviewMinutes(roomMin, isPt);
-      const roomText = previewEdge === "top"
-        ? (isPt ? `sobe mais ${roomLabel}` : `can move up ${roomLabel}`)
-        : (isPt ? `desce mais ${roomLabel}` : `can move down ${roomLabel}`);
-      setDragLimitHint(
-        isPt
-          ? `Termina amanhã ${endLabel} · livre amanhã ${freeLabel} · ${roomText}`
-          : `Ends tomorrow ${endLabel} · free tomorrow ${freeLabel} · ${roomText}`,
-      );
+      if (clampedStart <= minStartMin && rawStart < minStartMin) {
+        setDragLimitHint(isPt ? "Limite superior" : "Top limit");
+      } else if (clampedStart >= maxStartMin && rawStart > maxStartMin) {
+        setDragLimitHint(isPt ? "Limite inferior" : "Bottom limit");
+      } else {
+        setDragLimitHint(null);
+      }
       return;
     }
 
-    setDragLimitHint(null);
+    // ── TOP EDGE (continuesFromPrevDay block being pulled toward prev day) ──
+    if (transitionEdge === "top") {
+      const spillIntoPrevDay = -rawDeltaMin; // positive = pulling upward
+
+      if (spillIntoPrevDay >= COMMIT_MIN) {
+        const maxSpill = origDurMin - MIN_IN_DAY;
+        const clampedSpill = Math.min(spillIntoPrevDay, maxSpill);
+        const previewDelta = -clampedSpill;
+        setDragDeltaMin(previewDelta);
+        dragDeltaRef.current = previewDelta;
+        setDragTransitionHint({ edge: "top", direction: "up", pending: false });
+        const prevDayMin = Math.round(clampedSpill);
+        setDragLimitHint(isPt ? `${prevDayMin}m no dia anterior` : `${prevDayMin}m into prev day`);
+        return;
+      }
+      if (spillIntoPrevDay >= TEASE_MIN) {
+        setDragDeltaMin(0);
+        dragDeltaRef.current = 0;
+        setDragTransitionHint({ edge: "top", direction: "up", pending: true });
+        setDragLimitHint(null);
+        return;
+      }
+      // Normal drag downward (pushing start later in the day)
+      const rawStart = origStartMin + rawDeltaMin;
+      const clampedStart = Math.max(0, Math.min(rawStart, maxStartMin));
+      const previewDelta = clampedStart - origStartMin;
+      setDragDeltaMin(previewDelta);
+      dragDeltaRef.current = previewDelta;
+      setDragTransitionHint(null);
+      setDragLimitHint(null);
+    }
   }
 
-  function commitDrag(snapped: number, rawSnapped: number) {
+  function commitDrag(snappedDelta: number) {
     if (!dragState.current) return;
     const { sourceId, source, origStartMin, origDurMin, transitionEdge } = dragState.current;
-    const adjusted = clampSnappedAwayFromSleepCut(snapped);
-    const rawAdjusted = clampSnappedAwayFromSleepCut(rawSnapped);
 
-    // Keep preview clamped at lower-limit for bottom-edge crossday drags, but allow commit transfer
-    // once the raw drag crosses midnight into next day.
-    const rawStart = origStartMin + rawAdjusted;
-    const allowBottomTransfer = dragState.current.sourceSpansNextDay
-      && transitionEdge === "bottom"
-      && rawStart >= (24 * 60 + SNAP);
-    const commitDelta = allowBottomTransfer ? rawAdjusted : adjusted;
+    if (transitionEdge === "bottom") {
+      const rawEnd = origStartMin + origDurMin + snappedDelta;
+      const spillMin = rawEnd - 24 * 60;
 
-    if (commitDelta !== 0) {
-      const ns = clockTimeFromMin(origStartMin + commitDelta);
-      const ne = clockTimeFromMin(origStartMin + origDurMin + commitDelta);
-      const err = pushMoveDayChain(selectedDate, source, sourceId, ns, ne, commitDelta, transitionEdge);
+      if (spillMin >= COMMIT_MIN) {
+        const newStart = clockTimeFromMin(origStartMin + snappedDelta);
+        const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, "24:00", snappedDelta, "bottom");
+        if (err) toast({ title: "Conflict", description: err });
+        return;
+      }
+      // Normal move within the day
+      const newStart = clockTimeFromMin(origStartMin + snappedDelta);
+      const newEnd   = clockTimeFromMin(origStartMin + origDurMin + snappedDelta);
+      const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, newEnd, snappedDelta, "bottom");
+      if (err) toast({ title: "Conflict", description: err });
+      return;
+    }
+
+    if (transitionEdge === "top") {
+      const spillIntoPrevDay = -snappedDelta;
+
+      if (spillIntoPrevDay >= COMMIT_MIN) {
+        const maxSpill = origDurMin - MIN_IN_DAY;
+        const clampedSpill = Math.min(spillIntoPrevDay, maxSpill);
+        const newStart = clockTimeFromMin(clampedSpill);
+        const newEnd   = clockTimeFromMin(origDurMin);
+        const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, newEnd, -clampedSpill, "top");
+        if (err) toast({ title: "Conflict", description: err });
+        return;
+      }
+      // Normal move within the day
+      const rawStart    = origStartMin + snappedDelta;
+      const clampedStart = Math.max(0, rawStart);
+      const newStart = clockTimeFromMin(clampedStart);
+      const newEnd   = clockTimeFromMin(clampedStart + origDurMin);
+      const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, newEnd, snappedDelta, "top");
       if (err) toast({ title: "Conflict", description: err });
     }
   }
@@ -626,28 +657,30 @@ export function DayPlanner() {
       }
     }
     const wakeMin = sleepStartMin > sleepEndMin ? sleepEndMin : 0;
+    const bedMin  = sleepStartMin > sleepEndMin ? sleepStartMin : 24 * 60;
     const sourceDurMin = durationMin(sourceStart, sourceEnd);
-    const minVisibleInDayStart = Math.max(wakeMin, 24 * 60 - sourceDurMin + SNAP);
     const transitionEdge: "top" | "bottom" = a.continuesFromPrevDay ? "top" : "bottom";
-    // Keep lower-limit guard for bottom edge; top edge can reach full 00:00 threshold.
-    const maxCrossStart = transitionEdge === "bottom" ? (24 * 60 - SNAP) : (24 * 60);
+
+    // origStartMin: for top-edge blocks the segment starts at 00:00 on this day
+    const origStartMin = transitionEdge === "top" ? 0 : timeToMinutes(sourceStart);
+    const minStartMin  = wakeMin;
+    const maxStartMin  = bedMin - sourceDurMin;
+
     dragState.current = {
       id: a.id,
       sourceId,
       source: a.source,
       originY: e.clientY,
-      origStartMin: timeToMinutes(sourceStart),
+      origStartMin,
       origDurMin: sourceDurMin,
-      sourceSpansNextDay,
+      sourceSpansNextDay: transitionEdge === "top" || (sourceStart > sourceEnd && sourceStart !== "00:00"),
       transitionEdge,
-      // Keep carry-over (top edge) with at least one 15-minute slice visible in this day.
-      minStartMin: transitionEdge === "top" ? minVisibleInDayStart : wakeMin,
-      maxStartMin: maxCrossStart,
+      minStartMin,
+      maxStartMin,
     };
     setDraggingId(a.id);
     setDragDeltaMin(0);
     dragDeltaRef.current = 0;
-    rawDragDeltaRef.current = 0;
     hasDraggedRef.current = false;
     setDragLimitHint(null);
 
@@ -657,14 +690,12 @@ export function DayPlanner() {
       const rawDeltaPx = ev.clientY - dragState.current.originY;
       const rawDeltaMin = (rawDeltaPx / HOUR_PX) * 60;
       const snapped = Math.round(rawDeltaMin / SNAP) * SNAP;
-      rawDragDeltaRef.current = snapped;
       updateDragPreview(snapped);
     };
-    const handleMouseDone = (ev: MouseEvent) => {
+    const handleMouseDone = (_ev: MouseEvent) => {
       if (!dragState.current) return;
       const snapped = dragDeltaRef.current;
-      const rawSnapped = rawDragDeltaRef.current;
-      commitDrag(snapped, rawSnapped);
+      commitDrag(snapped);
       if (dragCleanupRef.current) {
         dragCleanupRef.current();
         dragCleanupRef.current = null;
