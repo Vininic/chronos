@@ -12,7 +12,7 @@ export interface Category {
 export interface RoutineBlock {
   id: string;
   day: number; // 0 Sun ... 6 Sat
-  start: string; // "HH:MM"
+  start: string;
   end: string;
   endsNextDay?: boolean;
   kind: BlockKind;
@@ -51,8 +51,8 @@ export interface Suggestion {
  *  start/end crossing midnight (start > end) means the sleep spans into the next calendar day.
  *  Multiple entries are allowed; the first matching entry for a given day wins. */
 export interface SleepScheduleEntry {
-  start: string;   // "HH:MM" — when sleep begins
-  end: string;     // "HH:MM" — when sleep ends (may be next-day if start > end)
+  start?: string;
+  end?: string;
   days?: number[]; // 0=Sun..6=Sat; absent = all days
 }
 
@@ -60,8 +60,8 @@ export interface SleepScheduleEntry {
  *  Splits the day's timeline into two visible segments. */
 export interface SleepCut {
   date: string;   // YYYY-MM-DD
-  start: string;  // "HH:MM" — when sleep begins
-  end: string;    // "HH:MM" — when sleep ends (same calendar day, end > start)
+  start: string;
+  end: string;
 }
 
 export interface ScheduleData {

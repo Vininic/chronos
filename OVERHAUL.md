@@ -1,20 +1,43 @@
 # Chronos System Overhaul Checklist
 
-## TOP PRIORITY - 2026-05-24 Crossday drag symmetry blocker (must fix next)
+## TOP PRIORITY - 2026-05-24 Crossday drag symmetry blocker
 
-- [ ] Critical blocker: crossday drag behavior is still asymmetric and unstable around `00:00`.
-- [ ] Repro 1: dragging from `00:00` on the next-day side can ignore or fake the lower-limit cue and still move into a broken state.
-- [ ] Repro 2: detaching from the top-origin crossday path can still break the block state in some drag sequences.
-- [ ] Repro 3: lower-limit warning may render but not represent true commit behavior (preview/commit mismatch).
-- [ ] Root-cause focus for next session: unify preview clamp rules with commit transfer rules so limits, glow state, and persisted result always match.
+- [x] Critical blocker: crossday drag behavior is still asymmetric and unstable around `00:00`.
+- [x] Repro 1: dragging from `00:00` on the next-day side can ignore or fake the lower-limit cue and still move into a broken state.
+- [x] Repro 2: detaching from the top-origin crossday path can still break the block state in some drag sequences.
+- [x] Repro 3: lower-limit warning may render but not represent true commit behavior (preview/commit mismatch).
+- [x] Root-cause focus for next session: unify preview clamp rules with commit transfer rules so limits, glow state, and persisted result always match.
 - [ ] Keep glow bar anchor fixed per originating edge; only icon direction may change.
 - [ ] Add deterministic regression tests for both directions at `00:00` thresholds (15m hint and 30m solid states).
 
 ### Related in-progress changes to carry forward
 
-- [ ] `DayPlanner.tsx`: multiple drag preview/commit threshold iterations (raw vs clamped delta handling, crossday hint behavior).
-- [ ] `store.tsx`: crossday transfer/retention rules changed several times and require consolidation.
+- [x] `DayPlanner.tsx`: multiple drag preview/commit threshold iterations (raw vs clamped delta handling, crossday hint behavior).
+- [x] `store.tsx`: crossday transfer/retention rules changed several times and require consolidation.
 - [ ] `Today.tsx` and schedule type/dialog files were updated during this same refactor window and should be validated together in the next pass.
+
+## 13. Session Log - 2026-05-29
+
+### Solved in this session
+
+- [x] Re-read README and resumed from the current crossday blocker state.
+- [x] Removed legacy sleep fallback from agenda generation when a day has no matching sleep schedule entry.
+- [x] Removed sleep-boundary drag clamping when the selected day has no effective sleep boundary.
+- [x] Reworked crossday drag preview to use absolute day-relative coordinates:
+  - [x] bottom spill toward next day respects 15m tease, 30m commit, next-day blockers, and minimum 15m remaining today
+  - [x] top-origin blocks from the previous day detach cleanly by crossing back through `00:00`
+  - [x] previous-day spill respects previous-day blockers and minimum 15m remaining today
+- [x] Reworked dragged block rendering so crossday previews clip to the current day instead of disappearing.
+- [x] Added regression tests for no-sleep-entry fallback and previous-day crossday visibility.
+- [x] Production build passed.
+- [x] Vitest suite passed.
+- [x] Local dashboard opened successfully in the in-app browser with no console errors.
+
+### Still open from this session
+
+- [ ] Manual drag sweep in browser: bottom-to-next-day, next-day blocker limit, top-from-previous-day detach, upper-limit spam attempt.
+- [ ] Add deterministic tests around drag threshold math itself (15m tease and 30m commit in both directions).
+- [ ] Confirm glow bar/icon direction still reads correctly after the coordinate rewrite.
 
 ## 1. Daily Agenda (Today page) - `DayPlanner.tsx`
 

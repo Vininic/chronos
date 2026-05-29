@@ -233,7 +233,15 @@ function sleepBlockedIntervalsForDay(
   sleepCuts?: SleepCut[],
   dateIso?: string,
 ) {
-  const entry = getSleepWindowForDay(schedule, day) ?? schedule[0];
+  const entry = getSleepWindowForDay(schedule, day);
+  if (!entry || entry.start === entry.end) {
+    return dateIso && sleepCuts
+      ? sleepCuts
+        .filter((c) => c.date === dateIso)
+        .map((c) => ({ start: timeToMinutes(c.start), end: timeToMinutes(c.end) }))
+        .filter((i) => i.end > i.start)
+      : [];
+  }
   const start = timeToMinutes(entry.start);
   const end = timeToMinutes(entry.end);
   const intervals: Array<{ start: number; end: number }> = [];
@@ -804,6 +812,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     const sleepForDay = enforceSleepBoundary
       ? buildAgendaForDate(data, date).filter((a) => a.kind === "sleep" && (a as { sleepBoundary?: boolean }).sleepBoundary)
       : [];
+    const hasSleepBoundaryForDay = sleepForDay.length > 0;
     const wakeMin = sleepForDay
       .filter((a) => timeToMinutes(a.end) <= 12 * 60)
       .reduce((m, a) => Math.max(m, timeToMinutes(a.end)), 0);
@@ -861,95 +870,23 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
         : false;
 
     const commitCrossdayMove = (absoluteStartMin: number) => {
-      // Dragging a crossday segment fully below 00:00 transfers the block to the next day.
-      if (absoluteStartMin >= 24 * 60) {
-        const shiftedStartMin = absoluteStartMin - 24 * 60;
-        const shiftedEndAbs = shiftedStartMin + movedDur;
-        const shiftedStart = minutesToTime(shiftedStartMin);
-        const shiftedEnd = minutesToTime(shiftedEndAbs % (24 * 60));
-        const shiftedEndsNextDay = shiftedEndAbs > 24 * 60;
-
-        if (sourceRoutine) {
-          const shiftedDay = (sourceRoutine.day + 1) % 7;
-          const candidate: RoutineBlock = {
-            ...sourceRoutine,
-            day: shiftedDay,
-            start: shiftedStart,
-            end: shiftedEnd,
-            endsNextDay: shiftedEndsNextDay,
-          };
-          const sleepErr = validateRoutineSleepOverlap(data, candidate);
-          if (sleepErr) return sleepErr;
-          const candidateSegments = buildRoutineWeeklySegments(candidate);
-          const conflict = data.routine.find((r) => {
-            if (r.id === sourceRoutine.id) return false;
-            const existingSegments = buildRoutineWeeklySegments(r);
-            return candidateSegments.some((candidateSegment) =>
-              existingSegments.some((existingSegment) =>
-                candidateSegment.day === existingSegment.day
-                && candidateSegment.startMin < existingSegment.endMin
-                && existingSegment.startMin < candidateSegment.endMin,
-              ),
-            );
-          });
-          if (conflict) {
-            return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
-          }
-
-          setData((d) => withDerived({
-            ...d,
-            routine: d.routine.map((r) =>
-              r.id === sourceRoutine.id
-                ? { ...r, day: shiftedDay, start: shiftedStart, end: shiftedEnd, endsNextDay: shiftedEndsNextDay }
-                : r,
-            ),
-          }));
-          return null;
-        }
-
-        if (sourceCommitment) {
-          const shiftedDate = addDaysToIso(sourceCommitment.date, 1);
-          const shiftedEndDate = shiftedEndsNextDay ? addDaysToIso(shiftedDate, 1) : shiftedDate;
-          const candidate: Commitment = {
-            ...sourceCommitment,
-            date: shiftedDate,
-            start: shiftedStart,
-            end: shiftedEnd,
-            endsNextDay: shiftedEndsNextDay,
-            endDate: shiftedEndDate,
-          };
-          const sleepErr = validateCommitmentSleepOverlap(data, candidate);
-          if (sleepErr) return sleepErr;
-          const conflict = data.commitments.find((c) => c.id !== sourceCommitment.id && intervalsOverlap(commitmentInterval(c), commitmentInterval(candidate)));
-          if (conflict) {
-            return `Conflicts with "${conflict.title}" (${conflict.start}-${conflict.end}).`;
-          }
-
-          setData((d) => withDerived({
-            ...d,
-            commitments: d.commitments.map((c) =>
-              c.id === sourceCommitment.id
-                ? { ...c, date: shiftedDate, start: shiftedStart, end: shiftedEnd, endsNextDay: shiftedEndsNextDay, endDate: shiftedEndDate }
-                : c,
-            ),
-          }));
-          return null;
-        }
-      }
-
-      const maxCrossStart = bedMin;
-      const clampedCrossStart = Math.max(wakeMin, Math.min(absoluteStartMin, maxCrossStart));
-      const absoluteEnd = clampedCrossStart + movedDur;
-      const nextStart = minutesToTime(clampedCrossStart);
-      const nextEnd = minutesToTime(absoluteEnd % (24 * 60));
-      const nextEndsNextDay = absoluteEnd > 24 * 60;
+      const dayOffset = Math.floor(absoluteStartMin / (24 * 60));
+      const startInDay = ((absoluteStartMin % (24 * 60)) + 24 * 60) % (24 * 60);
+      const endAbs = startInDay + movedDur;
+      const start = minutesToTime(startInDay);
+      const end = minutesToTime(endAbs % (24 * 60));
+      const endsNextDay = endAbs > 24 * 60;
+      const targetDay = (day + dayOffset + 7) % 7;
+      const targetDate = addDaysToIso(dayIso, dayOffset);
+      const targetEndDate = endsNextDay ? addDaysToIso(targetDate, 1) : targetDate;
 
       if (sourceRoutine) {
         const candidate: RoutineBlock = {
           ...sourceRoutine,
-          start: nextStart,
-          end: nextEnd,
-          endsNextDay: nextEndsNextDay,
+          day: targetDay,
+          start,
+          end,
+          endsNextDay,
         };
         const sleepErr = validateRoutineSleepOverlap(data, candidate);
         if (sleepErr) return sleepErr;
@@ -973,7 +910,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
           ...d,
           routine: d.routine.map((r) =>
             r.id === sourceRoutine.id
-              ? { ...r, start: nextStart, end: nextEnd, endsNextDay: nextEndsNextDay }
+              ? { ...r, day: targetDay, start, end, endsNextDay }
               : r,
           ),
         }));
@@ -981,14 +918,13 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       }
 
       if (sourceCommitment) {
-        const baseDate = sourceCommitment.date;
-        const nextEndDate = nextEndsNextDay ? addDaysToIso(baseDate, 1) : baseDate;
         const candidate: Commitment = {
           ...sourceCommitment,
-          start: nextStart,
-          end: nextEnd,
-          endsNextDay: nextEndsNextDay,
-          endDate: nextEndDate,
+          date: targetDate,
+          start,
+          end,
+          endsNextDay,
+          endDate: targetEndDate,
         };
         const sleepErr = validateCommitmentSleepOverlap(data, candidate);
         if (sleepErr) return sleepErr;
@@ -1001,7 +937,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
           ...d,
           commitments: d.commitments.map((c) =>
             c.id === sourceCommitment.id
-              ? { ...c, start: nextStart, end: nextEnd, endsNextDay: nextEndsNextDay, endDate: nextEndDate }
+              ? { ...c, date: targetDate, start, end, endsNextDay, endDate: targetEndDate }
               : c,
           ),
         }));
@@ -1013,7 +949,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
 
     // Cross-day blocks keep total duration. Dragging changes how much spills into next day.
     if (sourceSpansNextDay) {
-      const crossStart = typeof dragDeltaMin === "number" ? sourceStartMin + dragDeltaMin : movedStart;
+      const sourceReferenceStartMin = dragEdge === "top" ? sourceStartMin - 24 * 60 : sourceStartMin;
+      const crossStart = typeof dragDeltaMin === "number" ? sourceReferenceStartMin + dragDeltaMin : movedStart;
       return commitCrossdayMove(crossStart);
     }
 
@@ -1028,7 +965,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       candidateStart = bedMin - movedDur;
     }
 
-    if (!enforceSleepBoundary && candidateStart + movedDur > 24 * 60) {
+    if (!hasSleepBoundaryForDay && (candidateStart < 0 || candidateStart + movedDur > 24 * 60)) {
       return commitCrossdayMove(candidateStart);
     }
 
@@ -1386,10 +1323,9 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
   const sleepTitle = data.categories.find((c) => c.id === "sleep")?.label ?? "Sleep";
   const sleepSchedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
   const sleepEntry = getSleepWindowForDay(sleepSchedule, day);
-  const sleepWindow = sleepEntry ?? normalizeSleepWindow(data);
-  const sleepSegments = data.meta.enforceSleepBoundary === false
+  const sleepSegments = data.meta.enforceSleepBoundary === false || !sleepEntry || sleepEntry.start === sleepEntry.end
     ? []
-    : buildSleepSegmentsForDate(sleepWindow, date, sleepTitle);
+    : buildSleepSegmentsForDate(sleepEntry, date, sleepTitle);
 
   return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
 }

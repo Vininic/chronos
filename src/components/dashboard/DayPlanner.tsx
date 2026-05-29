@@ -278,22 +278,22 @@ export function DayPlanner() {
   );
 
   // ── Sleep schedule for this day ─────────────────────────────────────────────
-  // Read from sleepSchedule (new) falling back to sleepWindow (legacy).
   const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
   const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
-  const sleepEntry = getSleepWindowForDay(sleepSchedule, selectedDate.getDay()) ?? sleepSchedule[0];
+  const sleepEntry = getSleepWindowForDay(sleepSchedule, selectedDate.getDay());
 
-  const sleepStartMin = timeToMinutes(sleepEntry.start);
-  const sleepEndMin   = timeToMinutes(sleepEntry.end);
-  // Cross-day sleep: sleep starts in the evening and ends the next morning (start > end)
-  const hasCrossDaySleep = enforceSleepBoundary && sleepStartMin > sleepEndMin;
-  // Same-day sleep: sleep starts and ends within the same calendar day (start < end)
-  const hasSameDaySleep  = enforceSleepBoundary && sleepStartMin < sleepEndMin;
+  // When no sleep schedule entry matches this day, or start equals end (user cleared sleep),
+  // there is no sleep boundary.
+  const effectiveSleepEntry = sleepEntry && sleepEntry.start !== sleepEntry.end ? sleepEntry : null;
+  const sleepStartMin = effectiveSleepEntry ? timeToMinutes(effectiveSleepEntry.start) : 0;
+  const sleepEndMin   = effectiveSleepEntry ? timeToMinutes(effectiveSleepEntry.end) : 0;
+  const hasCrossDaySleep = enforceSleepBoundary && effectiveSleepEntry !== null && sleepStartMin > sleepEndMin;
+  const hasSameDaySleep  = enforceSleepBoundary && effectiveSleepEntry !== null && sleepStartMin < sleepEndMin;
 
   // Visual boundary markers
-  const morningSleep = hasCrossDaySleep ? { start: "00:00", end: sleepEntry.end } : null;
-  const eveningSleep = hasCrossDaySleep ? { start: sleepEntry.start, end: "24:00" } : null;
-  const sameDaySleep = hasSameDaySleep  ? { start: sleepEntry.start, end: sleepEntry.end } : null;
+  const morningSleep = hasCrossDaySleep ? { start: "00:00", end: effectiveSleepEntry!.end } : null;
+  const eveningSleep = hasCrossDaySleep ? { start: effectiveSleepEntry!.start, end: "24:00" } : null;
+  const sameDaySleep = hasSameDaySleep  ? { start: effectiveSleepEntry!.start, end: effectiveSleepEntry!.end } : null;
 
   // Per-date sleep cuts (mid-day dividers)
   const sleepCutsForDay = useMemo(
@@ -312,9 +312,10 @@ export function DayPlanner() {
   let endMin   = hasCrossDaySleep ? sleepStartMin : defaultEndMin;
 
   // ── Timeline boundaries ───────────────────────────────────────────────────
-  // When overnight sleep is not enforced, keep the day frame stable at 00:00–24:00
-  // so dragging crossday blocks does not keep redefining the visible bottom edge.
-  if (!enforceSleepBoundary) {
+  // When overnight sleep is not enforced OR there is no effective sleep entry for
+  // this day, keep the day frame stable at 00:00–24:00 so dragging crossday blocks
+  // does not keep redefining the visible bottom edge.
+  if (!effectiveSleepEntry || !enforceSleepBoundary) {
     startMin = 0;
     endMin = 24 * 60;
   }
@@ -450,6 +451,10 @@ export function DayPlanner() {
     transitionEdge: "top" | "bottom";
     minStartMin: number;
     maxStartMin: number;
+    maxPrevSpillMin: number;
+    maxNextSpillMin: number;
+    prevLimitKind: "block" | "min-current";
+    nextLimitKind: "block" | "min-current";
   } | null>(null);
   const [dragDeltaMin, setDragDeltaMin] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -507,82 +512,136 @@ export function DayPlanner() {
   function updateDragPreview(rawDeltaMin: number) {
     if (!dragState.current) return;
     const isPt = bcp47.toLowerCase().startsWith("pt");
-    const { origStartMin, origDurMin, transitionEdge, minStartMin, maxStartMin } = dragState.current;
-
-    // ── BOTTOM EDGE (normal block being pushed toward next day) ──────────
-    if (transitionEdge === "bottom") {
-      const rawEnd = origStartMin + origDurMin + rawDeltaMin;
-      const spillMin = rawEnd - 24 * 60; // positive = spill into next day
-
-      if (spillMin >= COMMIT_MIN) {
-        // Past commit threshold — clamp so at least MIN_IN_DAY stays today
-        const maxSpill = origDurMin - MIN_IN_DAY;
-        const clampedSpill = Math.min(spillMin, maxSpill);
-        const previewDelta = 24 * 60 - origStartMin - origDurMin + clampedSpill;
-        setDragDeltaMin(previewDelta);
-        dragDeltaRef.current = previewDelta;
-        setDragTransitionHint({ edge: "bottom", direction: "down", pending: false });
-        const nextDayMin = Math.round(clampedSpill);
-        setDragLimitHint(isPt ? `${nextDayMin}m no próximo dia` : `${nextDayMin}m into next day`);
-        return;
+    const {
+      origStartMin,
+      origDurMin,
+      transitionEdge,
+      minStartMin,
+      maxStartMin,
+      maxPrevSpillMin,
+      maxNextSpillMin,
+      prevLimitKind,
+      nextLimitKind,
+    } = dragState.current;
+    const dayEndMin = 24 * 60;
+    const limitTop = isPt ? "Limite superior" : "Upper limit";
+    const limitBottom = isPt ? "Limite inferior" : "Lower limit";
+    const limitFromKind = (kind: "block" | "min-current", edge: "top" | "bottom") => {
+      if (kind === "block") {
+        return edge === "bottom"
+          ? (isPt ? "Limite: bloco amanhã" : "Limit: next-day block")
+          : (isPt ? "Limite: bloco ontem" : "Limit: previous-day block");
       }
-      if (spillMin >= TEASE_MIN) {
-        // Tease zone: clamp preview, show pending arrow
-        const previewDelta = 24 * 60 - origStartMin - origDurMin; // fills the day exactly
-        const clamped = Math.max(previewDelta, minStartMin - origStartMin);
-        setDragDeltaMin(clamped);
-        dragDeltaRef.current = clamped;
-        setDragTransitionHint({ edge: "bottom", direction: "down", pending: true });
-        setDragLimitHint(null);
-        return;
-      }
-      // Normal drag within the day
-      const rawStart = origStartMin + rawDeltaMin;
-      const clampedStart = Math.max(minStartMin, Math.min(rawStart, maxStartMin));
-      const previewDelta = clampedStart - origStartMin;
+      return isPt ? "Mín. 15m hoje" : "Min 15m today";
+    };
+    const applyPreviewStart = (
+      previewStart: number,
+      hint: { edge: "top" | "bottom"; direction: "up" | "down"; pending: boolean } | null,
+      label: string | null,
+    ) => {
+      const previewDelta = previewStart - origStartMin;
       setDragDeltaMin(previewDelta);
       dragDeltaRef.current = previewDelta;
-      setDragTransitionHint(null);
+      setDragTransitionHint(hint);
+      setDragLimitHint(label);
+    };
+
+    if (transitionEdge === "bottom") {
+      const rawStart = origStartMin + rawDeltaMin;
+      const rawEnd = rawStart + origDurMin;
+      const spillMin = rawEnd - dayEndMin;
+
+      if (rawStart < 0) {
+        const spillIntoPrevDay = -rawStart;
+        const clampedSpill = Math.max(0, Math.min(spillIntoPrevDay, maxPrevSpillMin));
+        const previewStart = -clampedSpill;
+        const hitLimit = spillIntoPrevDay > maxPrevSpillMin;
+
+        if (clampedSpill >= COMMIT_MIN) {
+          applyPreviewStart(
+            previewStart,
+            { edge: "top", direction: "up", pending: false },
+            hitLimit ? limitFromKind(prevLimitKind, "top") : (isPt ? `${Math.round(clampedSpill)}m no dia anterior` : `${Math.round(clampedSpill)}m into prev day`),
+          );
+          return;
+        }
+
+        if (spillIntoPrevDay >= TEASE_MIN && maxPrevSpillMin >= TEASE_MIN) {
+          applyPreviewStart(0, { edge: "top", direction: "up", pending: true }, hitLimit ? limitFromKind(prevLimitKind, "top") : null);
+          return;
+        }
+
+        applyPreviewStart(previewStart, null, hitLimit ? limitFromKind(prevLimitKind, "top") : null);
+        return;
+      }
+
+      if (spillMin > 0) {
+        const clampedSpill = Math.max(0, Math.min(spillMin, maxNextSpillMin));
+        const previewStart = dayEndMin - origDurMin + clampedSpill;
+        const hitLimit = spillMin > maxNextSpillMin;
+
+        if (clampedSpill >= COMMIT_MIN) {
+          applyPreviewStart(
+            previewStart,
+            { edge: "bottom", direction: "down", pending: false },
+            hitLimit ? limitFromKind(nextLimitKind, "bottom") : (isPt ? `${Math.round(clampedSpill)}m no próximo dia` : `${Math.round(clampedSpill)}m into next day`),
+          );
+          return;
+        }
+
+        if (spillMin >= TEASE_MIN && maxNextSpillMin >= TEASE_MIN) {
+          applyPreviewStart(
+            dayEndMin - origDurMin,
+            { edge: "bottom", direction: "down", pending: true },
+            hitLimit ? limitFromKind(nextLimitKind, "bottom") : null,
+          );
+          return;
+        }
+
+        applyPreviewStart(previewStart, null, hitLimit ? limitFromKind(nextLimitKind, "bottom") : null);
+        return;
+      }
+
+      const clampedStart = Math.max(minStartMin, Math.min(rawStart, maxStartMin));
       if (clampedStart <= minStartMin && rawStart < minStartMin) {
-        setDragLimitHint(isPt ? "Limite superior" : "Top limit");
+        applyPreviewStart(clampedStart, null, limitTop);
       } else if (clampedStart >= maxStartMin && rawStart > maxStartMin) {
-        setDragLimitHint(isPt ? "Limite inferior" : "Bottom limit");
+        applyPreviewStart(clampedStart, null, maxStartMin + origDurMin >= dayEndMin ? (isPt ? "Fim do dia" : "End of day") : limitBottom);
       } else {
-        setDragLimitHint(null);
+        applyPreviewStart(clampedStart, null, null);
       }
       return;
     }
 
-    // ── TOP EDGE (continuesFromPrevDay block being pulled toward prev day) ──
     if (transitionEdge === "top") {
-      const spillIntoPrevDay = -rawDeltaMin; // positive = pulling upward
-
-      if (spillIntoPrevDay >= COMMIT_MIN) {
-        const maxSpill = origDurMin - MIN_IN_DAY;
-        const clampedSpill = Math.min(spillIntoPrevDay, maxSpill);
-        const previewDelta = -clampedSpill;
-        setDragDeltaMin(previewDelta);
-        dragDeltaRef.current = previewDelta;
-        setDragTransitionHint({ edge: "top", direction: "up", pending: false });
-        const prevDayMin = Math.round(clampedSpill);
-        setDragLimitHint(isPt ? `${prevDayMin}m no dia anterior` : `${prevDayMin}m into prev day`);
-        return;
-      }
-      if (spillIntoPrevDay >= TEASE_MIN) {
-        setDragDeltaMin(0);
-        dragDeltaRef.current = 0;
-        setDragTransitionHint({ edge: "top", direction: "up", pending: true });
-        setDragLimitHint(null);
-        return;
-      }
-      // Normal drag downward (pushing start later in the day)
       const rawStart = origStartMin + rawDeltaMin;
+      const spillIntoPrevDay = -rawStart;
+
+      if (rawStart < 0) {
+        const clampedSpill = Math.max(0, Math.min(spillIntoPrevDay, maxPrevSpillMin));
+        const previewStart = -clampedSpill;
+        const hitLimit = spillIntoPrevDay > maxPrevSpillMin;
+
+        if (clampedSpill >= COMMIT_MIN) {
+          applyPreviewStart(
+            previewStart,
+            { edge: "top", direction: "up", pending: false },
+            hitLimit ? limitFromKind(prevLimitKind, "top") : (isPt ? `${Math.round(clampedSpill)}m no dia anterior` : `${Math.round(clampedSpill)}m into prev day`),
+          );
+          return;
+        }
+
+        if (spillIntoPrevDay >= TEASE_MIN && maxPrevSpillMin >= TEASE_MIN) {
+          applyPreviewStart(0, { edge: "top", direction: "up", pending: true }, hitLimit ? limitFromKind(prevLimitKind, "top") : null);
+          return;
+        }
+
+        applyPreviewStart(previewStart, null, hitLimit ? limitFromKind(prevLimitKind, "top") : null);
+        return;
+      }
+
       const clampedStart = Math.max(0, Math.min(rawStart, maxStartMin));
-      const previewDelta = clampedStart - origStartMin;
-      setDragDeltaMin(previewDelta);
-      dragDeltaRef.current = previewDelta;
-      setDragTransitionHint(null);
-      setDragLimitHint(null);
+      applyPreviewStart(clampedStart, null, rawStart > maxStartMin ? (maxStartMin + origDurMin >= dayEndMin ? (isPt ? "Fim do dia" : "End of day") : limitBottom) : null);
     }
   }
 
@@ -591,45 +650,22 @@ export function DayPlanner() {
     const { sourceId, source, origStartMin, origDurMin, transitionEdge } = dragState.current;
 
     if (transitionEdge === "bottom") {
-      const rawEnd = origStartMin + origDurMin + snappedDelta;
-      const spillMin = rawEnd - 24 * 60;
-
-      if (spillMin >= COMMIT_MIN) {
-        const newStart = clockTimeFromMin(origStartMin + snappedDelta);
-        const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, "24:00", snappedDelta, "bottom");
-        if (err) toast({ title: "Conflict", description: err });
-        return;
-      }
-      // Normal move within the day
-      const newStart = clockTimeFromMin(origStartMin + snappedDelta);
-      const newEnd   = clockTimeFromMin(origStartMin + origDurMin + snappedDelta);
+      const absoluteStart = origStartMin + snappedDelta;
+      const newStart = clockTimeFromMin(absoluteStart);
+      const newEnd = clockTimeFromMin(absoluteStart + origDurMin);
       const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, newEnd, snappedDelta, "bottom");
       if (err) toast({ title: "Conflict", description: err });
       return;
     }
 
     if (transitionEdge === "top") {
-      const spillIntoPrevDay = -snappedDelta;
-
-      if (spillIntoPrevDay >= COMMIT_MIN) {
-        const maxSpill = origDurMin - MIN_IN_DAY;
-        const clampedSpill = Math.min(spillIntoPrevDay, maxSpill);
-        const newStart = clockTimeFromMin(clampedSpill);
-        const newEnd   = clockTimeFromMin(origDurMin);
-        const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, newEnd, -clampedSpill, "top");
-        if (err) toast({ title: "Conflict", description: err });
-        return;
-      }
-      // Normal move within the day
-      const rawStart    = origStartMin + snappedDelta;
-      const clampedStart = Math.max(0, rawStart);
-      const newStart = clockTimeFromMin(clampedStart);
-      const newEnd   = clockTimeFromMin(clampedStart + origDurMin);
+      const absoluteStart = origStartMin + snappedDelta;
+      const newStart = clockTimeFromMin(absoluteStart);
+      const newEnd = clockTimeFromMin(absoluteStart + origDurMin);
       const err = pushMoveDayChain(selectedDate, source, sourceId, newStart, newEnd, snappedDelta, "top");
       if (err) toast({ title: "Conflict", description: err });
     }
   }
-
   function onGripDown(e: React.MouseEvent, a: AgendaItem) {
     e.preventDefault();
     if (a.kind === "sleep") return;
@@ -656,13 +692,26 @@ export function DayPlanner() {
         sourceSpansNextDay = src.endsNextDay ?? (Boolean(src.endDate && src.endDate > src.date) || src.end <= src.start);
       }
     }
-    const wakeMin = sleepStartMin > sleepEndMin ? sleepEndMin : 0;
-    const bedMin  = sleepStartMin > sleepEndMin ? sleepStartMin : 24 * 60;
+    const hasDragSleepBoundary = enforceSleepBoundary && effectiveSleepEntry !== null && sleepStartMin > sleepEndMin;
+    const wakeMin = hasDragSleepBoundary ? sleepEndMin : 0;
+    const bedMin  = hasDragSleepBoundary ? sleepStartMin : 24 * 60;
     const sourceDurMin = durationMin(sourceStart, sourceEnd);
     const transitionEdge: "top" | "bottom" = a.continuesFromPrevDay ? "top" : "bottom";
+    const isSameSource = (item: AgendaItem) => item.source === a.source && (item.sourceId ?? item.id) === sourceId;
+    const nextDayCapacity = buildAgendaForDate(data, addDays(selectedDate, 1))
+      .filter((item) => item.kind !== "sleep" && !isSameSource(item as AgendaItem))
+      .reduce((min, item) => Math.min(min, timeToMinutes(item.start)), 24 * 60);
+    const prevDayCapacity = 24 * 60 - buildAgendaForDate(data, addDays(selectedDate, -1))
+      .filter((item) => item.kind !== "sleep" && !isSameSource(item as AgendaItem))
+      .reduce((max, item) => Math.max(max, timeToMinutes(item.end)), 0);
+    const maxCurrentDaySpill = Math.max(0, sourceDurMin - MIN_IN_DAY);
+    const maxPrevSpillMin = Math.max(0, Math.min(maxCurrentDaySpill, prevDayCapacity));
+    const maxNextSpillMin = Math.max(0, Math.min(maxCurrentDaySpill, nextDayCapacity));
+    const prevLimitKind = prevDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
+    const nextLimitKind = nextDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
 
-    // origStartMin: for top-edge blocks the segment starts at 00:00 on this day
-    const origStartMin = transitionEdge === "top" ? 0 : timeToMinutes(sourceStart);
+    // Top-origin crossday blocks are represented relative to the selected day.
+    const origStartMin = transitionEdge === "top" ? timeToMinutes(sourceStart) - 24 * 60 : timeToMinutes(sourceStart);
     const minStartMin  = wakeMin;
     const maxStartMin  = bedMin - sourceDurMin;
 
@@ -673,10 +722,14 @@ export function DayPlanner() {
       originY: e.clientY,
       origStartMin,
       origDurMin: sourceDurMin,
-      sourceSpansNextDay: transitionEdge === "top" || (sourceStart > sourceEnd && sourceStart !== "00:00"),
+      sourceSpansNextDay: transitionEdge === "top" || sourceSpansNextDay,
       transitionEdge,
       minStartMin,
       maxStartMin,
+      maxPrevSpillMin,
+      maxNextSpillMin,
+      prevLimitKind,
+      nextLimitKind,
     };
     setDraggingId(a.id);
     setDragDeltaMin(0);
@@ -848,10 +901,10 @@ export function DayPlanner() {
               </button>
             </div>
           )}
-          {(eveningSleep || !enforceSleepBoundary) && (
+          {(eveningSleep || sameDaySleep || !enforceSleepBoundary || !effectiveSleepEntry) && (
             <div
               className="absolute left-[68px] right-4 z-[20]"
-              style={{ top: eveningSleep ? topForProjected(eveningSleep.start) + topBadgeLane + 4 : timelineContentHeight + 4 }}
+              style={{ top: eveningSleep ? topForProjected(eveningSleep.start) + topBadgeLane + 4 : sameDaySleep ? topForProjected(sameDaySleep.start) + topBadgeLane + 4 : timelineContentHeight + 4 }}
             >
               <div className="flex items-center justify-end gap-1.5">
                 <button
@@ -868,7 +921,9 @@ export function DayPlanner() {
                 >
                   {eveningSleep
                     ? (bcp47.toLowerCase().startsWith("pt") ? `Horário de sono: ${formatClock(eveningSleep.start, bcp47)}` : `Sleep hours: ${formatClock(eveningSleep.start, bcp47)}`)
-                    : (bcp47.toLowerCase().startsWith("pt") ? "Hoje sem horário de sono" : "No sleep hours today")}
+                    : sameDaySleep
+                      ? (bcp47.toLowerCase().startsWith("pt") ? `Sono: ${formatClock(sameDaySleep.start, bcp47)}–${formatClock(sameDaySleep.end, bcp47)}` : `Sleep: ${formatClock(sameDaySleep.start, bcp47)}–${formatClock(sameDaySleep.end, bcp47)}`)
+                      : (bcp47.toLowerCase().startsWith("pt") ? "Hoje sem horário de sono" : "No sleep hours today")}
                 </button>
               </div>
             </div>
@@ -997,24 +1052,14 @@ export function DayPlanner() {
               if (isDragging && dragState.current && dragState.current.sourceId === (a.sourceId ?? a.id)) {
                 const draggedSourceStart = dragState.current.origStartMin + dragDeltaMin;
                 const draggedSourceEnd = draggedSourceStart + dragState.current.origDurMin;
+                const visibleStart = Math.max(0, draggedSourceStart);
+                const visibleEnd = Math.min(24 * 60, draggedSourceEnd);
 
-                if (a.continuesFromPrevDay) {
-                  const visibleEnd = Math.min(24 * 60, draggedSourceEnd - 24 * 60);
-                  if (visibleEnd <= 0) {
-                    bh = 0;
-                  } else {
-                    effectiveTop = topForProjected("00:00") + topBadgeLane;
-                    bh = Math.max(12, (visibleEnd / 60) * HOUR_PX - 2);
-                  }
+                if (visibleEnd <= visibleStart) {
+                  bh = 0;
                 } else {
-                  const visibleStart = Math.max(0, draggedSourceStart);
-                  const visibleEnd = Math.min(24 * 60, draggedSourceEnd);
-                  if (visibleEnd <= visibleStart) {
-                    bh = 0;
-                  } else {
-                    effectiveTop = topForProjected(snapTime(visibleStart)) + topBadgeLane;
-                    bh = Math.max(12, ((visibleEnd - visibleStart) / 60) * HOUR_PX - 2);
-                  }
+                  effectiveTop = topForProjected(snapTime(visibleStart)) + topBadgeLane;
+                  bh = Math.max(12, ((visibleEnd - visibleStart) / 60) * HOUR_PX - 2);
                 }
               }
 
@@ -1042,7 +1087,8 @@ export function DayPlanner() {
                 : a.continuesFromPrevDay
                   ? (isPt ? `Começou ontem ${formatClock(displayStart, bcp47)}` : `Started yesterday ${formatClock(displayStart, bcp47)}`)
                   : null;
-              const crossdayMeta = isDragging ? dragLimitHint : crossdayHint;
+              const crossdayMeta = isDragging ? null : crossdayHint;
+              const dragMeta = isDragging ? dragLimitHint : null;
               const crossdayIconTitle = crossdayMeta ?? crossdayHint;
 
               // Derived layout flags per tier
@@ -1087,6 +1133,8 @@ export function DayPlanner() {
                     display: bh <= 0 ? "none" : undefined,
                     zIndex: isDragging ? 35 : live ? 15 : 10,
                     overflow: "visible",
+                    willChange: isDragging ? "top, height, transform" : undefined,
+                    transform: isDragging ? "translateZ(0)" : undefined,
                     transition: isDragging ? "none" : "box-shadow 0.15s",
                   }}
                   onClick={(e) => {
@@ -1102,6 +1150,15 @@ export function DayPlanner() {
                   }}
                 >
                   <div className={`absolute ${railShape} ${dotLeft} ${s.dot}`} />
+                  {dragMeta && (
+                    <div
+                      className={`absolute right-2 top-1 z-[45] max-w-[calc(100%-1rem)] truncate rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider shadow-sm ${s.chip} ${s.blockBorder}`}
+                      style={{ backgroundColor: "var(--card)" }}
+                      title={dragMeta}
+                    >
+                      {dragMeta}
+                    </div>
+                  )}
                   <div className="flex items-center h-full overflow-hidden">
                     <div
                       className={`${gripW} h-full shrink-0 flex items-center justify-center touch-none ${
@@ -1315,11 +1372,11 @@ export function DayPlanner() {
       )}
       {editSleep && (
         <SleepEditDialog
-          sleepWindow={sleepEntry}
+          sleepWindow={sleepEntry ?? { start: "22:00", end: "07:00", days: [selectedDate.getDay()] }}
           enforceBoundary={enforceSleepBoundary}
           onSaveWindow={(patch) => {
             const dow = selectedDate.getDay();
-            const prevSchedule: SleepScheduleEntry[] = data.meta.sleepSchedule ?? [{ start: sleepEntry.start, end: sleepEntry.end }];
+            const prevSchedule = data.meta.sleepSchedule ?? [];
             const hasSpecificEntry = prevSchedule.some((e) => e.days?.includes(dow));
             let nextSchedule: SleepScheduleEntry[];
             if (hasSpecificEntry) {
@@ -1333,7 +1390,7 @@ export function DayPlanner() {
                   !e.days ? { ...e, start: patch.start ?? e.start, end: patch.end ?? e.end } : e
                 );
               } else {
-                nextSchedule = [...prevSchedule, { start: patch.start ?? sleepEntry.start, end: patch.end ?? sleepEntry.end, days: [dow] }];
+                nextSchedule = [...prevSchedule, { ...patch, days: [dow] } as SleepScheduleEntry];
               }
             }
             updateSleepSchedule(nextSchedule);
