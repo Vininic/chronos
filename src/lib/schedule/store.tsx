@@ -38,8 +38,9 @@ function ensureAroundTodayCrossdayExamples(data: ScheduleData, routine: RoutineB
   const blocksEarlyTomorrow = timeToMinutes(tomorrowSleep.start) > timeToMinutes(tomorrowSleep.end);
 
   const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
-  // If sleep is enforced and spans midnight, crossday work demos are invalid by design.
-  if (enforceSleepBoundary && (blocksMidnightToday || blocksEarlyTomorrow)) return base;
+  // If sleep is enforced and spans midnight, do not inject new crossday demos.
+  // Preserve any already-existing demo blocks so UI changes do not unexpectedly hide them.
+  if (enforceSleepBoundary && (blocksMidnightToday || blocksEarlyTomorrow)) return routine;
 
   const hasPrevDemo = base.some((r) => r.id === "r-demo-cross-prev");
   const hasNextDemo = base.some((r) => r.id === "r-demo-cross-next");
