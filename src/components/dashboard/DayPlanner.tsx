@@ -45,8 +45,10 @@ function snapTime(min: number) {
 }
 
 function clockTimeFromMin(min: number) {
+  const snapped = Math.round(min / SNAP) * SNAP;
+  if (snapped >= 24 * 60) return "24:00";
   const day = 24 * 60;
-  const wrapped = ((Math.round(min / SNAP) * SNAP) % day + day) % day;
+  const wrapped = ((snapped % day) + day) % day;
   return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
 }
 
@@ -423,7 +425,7 @@ export function DayPlanner() {
     }
     return buildTimeline(nonSleepAgenda, startMin, endMin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(nonSleepAgenda), startMin, endMin, selectedDateIso, sleepSplits]);
+  }, [nonSleepAgenda.map((a) => `${a.id}|${a.start}|${a.end}|${a.kind}|${a.source}|${a.sourceId ?? ""}`).join(","), startMin, endMin, selectedDateIso, sleepSplits]);
 
   const totalHiddenSleepMinutes = sleepSplits.reduce((sum, cut) => sum + (cut.durMin - cut.laneMin), 0);
   const totalHeight = ((endMin - startMin - totalHiddenSleepMinutes) / 60) * HOUR_PX;
@@ -760,13 +762,15 @@ export function DayPlanner() {
       if (err) toast({ title: "Conflict", description: err });
     }
   }
-  function onGripDown(e: React.MouseEvent, a: AgendaItem) {
+  function onGripDown(e: React.PointerEvent, a: AgendaItem) {
     e.preventDefault();
     if (a.kind === "sleep") return;
     if (dragCleanupRef.current) {
       dragCleanupRef.current();
       dragCleanupRef.current = null;
     }
+    const gripEl = e.currentTarget as HTMLElement;
+    gripEl.setPointerCapture(e.pointerId);
     const sourceId = a.sourceId ?? a.id;
     let sourceStart = a.start;
     let sourceEnd = a.end;
@@ -842,7 +846,7 @@ export function DayPlanner() {
     hasDraggedRef.current = false;
     setDragLimitHint(null);
 
-    const handleMouseMove = (ev: MouseEvent) => {
+    const handlePointerMove = (ev: PointerEvent) => {
       if (!dragState.current) return;
       hasDraggedRef.current = true;
       const rawDeltaPx = ev.clientY - dragState.current.originY;
@@ -850,7 +854,7 @@ export function DayPlanner() {
       const snapped = Math.round(rawDeltaMin / SNAP) * SNAP;
       updateDragPreview(snapped);
     };
-    const handleMouseDone = (_ev: MouseEvent) => {
+    const handlePointerDone = (_ev: PointerEvent) => {
       if (!dragState.current) return;
       const snapped = dragDeltaRef.current;
       commitDrag(snapped);
@@ -863,11 +867,11 @@ export function DayPlanner() {
       setTimeout(() => { hasDraggedRef.current = false; }, 0);
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseDone, { once: true });
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerDone, { once: true });
     dragCleanupRef.current = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseDone);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerDone);
     };
   }
 
@@ -902,20 +906,60 @@ export function DayPlanner() {
   const timelineHeight = timelineContentHeight + bottomBadgeLane;
 
   const positionedTimeline = useMemo(() => {
-    return timeline.map((item, index) => {
+    const rawDesired: number[] = [];
+    const positions = timeline.map((item, index) => {
       const top = topForProjected(item.start) + topBadgeLane;
       const desiredHeight = "type" in item
         ? (item.type === "free"
           ? freeHeight(item.start, item.end)
           : Math.max(12, ((timeToMinutes(item.end) - timeToMinutes(item.start)) / 60) * HOUR_PX - 2))
         : blockHeight(item.start, item.end);
+      rawDesired[index] = desiredHeight;
       const nextTop = index < timeline.length - 1
         ? topForProjected(timeline[index + 1].start) + topBadgeLane
         : timelineContentHeight;
       const maxHeightWithoutOverlap = Math.max(6, nextTop - top - STACK_GAP_PX);
       return { item, top, height: Math.min(desiredHeight, maxHeightWithoutOverlap) };
     });
-  }, [timeline, topBadgeLane, timelineContentHeight]);
+
+    // If dragging, cascade subsequent blocks to preview the push-down effect.
+    if (draggingId && dragState.current) {
+      const dragItemIdx = positions.findIndex(
+        (p) => "id" in p.item && (p.item as AgendaItem).id === draggingId,
+      );
+      if (dragItemIdx >= 0) {
+        const ds = dragState.current;
+        const draggedDragMin = ds.origStartMin + dragDeltaMin;
+        const draggedStart = Math.max(0, draggedDragMin);
+        const draggedEnd = Math.min(24 * 60, draggedDragMin + ds.origDurMin);
+        const dragTop = topForProjected(snapTime(draggedStart)) + topBadgeLane;
+        const dragBh = Math.max(6, ((draggedEnd - draggedStart) / 60) * HOUR_PX - 2);
+        const cascadePositions = [...positions];
+        cascadePositions[dragItemIdx] = {
+          ...cascadePositions[dragItemIdx],
+          top: dragTop,
+          height: dragBh,
+        };
+        let cascadeCursor = dragTop + dragBh + STACK_GAP_PX;
+        for (let i = dragItemIdx + 1; i < cascadePositions.length; i++) {
+          const nextTop = cascadePositions[i].top;
+          if (nextTop < cascadeCursor) {
+            cascadePositions[i] = {
+              ...cascadePositions[i],
+              top: cascadeCursor,
+              height: Math.min(rawDesired[i], cascadePositions[i].height + (cascadeCursor - nextTop)),
+            };
+            cascadeCursor = cascadePositions[i].top + cascadePositions[i].height + STACK_GAP_PX;
+          } else {
+            break;
+          }
+        }
+        return cascadePositions;
+      }
+    }
+
+    return positions;
+  }, [timeline, topBadgeLane, timelineContentHeight, draggingId, dragDeltaMin, dragState, topForProjected]);
 
   return (
     <div className="chronos-card p-0 overflow-hidden">
@@ -966,11 +1010,26 @@ export function DayPlanner() {
           {hours.map((h) => {
             const hideLabel = isToday && projectMinute(h * 60) === projectedNowMin;
             const isFirstHourLine = h === hours[0];
+            const hourTop = ((projectMinute(h * 60) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane;
             return (
-              <div key={h} className="absolute left-0 right-0 border-t border-border/30 pointer-events-none" style={{ top: ((projectMinute(h * 60) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}>
-                {!hideLabel && (
-                  <span className={`absolute left-3 text-[10px] num text-muted-foreground/50 bg-card px-1 ${isFirstHourLine ? "top-1" : "-top-2"}`}>{formatHourLabel(h, bcp47)}</span>
-                )}
+              <div key={h}>
+                <div className="absolute left-0 right-0 border-t border-border/30 pointer-events-none" style={{ top: hourTop }}>
+                  {!hideLabel && (
+                    <span className={`absolute left-3 text-[10px] num text-muted-foreground/50 bg-card px-1 ${isFirstHourLine ? "top-1" : "-top-2"}`}>{formatHourLabel(h, bcp47)}</span>
+                  )}
+                </div>
+                {[15, 30, 45].map((q) => {
+                  const qMin = h * 60 + q;
+                  const inSleepCut = sleepSplits.some((cut) => qMin > cut.startMin && qMin < cut.endMin);
+                  if (inSleepCut) return null;
+                  return (
+                    <div
+                      key={`q-${h}-${q}`}
+                      className="absolute left-[68px] right-4 border-t border-border/10 pointer-events-none"
+                      style={{ top: ((projectMinute(qMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane }}
+                    />
+                  );
+                })}
               </div>
             );
           })}
@@ -1141,7 +1200,7 @@ export function DayPlanner() {
                 const visibleEnd = Math.min(24 * 60, draggedSourceEnd);
 
                 if (visibleEnd <= visibleStart) {
-                  bh = 0;
+                  bh = 6;
                 } else {
                   effectiveTop = topForProjected(snapTime(visibleStart)) + topBadgeLane;
                   bh = Math.max(12, ((visibleEnd - visibleStart) / 60) * HOUR_PX - 2);
@@ -1213,14 +1272,13 @@ export function DayPlanner() {
                         : `${s.blockBorder} hover:border-secondary/50`
                   }`}
                   style={{
-                    top: effectiveTop,
+                    transform: `translate3d(0,${effectiveTop}px,0)`,
                     height: bh,
-                    display: bh <= 0 ? "none" : undefined,
+                    display: bh <= 0 && !isDragging ? "none" : undefined,
                     zIndex: isDragging ? 35 : live ? 15 : 10,
                     overflow: "visible",
-                    willChange: isDragging ? "top, height, transform" : undefined,
-                    transform: isDragging ? "translateZ(0)" : undefined,
-                    transition: isDragging ? "none" : "box-shadow 0.15s",
+                    willChange: isDragging ? "transform, height" : undefined,
+                    transition: isDragging ? "height 0.08s ease-out" : "box-shadow 0.15s",
                   }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
@@ -1241,7 +1299,8 @@ export function DayPlanner() {
                         "text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing"
                       }`}
                       data-no-open="true"
-                      onMouseDown={(e) => onGripDown(e, a)}
+                      style={{ touchAction: "none" }}
+                      onPointerDown={(e) => onGripDown(e, a)}
                     >
                       {isMicro ? (
                         <div className="h-3 w-3 grid place-items-center">
@@ -1263,17 +1322,12 @@ export function DayPlanner() {
                               ? <ArrowDownToLine className="h-3 w-3 text-primary-foreground" />
                               : <ArrowUpToLine className="h-3 w-3 text-primary-foreground" />}
                           </div>
-                          {dragMeta && (
-                            <div className="max-w-full truncate rounded border border-primary/30 bg-card/95 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-primary shadow-sm" title={dragMeta}>
-                              {dragMeta}
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
 
-                    {isDragging && dragMeta && !dragTransitionHint && (
-                      <div className="absolute left-9 bottom-1 z-[42] max-w-[calc(100%-3rem)] truncate rounded border border-primary/25 bg-card/95 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-primary shadow-sm" title={dragMeta}>
+                    {isDragging && dragMeta && (
+                      <div className={`absolute z-[45] pointer-events-none max-w-[calc(100%-4rem)] truncate rounded border border-primary/30 bg-card/95 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-primary shadow-sm ${dragTransitionHint ? "left-1/2 -translate-x-1/2 top-0 -translate-y-full -mt-1" : "left-9 bottom-1"}`} title={dragMeta}>
                         {dragMeta}
                       </div>
                     )}

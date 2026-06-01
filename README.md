@@ -371,20 +371,20 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Separate normal drag and cross-day drag systems
 - [x] Remove ghost sleep boundaries
 - [x] Stabilize overflow rendering
-- [ ] Fix invisible drag states
+- [x] Fix invisible drag states
 - [x] Normalize overflow validation
-- [ ] Polish cross-day drag limit badges ("mins into next day" / "lower limit" and inverted upper-limit state) to avoid clutter at the 12:00AM boundary and conflicts with dragged blocks and the no-sleep-hours control
+- [x] Polish cross-day drag limit badges ("mins into next day" / "lower limit" and inverted upper-limit state) to avoid clutter at the 12:00AM boundary and conflicts with dragged blocks and the no-sleep-hours control
 - [x] Refactor no-sleep-hours control copy: clarify that edits apply to the selected day and replace awkward "keep sleep hours" wording
 - [x] Refactor no-sleep-hours behavior: make sleep start and wake time independent (including wake-only mode where day ends at 12:00AM)
 - [x] Integrate sleep-break editing into the same no-sleep-hours control flow
 - [x] Keep wake/bedtime controls always visible in fixed lanes with fallback labels
 - [x] Keep wake and bedtime divider lines visually consistent
 - [x] Match sleep-break edit affordance with normal block edit style
-- [ ] Improve compression logic
-- [ ] Refine collision behavior
-- [ ] Improve timeline snapping
-- [ ] Smooth drag interactions
-- [ ] Reduce visual jitter
+- [x] Improve compression logic (preview cascade matches commit cascade)
+- [x] Refine collision behavior (push-down cascade during drag preview)
+- [x] Improve timeline snapping (15-min visual guides, clockTimeFromMin/snapTime consistency)
+- [x] Smooth drag interactions (pointer events, setPointerCapture, release easing)
+- [x] Reduce visual jitter (GPU-composited translate3d, stable memo deps)
 - [ ] Improve timeline rendering performance
 - [ ] Timeline virtualization
 - [ ] Better overflow transitions
@@ -394,10 +394,10 @@ Future versions may introduce optional cloud synchronization while preserving lo
 ## Cross-Day Logic
 - [ ] Restrict cross-day functionality to valid boundary states only
 - [ ] Restore legacy compression behavior when cross-day is disabled
-- [ ] Prevent invalid overflow dragging
-- [ ] Preserve minimum duration rules
-- [ ] Normalize cross-midnight intervals
-- [ ] Prevent negative-height states
+- [x] Prevent invalid overflow dragging (cascade preview shows committed result)
+- [x] Preserve minimum duration rules
+- [x] Normalize cross-midnight intervals (clockTimeFromMin now returns "24:00" for midnight)
+- [x] Prevent negative-height states (dragged blocks capped at 6px minimum)
 - [ ] Improve split-block rendering
 
 ---
