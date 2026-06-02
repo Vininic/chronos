@@ -95,6 +95,23 @@ export interface ScheduleData {
 export const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 export const DAY_LABELS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
+export const SNAP = 15;
+
+export function snapTime(min: number) {
+  const s = Math.round(min / SNAP) * SNAP;
+  if (s >= 24 * 60) return "24:00";
+  const c = Math.max(0, Math.min(23 * 60 + 59, s));
+  return `${String(Math.floor(c / 60)).padStart(2, "0")}:${String(c % 60).padStart(2, "0")}`;
+}
+
+export function clockTimeFromMin(min: number) {
+  const snapped = Math.round(min / SNAP) * SNAP;
+  if (snapped >= 24 * 60) return "24:00";
+  const day = 24 * 60;
+  const wrapped = ((snapped % day) + day) % day;
+  return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+}
+
 export function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;

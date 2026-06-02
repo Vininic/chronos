@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
-import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
+import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
@@ -17,7 +17,6 @@ import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { TimeSelect } from "@/components/ui/time-select";
 
 const HOUR_PX = 64;
-const SNAP = 15;
 const STACK_GAP_PX = 4;
 
 type AgendaItem = {
@@ -36,21 +35,6 @@ type AgendaItem = {
 };
 
 type FreeSlot = { type: "free"; id: string; start: string; end: string };
-
-function snapTime(min: number) {
-  const s = Math.round(min / SNAP) * SNAP;
-  if (s >= 24 * 60) return "24:00";
-  const c = Math.max(0, Math.min(23 * 60 + 59, s));
-  return `${String(Math.floor(c / 60)).padStart(2, "0")}:${String(c % 60).padStart(2, "0")}`;
-}
-
-function clockTimeFromMin(min: number) {
-  const snapped = Math.round(min / SNAP) * SNAP;
-  if (snapped >= 24 * 60) return "24:00";
-  const day = 24 * 60;
-  const wrapped = ((snapped % day) + day) % day;
-  return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
-}
 
 function fmtPreviewMinutes(totalMin: number, isPt: boolean) {
   const hours = Math.floor(totalMin / 60);
@@ -388,7 +372,7 @@ export function DayPlanner() {
       } => Boolean(cut));
   }, [sleepCutsForDay, startMin, endMin]);
 
-  const projectMinute = (minute: number) => {
+  const projectMinute = useCallback((minute: number) => {
     if (sleepSplits.length === 0) return minute;
     let hiddenBefore = 0;
     for (const cut of sleepSplits) {
@@ -397,16 +381,17 @@ export function DayPlanner() {
         continue;
       }
       if (minute > cut.startMin) {
-        // Keep a thin visible lane for each cut and map current time proportionally inside it.
         const ratio = (minute - cut.startMin) / cut.durMin;
         return cut.startMin - hiddenBefore + ratio * cut.laneMin;
       }
       return minute - hiddenBefore;
     }
     return minute - hiddenBefore;
-  };
+  }, [sleepSplits]);
 
-  const topForProjected = (time: string) => ((projectMinute(timeToMinutes(time)) - projectMinute(startMin)) / 60) * HOUR_PX;
+  const topForProjected = useCallback((time: string) => (
+    (projectMinute(timeToMinutes(time)) - projectMinute(startMin)) / 60 * HOUR_PX
+  ), [projectMinute, startMin]);
 
   const timeline = useMemo(() => {
     if (sleepSplits.length > 0) {
@@ -941,6 +926,7 @@ export function DayPlanner() {
           height: dragBh,
         };
         let cascadeCursor = dragTop + dragBh + STACK_GAP_PX;
+        let lastPushedIdx = dragItemIdx;
         for (let i = dragItemIdx + 1; i < cascadePositions.length; i++) {
           const nextTop = cascadePositions[i].top;
           if (nextTop < cascadeCursor) {
@@ -950,8 +936,34 @@ export function DayPlanner() {
               height: Math.min(rawDesired[i], cascadePositions[i].height + (cascadeCursor - nextTop)),
             };
             cascadeCursor = cascadePositions[i].top + cascadePositions[i].height + STACK_GAP_PX;
+            lastPushedIdx = i;
           } else {
             break;
+          }
+        }
+        const overflow = cascadeCursor - timelineContentHeight;
+        if (overflow > 0 && lastPushedIdx > dragItemIdx) {
+          for (let i = dragItemIdx; i <= lastPushedIdx; i++) {
+            cascadePositions[i] = {
+              ...cascadePositions[i],
+              top: cascadePositions[i].top - overflow,
+            };
+          }
+          if (cascadePositions[dragItemIdx].top < topBadgeLane) {
+            return positions;
+          }
+          let reflow = cascadePositions[dragItemIdx].top + cascadePositions[dragItemIdx].height + STACK_GAP_PX;
+          for (let i = dragItemIdx + 1; i <= lastPushedIdx; i++) {
+            const heightGain = reflow - cascadePositions[i].top;
+            cascadePositions[i] = {
+              ...cascadePositions[i],
+              top: reflow,
+              height: Math.min(rawDesired[i], cascadePositions[i].height + Math.max(0, heightGain)),
+            };
+            reflow = cascadePositions[i].top + cascadePositions[i].height + STACK_GAP_PX;
+          }
+          if (reflow > timelineContentHeight) {
+            return positions;
           }
         }
         return cascadePositions;
