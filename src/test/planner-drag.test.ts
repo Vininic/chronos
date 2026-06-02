@@ -143,3 +143,54 @@ describe("buildAgendaForDate — no 00:00 wrapping", () => {
     }
   });
 });
+
+describe("pushMoveDayChain — cross-day boundary constraints", () => {
+  it("handles clockTimeFromMin for cross-day absolute start positions", () => {
+    // Block at 23:00 → 01:00 → origStartMin = 1380 - 1440 = -60
+    // Dragging +15 min gives absoluteStart = -45 → clockTimeFromMin(-45) = "23:15"
+    expect(clockTimeFromMin(-45)).toBe("23:15");
+    // Dragging +120 min gives absoluteStart = 60 → clockTimeFromMin(60) = "01:00"
+    expect(clockTimeFromMin(60)).toBe("01:00");
+    // Dragging to midnight start: absoluteStart = 0 → clockTimeFromMin(0) = "00:00"
+    expect(clockTimeFromMin(0)).toBe("00:00");
+    // Spilling entirely into next day: absoluteStart = 1440 → "24:00"
+    expect(clockTimeFromMin(1440)).toBe("24:00");
+  });
+
+  it("clockTimeFromMin wraps negative cross-day offsets correctly", () => {
+    // -1380 = 60 - 1440 = "01:00" on previous day
+    expect(clockTimeFromMin(-1380)).toBe("01:00");
+    // -1440 = midnight boundary, wraps to 0 → "00:00"
+    expect(clockTimeFromMin(-1440)).toBe("00:00");
+    // -1500 = -1440 - 60 → "23:00"
+    expect(clockTimeFromMin(-1440 - 60)).toBe("23:00");
+  });
+
+  it("agenda shows continuesFromPrevDay block at midnight on the spill-over day", () => {
+    // Monday has the block's start (23:00-01:00)
+    // Tuesday has the block's tail (00:00-01:00) with continuesFromPrevDay
+    const data: ScheduleData = {
+      meta: {
+        version: 3, owner: "Test",
+        cycle: { name: "Test", number: 1, week: 1, progress: 0 },
+        workdayStart: "07:00", workdayEnd: "19:00",
+        enforceSleepBoundary: false,
+        sleepSchedule: [],
+      },
+      categories: [{ id: "deep", label: "Deep", tone: "blue", description: "Deep" }],
+      routine: [
+        { id: "r1", day: 1, start: "23:00", end: "01:00", endsNextDay: true, kind: "deep", title: "Cross" },
+      ],
+      commitments: [],
+      suggestions: [],
+      ledger: { compositionScore: 0, metrics: [], deepHours: [], recoveryHours: [] },
+    };
+    // Tuesday = day 2
+    const agenda = buildAgendaForDate(data, new Date("2026-06-02T12:00:00"));
+    const block = agenda.find((a) => a.id === "r1");
+    expect(block).toBeDefined();
+    expect(block!.start).toBe("00:00");
+    expect(block!.end).toBe("01:00");
+    expect((block! as any).continuesFromPrevDay).toBe(true);
+  });
+});

@@ -580,7 +580,7 @@ export function DayPlanner() {
     } = dragState.current;
     const dayEndMin = 24 * 60;
     const canReachBottomBoundary = maxStartMin + origDurMin >= dayEndMin;
-    const canReachTopBoundary = minStartMin <= 0;
+    const canReachTopBoundary = transitionEdge === "top" || minStartMin <= 0;
     const limitTop = isPt ? "Limite superior" : "Upper limit";
     const limitBottom = isPt ? "Limite inferior" : "Lower limit";
     const limitFromKind = (kind: "block" | "min-current", edge: "top" | "bottom") => {
@@ -799,23 +799,32 @@ export function DayPlanner() {
     const prevDayCutEnd = sleepCutsToRanges(prevDayIso).reduce((max, c) => Math.max(max, c.end), 0);
     const prevDayCapacityCuts = 24 * 60 - prevDayCutEnd;
     const prevDayCapacity = Math.min(prevDayCapacityBlocks, prevDayCapacityCuts);
-    const maxCurrentDaySpill = Math.max(0, sourceDurMin - MIN_IN_DAY);
-    const maxPrevSpillMin = Math.max(0, Math.min(maxCurrentDaySpill, prevDayCapacity));
-    const maxNextSpillMin = Math.max(0, Math.min(maxCurrentDaySpill, nextDayCapacity));
-    const prevLimitKind = prevDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
-    const nextLimitKind = nextDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
 
     // Top-origin crossday blocks are represented relative to the selected day.
     const origStartMin = transitionEdge === "top" ? timeToMinutes(sourceStart) - 24 * 60 : timeToMinutes(sourceStart);
-    const minStartMin  = wakeBoundMin;
-    const maxStartMin  = bedBoundMin - sourceDurMin;
+    const origDurMin = sourceDurMin;
+
+    const maxCurrentDaySpill = Math.max(0, origDurMin - MIN_IN_DAY);
+    // Top-edge cross-day blocks can spill their full pre-midnight portion into the previous day
+    const maxPrevSpillMin = transitionEdge === "top"
+      ? Math.abs(origStartMin) + origDurMin
+      : Math.max(0, Math.min(maxCurrentDaySpill, prevDayCapacity));
+    // Bottom-edge blocks that already span to the next day can extend further
+    const maxNextSpillMin = sourceSpansNextDay
+      ? origDurMin
+      : Math.max(0, Math.min(maxCurrentDaySpill, nextDayCapacity));
+    const prevLimitKind = prevDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
+    const nextLimitKind = nextDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
+    // Cross-day blocks bypass the day's sleep boundaries for drag constraints
+    const minStartMin = transitionEdge === "top" || sourceSpansNextDay ? 0 : wakeBoundMin;
+    const maxStartMin = sourceSpansNextDay ? 24 * 60 - origDurMin : bedBoundMin - origDurMin;
     dragState.current = {
       id: a.id,
       sourceId,
       source: a.source,
       originY: e.clientY,
       origStartMin,
-      origDurMin: sourceDurMin,
+      origDurMin,
       sourceSpansNextDay: transitionEdge === "top" || sourceSpansNextDay,
       transitionEdge,
       minStartMin,
