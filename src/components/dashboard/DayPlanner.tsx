@@ -634,7 +634,7 @@ export function DayPlanner() {
 
       if (spillMin > 0 && canReachBottomBoundary) {
         const clampedSpill = Math.max(0, Math.min(spillMin, maxNextSpillMin));
-        const previewStart = dayEndMin - origDurMin + clampedSpill;
+        const previewStart = Math.min(dayEndMin - SNAP, dayEndMin - origDurMin + clampedSpill);
         const hitLimit = spillMin > maxNextSpillMin;
 
         if (clampedSpill >= COMMIT_MIN) {
@@ -812,12 +812,12 @@ export function DayPlanner() {
     // Bottom-edge blocks that already span to the next day can extend further
     const maxNextSpillMin = sourceSpansNextDay
       ? origDurMin
-      : Math.max(0, Math.min(maxCurrentDaySpill, nextDayCapacity));
+      : Math.min(origDurMin, nextDayCapacity);
     const prevLimitKind = prevDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
     const nextLimitKind = nextDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
     // Cross-day blocks bypass the day's sleep boundaries for drag constraints
     const minStartMin = transitionEdge === "top" || sourceSpansNextDay ? 0 : wakeBoundMin;
-    const maxStartMin = sourceSpansNextDay ? 24 * 60 - origDurMin : bedBoundMin - origDurMin;
+    const maxStartMin = sourceSpansNextDay ? 24 * 60 - SNAP : bedBoundMin - origDurMin;
     dragState.current = {
       id: a.id,
       sourceId,
@@ -927,7 +927,7 @@ export function DayPlanner() {
         const draggedStart = Math.max(0, draggedDragMin);
         const draggedEnd = Math.min(24 * 60, draggedDragMin + ds.origDurMin);
         const dragTop = topForProjected(snapTime(draggedStart)) + topBadgeLane;
-        const dragBh = Math.max(6, ((draggedEnd - draggedStart) / 60) * HOUR_PX - 2);
+        const dragBh = Math.max(6, ((draggedEnd - draggedStart) / 60) * HOUR_PX - 4);
         const cascadePositions = [...positions];
         cascadePositions[dragItemIdx] = {
           ...cascadePositions[dragItemIdx],
@@ -935,41 +935,19 @@ export function DayPlanner() {
           height: dragBh,
         };
         let cascadeCursor = dragTop + dragBh + STACK_GAP_PX;
-        let lastPushedIdx = dragItemIdx;
         for (let i = dragItemIdx + 1; i < cascadePositions.length; i++) {
           const nextTop = cascadePositions[i].top;
           if (nextTop < cascadeCursor) {
+            const newTop = cascadeCursor;
+            const newBottom = newTop + cascadePositions[i].height;
+            if (newBottom > timelineContentHeight) break;
             cascadePositions[i] = {
               ...cascadePositions[i],
-              top: cascadeCursor,
-              height: Math.min(rawDesired[i], cascadePositions[i].height + (cascadeCursor - nextTop)),
+              top: newTop,
             };
-            cascadeCursor = cascadePositions[i].top + cascadePositions[i].height + STACK_GAP_PX;
-            lastPushedIdx = i;
+            cascadeCursor = newBottom + STACK_GAP_PX;
           } else {
             break;
-          }
-        }
-        const overflow = cascadeCursor - timelineContentHeight;
-        if (overflow > 0 && lastPushedIdx > dragItemIdx) {
-          for (let i = dragItemIdx; i <= lastPushedIdx; i++) {
-            cascadePositions[i] = {
-              ...cascadePositions[i],
-              top: cascadePositions[i].top - overflow,
-            };
-          }
-          if (cascadePositions[dragItemIdx].top < topBadgeLane) {
-            return positions;
-          }
-          let reflow = cascadePositions[dragItemIdx].top + cascadePositions[dragItemIdx].height + STACK_GAP_PX;
-          for (let i = dragItemIdx + 1; i <= lastPushedIdx; i++) {
-            const heightGain = reflow - cascadePositions[i].top;
-            cascadePositions[i] = {
-              ...cascadePositions[i],
-              top: reflow,
-              height: Math.min(rawDesired[i], cascadePositions[i].height + Math.max(0, heightGain)),
-            };
-            reflow = cascadePositions[i].top + cascadePositions[i].height + STACK_GAP_PX;
           }
         }
         return cascadePositions;
@@ -1218,10 +1196,16 @@ export function DayPlanner() {
                 const visibleEnd = Math.min(24 * 60, draggedSourceEnd);
 
                 if (visibleEnd <= visibleStart) {
+                  // Block has fully crossed midnight. Pin at the correct boundary edge so the
+                  // transform transition doesn't animate the block across the full timeline.
+                  const isTopEdge = dragState.current.transitionEdge === "top";
+                  effectiveTop = isTopEdge
+                    ? topBadgeLane
+                    : timelineContentHeight + topBadgeLane - 3;
                   bh = 6;
                 } else {
                   effectiveTop = topForProjected(snapTime(visibleStart)) + topBadgeLane;
-                  bh = Math.max(12, ((visibleEnd - visibleStart) / 60) * HOUR_PX - 2);
+                  bh = Math.max(12, ((visibleEnd - visibleStart) / 60) * HOUR_PX - 4);
                 }
               }
 
@@ -1296,7 +1280,7 @@ export function DayPlanner() {
                     zIndex: isDragging ? 35 : live ? 15 : 10,
                     overflow: "visible",
                     willChange: isDragging ? "transform, height" : undefined,
-                    transition: isDragging ? "height 0.08s ease-out" : "box-shadow 0.15s",
+                    transition: isDragging ? "transform 0.08s ease-out, height 0.08s ease-out" : "box-shadow 0.15s",
                   }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
