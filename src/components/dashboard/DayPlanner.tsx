@@ -971,9 +971,6 @@ export function DayPlanner() {
             };
             reflow = cascadePositions[i].top + cascadePositions[i].height + STACK_GAP_PX;
           }
-          if (reflow > timelineContentHeight) {
-            return positions;
-          }
         }
         return cascadePositions;
       }
