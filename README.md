@@ -390,6 +390,7 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Better overflow transitions
 - [x] Responsive timeline max-height (adapts to viewport via ResizeObserver)
 - [x] Unified time selection combobox (Command+Popover) replacing flat Select / native inputs
+- [ ] Integrate Atlas (commitments) into Today page: commitment card with add button, highlighted commitments, next commitment, and loose (undated) commitment blocks draggable into DayPlanner timeline
 
 ---
 
