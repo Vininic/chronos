@@ -3,15 +3,17 @@ import { useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TimeSelect } from "@/components/ui/time-select";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, Plus } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { useDateFormat, useFmtDur, useT } from "@/lib/i18n/I18nProvider";
+import { useDateFormat, useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 
 export default function Atlas() {
   const { data, addCommitment, removeCommitment } = useSchedule();
   const t = useT();
+  const { bcp47 } = useI18n();
   const fmt = useDateFormat();
   const fmtDur = useFmtDur();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -41,8 +43,8 @@ export default function Atlas() {
           <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.titleField}</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t.chronos.atlas.titlePlaceholder} /></div>
           <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.date}</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.start}</Label><Input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.end}</Label><Input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.start}</Label><TimeSelect value={start} onValueChange={setStart} bcp47={bcp47} /></div>
+            <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.end}</Label><TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} /></div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.atlas.category}</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}><SelectTrigger><SelectValue /></SelectTrigger>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
 import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
@@ -444,6 +444,7 @@ export function DayPlanner() {
     ? (isPt ? `Dormir ${formatClock(effectiveSleepEntry!.start, bcp47)}` : `Bedtime ${formatClock(effectiveSleepEntry!.start, bcp47)}`)
     : (isPt ? "Sem horario de dormir" : "No bedtime");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [timelineMaxH, setTimelineMaxH] = useState(640);
 
   const dragState = useRef<{
     id: string;
@@ -458,8 +459,9 @@ export function DayPlanner() {
     maxStartMin: number;
     maxPrevSpillMin: number;
     maxNextSpillMin: number;
-    prevLimitKind: "block" | "min-current";
-    nextLimitKind: "block" | "min-current";
+    prevLimitKind: "block" | "sleep" | "min-current";
+    nextLimitKind: "block" | "sleep" | "min-current";
+    crossDayAllowed: boolean;
   } | null>(null);
   const [dragDeltaMin, setDragDeltaMin] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -477,6 +479,19 @@ export function DayPlanner() {
     if (!isToday || !scrollRef.current) return;
     scrollRef.current.scrollTo({ top: Math.max(0, ((projectMinute(nowMin) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane - 200), behavior: "smooth" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const available = window.innerHeight - rect.top - 16;
+      setTimelineMaxH(Math.max(240, Math.round(available)));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, []);
 
   useEffect(() => {
@@ -571,6 +586,8 @@ export function DayPlanner() {
       origStartMin,
       origDurMin,
       transitionEdge,
+      sourceSpansNextDay,
+      crossDayAllowed,
       minStartMin,
       maxStartMin,
       maxPrevSpillMin,
@@ -580,14 +597,18 @@ export function DayPlanner() {
     } = dragState.current;
     const dayEndMin = 24 * 60;
     const canReachBottomBoundary = maxStartMin + origDurMin >= dayEndMin;
-    const canReachTopBoundary = transitionEdge === "top" || minStartMin <= 0;
+    const canReachTopBoundary = transitionEdge === "top" || crossDayAllowed || minStartMin <= 0;
+    const canSpillCrossDay = sourceSpansNextDay || transitionEdge === "top" || crossDayAllowed;
     const limitTop = isPt ? "Limite superior" : "Upper limit";
     const limitBottom = isPt ? "Limite inferior" : "Lower limit";
-    const limitFromKind = (kind: "block" | "min-current", edge: "top" | "bottom") => {
+    const limitFromKind = (kind: "block" | "sleep" | "min-current", edge: "top" | "bottom") => {
       if (kind === "block") {
         return edge === "bottom"
           ? (isPt ? "Limite: bloco amanhã" : "Limit: next-day block")
           : (isPt ? "Limite: bloco ontem" : "Limit: previous-day block");
+      }
+      if (kind === "sleep") {
+        return isPt ? "Limite: sono noturno" : "Limit: overnight sleep";
       }
       return isPt ? "Mín. 15m hoje" : "Min 15m today";
     };
@@ -608,13 +629,14 @@ export function DayPlanner() {
       const rawEnd = rawStart + origDurMin;
       const spillMin = rawEnd - dayEndMin;
 
-      if (rawStart < 0 && canReachTopBoundary) {
+      if (rawStart < 0 && canReachTopBoundary && canSpillCrossDay) {
         const spillIntoPrevDay = -rawStart;
         const clampedSpill = Math.max(0, Math.min(spillIntoPrevDay, maxPrevSpillMin));
         const previewStart = -clampedSpill;
         const hitLimit = spillIntoPrevDay > maxPrevSpillMin;
+        const commitThreshold = Math.min(COMMIT_MIN, maxPrevSpillMin);
 
-        if (clampedSpill >= COMMIT_MIN) {
+        if (clampedSpill >= commitThreshold) {
           applyPreviewStart(
             previewStart,
             { edge: "top", direction: "up", pending: false },
@@ -632,12 +654,13 @@ export function DayPlanner() {
         return;
       }
 
-      if (spillMin > 0 && canReachBottomBoundary) {
+      if (spillMin > 0 && canReachBottomBoundary && canSpillCrossDay) {
         const clampedSpill = Math.max(0, Math.min(spillMin, maxNextSpillMin));
         const previewStart = Math.min(dayEndMin - SNAP, dayEndMin - origDurMin + clampedSpill);
         const hitLimit = spillMin > maxNextSpillMin;
+        const commitThreshold = Math.min(COMMIT_MIN, maxNextSpillMin);
 
-        if (clampedSpill >= COMMIT_MIN) {
+        if (clampedSpill >= commitThreshold) {
           applyPreviewStart(
             previewStart,
             { edge: "bottom", direction: "down", pending: false },
@@ -686,7 +709,7 @@ export function DayPlanner() {
       const rawStart = origStartMin + rawDeltaMin;
       const spillIntoPrevDay = -rawStart;
 
-      if (rawStart < 0 && canReachTopBoundary) {
+      if (rawStart < 0 && canReachTopBoundary && canSpillCrossDay) {
         const clampedSpill = Math.max(0, Math.min(spillIntoPrevDay, maxPrevSpillMin));
         const previewStart = -clampedSpill;
         const hitLimit = spillIntoPrevDay > maxPrevSpillMin;
@@ -791,7 +814,13 @@ export function DayPlanner() {
       .filter((item) => item.kind !== "sleep" && !isSameSource(item as AgendaItem))
       .reduce((min, item) => Math.min(min, timeToMinutes(item.start)), 24 * 60);
     const nextDayCutStart = sleepCutsToRanges(nextDayIso).reduce((min, c) => Math.min(min, c.start), 24 * 60);
-    const nextDayCapacity = Math.min(nextDayCapacityBlocks, nextDayCutStart);
+    const nextSleepEntry = getSleepWindowForDay(data.meta.sleepSchedule, nextDate.getDay());
+    const hasNextDayOvernightSleep = enforceSleepBoundary && nextSleepEntry !== null
+      && timeToMinutes(nextSleepEntry.start) > timeToMinutes(nextSleepEntry.end);
+    const nextDayWake = hasNextDayOvernightSleep
+      ? timeToMinutes(nextSleepEntry!.end)
+      : 24 * 60;
+    const nextDayCapacity = Math.min(nextDayCapacityBlocks, nextDayCutStart, nextDayWake);
 
     const prevDayCapacityBlocks = 24 * 60 - buildAgendaForDate(data, prevDate)
       .filter((item) => item.kind !== "sleep" && !isSameSource(item as AgendaItem))
@@ -805,19 +834,25 @@ export function DayPlanner() {
     const origDurMin = sourceDurMin;
 
     const maxCurrentDaySpill = Math.max(0, origDurMin - MIN_IN_DAY);
-    // Top-edge cross-day blocks can spill their full pre-midnight portion into the previous day
+    // Cross-day blocks of any edge must leave at least MIN_IN_DAY minutes on the
+    // originating day. Both directions cap at maxCurrentDaySpill.
     const maxPrevSpillMin = transitionEdge === "top"
-      ? Math.abs(origStartMin) + origDurMin
+      ? Math.max(0, Math.min(Math.abs(origStartMin) + origDurMin, maxCurrentDaySpill))
       : Math.max(0, Math.min(maxCurrentDaySpill, prevDayCapacity));
     // Bottom-edge blocks that already span to the next day can extend further
     const maxNextSpillMin = sourceSpansNextDay
       ? origDurMin
-      : Math.min(origDurMin, nextDayCapacity);
-    const prevLimitKind = prevDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
-    const nextLimitKind = nextDayCapacity < maxCurrentDaySpill ? "block" : "min-current";
+      : Math.min(maxCurrentDaySpill, nextDayCapacity);
+    const prevLimitKind: "block" | "sleep" | "min-current" = prevDayCapacity < maxCurrentDaySpill
+      ? (prevDayCapacityCuts <= prevDayCapacityBlocks ? "sleep" : "block")
+      : "min-current";
+    const nextLimitKind: "block" | "sleep" | "min-current" = nextDayCapacity < maxCurrentDaySpill
+      ? (hasNextDayOvernightSleep && nextDayWake === nextDayCapacity ? "sleep" : "block")
+      : "min-current";
     // Cross-day blocks bypass the day's sleep boundaries for drag constraints
     const minStartMin = transitionEdge === "top" || sourceSpansNextDay ? 0 : wakeBoundMin;
     const maxStartMin = sourceSpansNextDay ? 24 * 60 - SNAP : bedBoundMin - origDurMin;
+    const crossDayAllowed = !effectiveSleepEntry || hasDragSleepBoundary || hasNextDayOvernightSleep || wakeOnlySleep;
     dragState.current = {
       id: a.id,
       sourceId,
@@ -833,6 +868,7 @@ export function DayPlanner() {
       maxNextSpillMin,
       prevLimitKind,
       nextLimitKind,
+      crossDayAllowed,
     };
     setDraggingId(a.id);
     setDragDeltaMin(0);
@@ -934,22 +970,7 @@ export function DayPlanner() {
           top: dragTop,
           height: dragBh,
         };
-        let cascadeCursor = dragTop + dragBh + STACK_GAP_PX;
-        for (let i = dragItemIdx + 1; i < cascadePositions.length; i++) {
-          const nextTop = cascadePositions[i].top;
-          if (nextTop < cascadeCursor) {
-            const newTop = cascadeCursor;
-            const newBottom = newTop + cascadePositions[i].height;
-            if (newBottom > timelineContentHeight) break;
-            cascadePositions[i] = {
-              ...cascadePositions[i],
-              top: newTop,
-            };
-            cascadeCursor = newBottom + STACK_GAP_PX;
-          } else {
-            break;
-          }
-        }
+        // No cascade during drag preview — only the dragged block moves freely.
         return cascadePositions;
       }
     }
@@ -989,7 +1010,7 @@ export function DayPlanner() {
         </div>
       </div>
 
-      <div ref={scrollRef} className="max-h-[640px] overflow-y-auto">
+      <div ref={scrollRef} className="overflow-y-auto" style={{ maxHeight: timelineMaxH }}>
         <div className="relative" style={{ height: timelineHeight, userSelect: draggingId ? "none" : undefined }}>
           {showStartBoundaryMarker && (
             <div
@@ -1280,7 +1301,7 @@ export function DayPlanner() {
                     zIndex: isDragging ? 35 : live ? 15 : 10,
                     overflow: "visible",
                     willChange: isDragging ? "transform, height" : undefined,
-                    transition: isDragging ? "transform 0.08s ease-out, height 0.08s ease-out" : "box-shadow 0.15s",
+                    transition: isDragging ? (dragLimitHint ? "none" : "transform 0.08s ease-out, height 0.08s ease-out") : "box-shadow 0.15s",
                   }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
@@ -1536,9 +1557,7 @@ export function DayPlanner() {
               } else {
                 const allDay = prevSchedule.find((e) => !e.days);
                 if (allDay) {
-                  nextSchedule = prevSchedule.map((e): SleepScheduleEntry =>
-                    !e.days ? { ...e, start: patch.start, end: patch.end } : e
-                  );
+                  nextSchedule = [{ start: patch.start, end: patch.end, days: [dow] }, ...prevSchedule];
                 } else {
                   nextSchedule = [...prevSchedule, { start: patch.start, end: patch.end, days: [dow] }];
                 }
@@ -1856,8 +1875,12 @@ function SleepEditDialog({
     sleepWindow.start === "00:00" || sleepWindow.start === "24:00" ? "24:00" : sleepWindow.start,
   );
   const [end, setEnd] = useState(sleepWindow.end === "24:00" ? "07:00" : sleepWindow.end);
-  const [hasSleepStart, setHasSleepStart] = useState(sleepWindow.start !== "24:00" && sleepWindow.start !== sleepWindow.end);
-  const [hasWakeTime, setHasWakeTime] = useState(sleepWindow.end !== "24:00" && sleepWindow.start !== sleepWindow.end);
+  const [hasSleepStart, setHasSleepStart] = useState(
+    sleepWindow.start !== "00:00" && sleepWindow.start !== sleepWindow.end,
+  );
+  const [hasWakeTime, setHasWakeTime] = useState(
+    sleepWindow.end !== "00:00" && sleepWindow.start !== sleepWindow.end,
+  );
   const [breakStart, setBreakStart] = useState("02:00");
   const [breakEnd, setBreakEnd] = useState("08:00");
   const [editingBreak, setEditingBreak] = useState<{ date: string; start: string; end: string } | null>(null);
@@ -1883,7 +1906,7 @@ function SleepEditDialog({
     [],
   );
 
-  const effectiveHasSleepStart = hasSleepStart && start !== "24:00";
+  const effectiveHasSleepStart = hasSleepStart;
   const computedStart = effectiveHasSleepStart ? start : "00:00";
   const computedEnd = hasWakeTime ? end : "00:00";
   const noNightBoundary = computedStart === computedEnd;
@@ -2016,49 +2039,25 @@ function SleepEditDialog({
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-h-[2.5rem]">
                 <Checkbox id="sleep-end-enabled" checked={hasWakeTime} onCheckedChange={(checked) => setHasWakeTime(checked === true)} />
                 <Label htmlFor="sleep-end-enabled" className="text-[11px] text-muted-foreground">
                   {isPt ? "Definir horário de acordar" : "Set wake time"}
                 </Label>
               </div>
               <div className={hasWakeTime ? "" : "pointer-events-none opacity-50"}>
-                <Select value={end} onValueChange={setEnd}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder={isPt ? "Horario" : "Time"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {wakeOptions.map((time) => (
-                      <SelectItem key={`wake-${time}`} value={time}>
-                        {formatClock(time, bcp47)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} max={effectiveHasSleepStart ? start : undefined} placeholder={isPt ? "Horario" : "Time"} />
               </div>
             </div>
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-h-[2.5rem]">
                 <Checkbox id="sleep-start-enabled" checked={hasSleepStart} onCheckedChange={(checked) => setHasSleepStart(checked === true)} />
                 <Label htmlFor="sleep-start-enabled" className="text-[11px] text-muted-foreground">
                   {isPt ? "Definir horário para dormir" : "Set bedtime"}
                 </Label>
               </div>
               <div className={hasSleepStart ? "" : "pointer-events-none opacity-50"}>
-                <Select value={start} onValueChange={setStart}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder={isPt ? "Horario" : "Time"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {bedtimeOptions.map((time) => (
-                      <SelectItem key={`bedtime-${time}`} value={time}>
-                        {time === "24:00"
-                          ? (isPt ? "00:00 (meia-noite)" : "12:00 AM (midnight)")
-                          : formatClock(time, bcp47)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <TimeSelect value={start} onValueChange={setStart} bcp47={bcp47} min={hasWakeTime ? end : undefined} allowMidnight exclude={["00:00"]} placeholder={isPt ? "Horario" : "Time"} />
               </div>
             </div>
           </div>
@@ -2178,33 +2177,11 @@ function SleepEditDialog({
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.start}</Label>
-                <Select value={breakStart} onValueChange={setBreakStart}>
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder={isPt ? "Horario" : "Time"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {breakStartOptions.map((time) => (
-                      <SelectItem key={`break-start-${time}`} value={time}>
-                        {formatClock(time, bcp47)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <TimeSelect value={breakStart} onValueChange={setBreakStart} bcp47={bcp47} times={breakStartOptions} placeholder={isPt ? "Horario" : "Time"} />
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.end}</Label>
-                <Select value={breakEnd} onValueChange={setBreakEnd}>
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder={isPt ? "Horario" : "Time"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {breakEndOptions.map((time) => (
-                      <SelectItem key={`break-end-${time}`} value={time}>
-                        {formatClock(time, bcp47)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <TimeSelect value={breakEnd} onValueChange={setBreakEnd} bcp47={bcp47} times={breakEndOptions} placeholder={isPt ? "Horario" : "Time"} />
               </div>
             </div>
             <div className="flex items-center justify-between gap-2">

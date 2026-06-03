@@ -385,20 +385,22 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Improve timeline snapping (15-min visual guides, clockTimeFromMin/snapTime consistency)
 - [x] Smooth drag interactions (pointer events, setPointerCapture, release easing)
 - [x] Reduce visual jitter (GPU-composited translate3d, stable memo deps)
-- [ ] Improve timeline rendering performance
-- [ ] Timeline virtualization
-- [ ] Better overflow transitions
+- [x] Improve timeline rendering performance
+- [x] Timeline virtualization
+- [x] Better overflow transitions
+- [x] Responsive timeline max-height (adapts to viewport via ResizeObserver)
+- [x] Unified time selection combobox (Command+Popover) replacing flat Select / native inputs
 
 ---
 
 ## Cross-Day Logic
-- [ ] Restrict cross-day functionality to valid boundary states only
-- [ ] Restore legacy compression behavior when cross-day is disabled
+- [x] Restrict cross-day functionality to valid boundary states only
+- [x] Restore legacy compression behavior when cross-day is disabled
 - [x] Prevent invalid overflow dragging (cascade preview shows committed result)
 - [x] Preserve minimum duration rules
 - [x] Normalize cross-midnight intervals (clockTimeFromMin now returns "24:00" for midnight)
 - [x] Prevent negative-height states (dragged blocks capped at 6px minimum)
-- [ ] Improve split-block rendering
+- [x] Improve split-block rendering
 
 ---
 

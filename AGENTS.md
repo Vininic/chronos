@@ -6,6 +6,7 @@ Use this file for fast, practical context. Prefer links for product/background d
 ## Stack and tooling
 - React 18 + TypeScript + Vite (SWC) + Tailwind 3 + shadcn/ui
 - Package manager: pnpm via Corepack (`corepack pnpm install`)
+- Key deps: @tanstack/react-virtual (timeline virtualization)
 - Use pnpm lockfile as source of truth; ignore `package-lock.json`
 
 ## Commands
@@ -45,3 +46,4 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Do not introduce server/cloud assumptions unless explicitly requested; current app behavior is local-first
 - Prefer focused edits in schedule core files (`DayPlanner`, `store`, `types`) when changing planner behavior
 - Validate with targeted vitest runs for cross-day/sleep interactions after schedule logic changes
+- **Checklist sync**: After every significant change, check the Development Checklist in `README.md` (starts at line 340) and update checkbox state (`[ ]` / `[x]`) to reflect current reality. Never let the checklist drift out of date.

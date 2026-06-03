@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Input } from "@/components/ui/input";
+import { TimeSelect } from "@/components/ui/time-select";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 export default function Week() {
   const { data, removeRoutine, updateRoutine } = useSchedule();
   const t = useT();
-  const { locale } = useI18n();
+  const { locale, bcp47 } = useI18n();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
   const [editItem, setEditItem] = useState<RoutineBlock | null>(null);
@@ -177,11 +178,11 @@ function WeekBlockEditDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.start}</Label>
-              <Input type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} className="h-9" />
+              <TimeSelect value={start} onValueChange={setStart} bcp47={bcp47} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.end}</Label>
-              <Input type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} className="h-9" />
+              <TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} />
             </div>
           </div>
           {duration > 0 && <p className="text-[11px] num text-secondary">{t.chronos.today.duration}: {fmtDur(duration)}</p>}

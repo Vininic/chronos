@@ -26,57 +26,6 @@ function load(locale: Locale = "en"): ScheduleData {
   return normalizeNamingModel(getSeedForLocale(locale), locale);
 }
 
-function ensureAroundTodayCrossdayExamples(data: ScheduleData, routine: RoutineBlock[], locale: Locale): RoutineBlock[] {
-  const base = routine.filter((r) => r.id !== "r-demo-cross-prev" && r.id !== "r-demo-cross-next");
-
-  const schedule = migrateSleepSchedule(data);
-  const today = new Date().getDay();
-  const tomorrow = (today + 1) % 7;
-  const todaySleep = getSleepWindowForDay(schedule, today) ?? schedule[0];
-  const tomorrowSleep = getSleepWindowForDay(schedule, tomorrow) ?? schedule[0];
-  const blocksMidnightToday = timeToMinutes(todaySleep.start) > timeToMinutes(todaySleep.end);
-  const blocksEarlyTomorrow = timeToMinutes(tomorrowSleep.start) > timeToMinutes(tomorrowSleep.end);
-
-  const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
-  // If sleep is enforced and spans midnight, do not inject new crossday demos.
-  // Preserve any already-existing demo blocks so UI changes do not unexpectedly hide them.
-  if (enforceSleepBoundary && (blocksMidnightToday || blocksEarlyTomorrow)) return routine;
-
-  const hasPrevDemo = base.some((r) => r.id === "r-demo-cross-prev");
-  const hasNextDemo = base.some((r) => r.id === "r-demo-cross-next");
-  if (hasPrevDemo && hasNextDemo) return base;
-
-  const prevDay = (today + 6) % 7;
-  const next = [...base];
-
-  if (!hasPrevDemo) {
-    next.push({
-      id: "r-demo-cross-prev",
-      day: prevDay,
-      start: "23:15",
-      end: "01:15",
-      endsNextDay: true,
-      kind: "shallow",
-      title: locale === "pt" ? "Fechamento tardio (demo)" : "Late wrap-up (demo)",
-      notes: locale === "pt" ? "Exemplo: vem do dia anterior." : "Example: continues from previous day.",
-    });
-  }
-
-  if (!hasNextDemo) {
-    next.push({
-      id: "r-demo-cross-next",
-      day: today,
-      start: "22:40",
-      end: "00:40",
-      endsNextDay: true,
-      kind: "deep",
-      title: locale === "pt" ? "Estratégia noturna (demo)" : "Night strategy (demo)",
-      notes: locale === "pt" ? "Exemplo: atravessa para o próximo dia." : "Example: crosses into next day.",
-    });
-  }
-
-  return next;
-}
 
 function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
   const categories = data.categories.map((c) => {
@@ -85,7 +34,7 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
     return { ...c, labelCustom, descriptionCustom };
   });
 
-  const routine = ensureAroundTodayCrossdayExamples(data, data.routine, locale)
+  const routine = data.routine
     // Strip legacy boundary sleep blocks — sleep is now a schedule concept, not routine blocks
     .filter((r) => r.kind !== "sleep" || r.id.startsWith("r-custom-sleep"))
     .map((r) => ({
@@ -952,22 +901,50 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     if (sourceSpansNextDay) {
       const sourceReferenceStartMin = dragEdge === "top" ? sourceStartMin - 24 * 60 : sourceStartMin;
       const crossStart = typeof dragDeltaMin === "number" ? sourceReferenceStartMin + dragDeltaMin : movedStart;
-      return commitCrossdayMove(crossStart);
+      // At least 15 minutes must remain on the originating day.
+      const minCrossStart = -(movedDur - 15);
+      const clampedCrossStart = Math.max(crossStart, minCrossStart);
+      return commitCrossdayMove(clampedCrossStart);
     }
 
     const rawCandidateStart = typeof dragDeltaMin === "number" ? sourceStartMin + dragDeltaMin : movedStart;
     const rawCandidateEnd = rawCandidateStart + movedDur;
     let candidateStart = rawCandidateStart;
     // Snap only when crossing into sleep, not when merely near the boundary.
-    if (rawCandidateStart < wakeMin && wakeMin - rawCandidateStart <= boundarySnapTol) {
+    // Also skip snapping when there are no sleep boundaries at all (wakeMin/bedMin
+    // are just defaults, not real boundaries).
+    if (sleepForDay.length > 0 && wakeMin > 0 && rawCandidateStart < wakeMin && wakeMin - rawCandidateStart <= boundarySnapTol) {
       candidateStart = wakeMin;
     }
-    if (rawCandidateEnd > bedMin && rawCandidateEnd - bedMin <= boundarySnapTol) {
+    if (sleepForDay.length > 0 && bedMin < 24 * 60 && rawCandidateEnd > bedMin && rawCandidateEnd - bedMin <= boundarySnapTol) {
       candidateStart = bedMin - movedDur;
     }
 
-    if (!hasSleepBoundaryForDay && (candidateStart < 0 || candidateStart + movedDur > 24 * 60)) {
-      return commitCrossdayMove(candidateStart);
+    const sleepEntry = data.meta.sleepSchedule?.length
+      ? getSleepWindowForDay(data.meta.sleepSchedule, day)
+      : null;
+    const nextDaySleepEntry = data.meta.sleepSchedule?.length
+      ? getSleepWindowForDay(data.meta.sleepSchedule, (day + 1) % 7)
+      : null;
+    const hasOvernightSleep = (entry: SleepScheduleEntry | null) =>
+      entry !== null && entry.start !== entry.end && timeToMinutes(entry.start) > timeToMinutes(entry.end);
+    const isWakeOnlySleep = (entry: SleepScheduleEntry | null) =>
+      entry !== null && entry.start === "00:00" && entry.end !== "00:00";
+    // Cross-day is allowed when there's no bed boundary at all, or when either
+    // day in a cross-day transition has an overnight or wake-only boundary.
+    const hasCrossDaySleep = enforceSleepBoundary
+      ? (sleepEntry === null || sleepEntry.start === sleepEntry.end)
+        || hasOvernightSleep(sleepEntry)
+        || hasOvernightSleep(nextDaySleepEntry)
+        || isWakeOnlySleep(sleepEntry)
+      : true;
+
+    if (hasCrossDaySleep && (candidateStart < 0 || candidateStart + movedDur > 24 * 60)) {
+      // At least 15 minutes must remain on the originating day.
+      const minCrossStart = -(movedDur - 15);
+      const maxCrossStart = 24 * 60 - 15;
+      const clampedCandidate = Math.max(minCrossStart, Math.min(candidateStart, maxCrossStart));
+      return commitCrossdayMove(clampedCandidate);
     }
 
     const boundedStart = Math.max(wakeMin, Math.min(candidateStart, bedMin - movedDur));

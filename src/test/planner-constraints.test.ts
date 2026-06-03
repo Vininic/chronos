@@ -273,6 +273,119 @@ describe("spill-path previewStart cap", () => {
   });
 });
 
+/* ── cross-day restriction gate ── */
+
+/** Replicates the canSpillCrossDay check from updateDragPreview */
+function canSpillCrossDay(
+  sourceSpansNextDay: boolean,
+  transitionEdge: "top" | "bottom",
+  crossDayAllowed: boolean,
+): boolean {
+  return sourceSpansNextDay || transitionEdge === "top" || crossDayAllowed;
+}
+
+/** Replicates the spill branch guard logic from updateDragPreview lines 611/635/689 */
+function isSpillAllowed(
+  opts: {
+    sourceSpansNextDay: boolean;
+    transitionEdge: "top" | "bottom";
+    crossDayAllowed: boolean;
+    rawStart: number;
+    rawEnd: number;
+    canReachTopBoundary: boolean;
+    canReachBottomBoundary: boolean;
+  },
+): "prev-day" | "next-day" | "none" {
+  const canSpill = canSpillCrossDay(opts.sourceSpansNextDay, opts.transitionEdge, opts.crossDayAllowed);
+  if (opts.rawStart < 0 && opts.canReachTopBoundary && canSpill) return "prev-day";
+  if (opts.rawEnd > 24 * 60 && opts.canReachBottomBoundary && canSpill) return "next-day";
+  return "none";
+}
+
+describe("cross-day restriction gate", () => {
+  it("blocks new cross-day when crossDayAllowed is false and block is normal bottom-edge", () => {
+    // Normal block that does NOT already cross midnight
+    expect(canSpillCrossDay(false, "bottom", false)).toBe(false);
+  });
+
+  it("allows cross-day for bottom-edge blocks that already span next day", () => {
+    expect(canSpillCrossDay(true, "bottom", false)).toBe(true);
+  });
+
+  it("allows cross-day for top-edge blocks (continue from prev day)", () => {
+    expect(canSpillCrossDay(false, "top", false)).toBe(true);
+  });
+
+  it("allows cross-day when crossDayAllowed is true (valid overnight sleep)", () => {
+    expect(canSpillCrossDay(false, "bottom", true)).toBe(true);
+  });
+
+  it("prev-day spill is blocked when canSpillCrossDay is false", () => {
+    const result = isSpillAllowed({
+      sourceSpansNextDay: false,
+      transitionEdge: "bottom",
+      crossDayAllowed: false,
+      rawStart: -30,
+      rawEnd: 30,
+      canReachTopBoundary: true,
+      canReachBottomBoundary: true,
+    });
+    expect(result).toBe("none");
+  });
+
+  it("next-day spill is blocked when canSpillCrossDay is false", () => {
+    const result = isSpillAllowed({
+      sourceSpansNextDay: false,
+      transitionEdge: "bottom",
+      crossDayAllowed: false,
+      rawStart: 1400,
+      rawEnd: 1460,
+      canReachTopBoundary: true,
+      canReachBottomBoundary: true,
+    });
+    expect(result).toBe("none");
+  });
+
+  it("prev-day spill is allowed for top-edge block even without crossDayAllowed", () => {
+    const result = isSpillAllowed({
+      sourceSpansNextDay: true,
+      transitionEdge: "top",
+      crossDayAllowed: false,
+      rawStart: -90,
+      rawEnd: 30,
+      canReachTopBoundary: true,
+      canReachBottomBoundary: true,
+    });
+    expect(result).toBe("prev-day");
+  });
+
+  it("next-day spill is allowed for sourceSpansNextDay block even without crossDayAllowed", () => {
+    const result = isSpillAllowed({
+      sourceSpansNextDay: true,
+      transitionEdge: "bottom",
+      crossDayAllowed: false,
+      rawStart: 1380,
+      rawEnd: 1500,
+      canReachTopBoundary: true,
+      canReachBottomBoundary: true,
+    });
+    expect(result).toBe("next-day");
+  });
+
+  it("next-day spill is allowed when crossDayAllowed is true", () => {
+    const result = isSpillAllowed({
+      sourceSpansNextDay: false,
+      transitionEdge: "bottom",
+      crossDayAllowed: true,
+      rawStart: 1380,
+      rawEnd: 1500,
+      canReachTopBoundary: true,
+      canReachBottomBoundary: true,
+    });
+    expect(result).toBe("next-day");
+  });
+});
+
 /* ── cascade overflow stop ── */
 
 describe("cascade overflow stop", () => {
