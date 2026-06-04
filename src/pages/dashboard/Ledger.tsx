@@ -7,20 +7,20 @@ export default function Ledger() {
   const t = useT();
   const fmtDur = useFmtDur();
   const metricMap = Object.fromEntries(data.ledger.metrics.map((m) => [m.label, m.value])) as Record<string, number>;
-  const depth = metricMap.Depth ?? 0;
-  const cadence = metricMap.Cadence ?? 0;
-  const recovery = metricMap.Recovery ?? 0;
+  const loadScore = metricMap.Load ?? 0;
+  const consistencyScore = metricMap.Consistency ?? 0;
+  const varietyScore = metricMap.Variety ?? 0;
 
   const scoreReasons = [
-    t.chronos.ledger.reasonDepth(Math.round(depth * 0.45)),
-    t.chronos.ledger.reasonCadence(Math.round(cadence * 0.3)),
-    t.chronos.ledger.reasonRecovery(Math.round(recovery * 0.25)),
+    t.chronos.ledger.reasonDepth(Math.round(loadScore * 0.45)),
+    t.chronos.ledger.reasonCadence(Math.round(consistencyScore * 0.3)),
+    t.chronos.ledger.reasonRecovery(Math.round(varietyScore * 0.25)),
   ];
 
   const nextSteps: string[] = [];
-  if (depth < 80) nextSteps.push(t.chronos.ledger.nextStepDepth);
-  if (cadence < 80) nextSteps.push(t.chronos.ledger.nextStepCadence);
-  if (recovery < 80) nextSteps.push(t.chronos.ledger.nextStepRecovery);
+  if (loadScore < 80) nextSteps.push(t.chronos.ledger.nextStepDepth);
+  if (consistencyScore < 80) nextSteps.push(t.chronos.ledger.nextStepCadence);
+  if (varietyScore < 80) nextSteps.push(t.chronos.ledger.nextStepRecovery);
   if (nextSteps.length === 0) nextSteps.push(t.chronos.ledger.nextStepMaintain);
 
   const breakdown = data.categories.map((c) => ({ ...c, total: data.routine.filter((r) => r.kind === c.id).reduce((s, r) => s + durationMin(r.start, r.end), 0) }));
@@ -46,17 +46,17 @@ export default function Ledger() {
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="rounded-md border border-border/60 bg-surface-raised p-3">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t.chronos.ledger.depthTitle}</div>
-            <div className="font-display text-2xl text-primary num mt-1">{depth}</div>
+            <div className="font-display text-2xl text-primary num mt-1">{loadScore}</div>
             <p className="text-xs text-muted-foreground mt-1">{t.chronos.ledger.depthDesc}</p>
           </div>
           <div className="rounded-md border border-border/60 bg-surface-raised p-3">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t.chronos.ledger.cadenceTitle}</div>
-            <div className="font-display text-2xl text-primary num mt-1">{cadence}</div>
+            <div className="font-display text-2xl text-primary num mt-1">{consistencyScore}</div>
             <p className="text-xs text-muted-foreground mt-1">{t.chronos.ledger.cadenceDesc}</p>
           </div>
           <div className="rounded-md border border-border/60 bg-surface-raised p-3">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t.chronos.ledger.recoveryTitle}</div>
-            <div className="font-display text-2xl text-primary num mt-1">{recovery}</div>
+            <div className="font-display text-2xl text-primary num mt-1">{varietyScore}</div>
             <p className="text-xs text-muted-foreground mt-1">{t.chronos.ledger.recoveryDesc}</p>
           </div>
         </div>

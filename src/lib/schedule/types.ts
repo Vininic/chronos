@@ -73,6 +73,8 @@ export interface ScheduleData {
     workdayEnd: string;
     /** Whether sleep window is enforced as a hard scheduling boundary */
     enforceSleepBoundary?: boolean;
+    /** Which categories are treated as \"focus\" categories for the timer card/page */
+    focusCategoryIds?: string[];
     /** Legacy single sleep window — migrated to sleepSchedule on load */
     sleepWindow?: { start: string; end: string };
     /** New: per-day-of-week sleep schedule, replaces sleepWindow */
@@ -87,8 +89,7 @@ export interface ScheduleData {
   ledger: {
     compositionScore: number;
     metrics: { label: string; value: number }[];
-    deepHours: number[];
-    recoveryHours: number[];
+    scheduledHours: number[];
   };
 }
 

@@ -1,117 +1,163 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Brain, Pause, Play, RotateCcw } from "lucide-react";
+import { FocusCategoryPicker, kindStyle, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
+import { BlockKind } from "@/lib/schedule/types";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
+import { useTimer } from "@/lib/timer/TimerContext";
 
 export default function Focus() {
   const { data } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
-  const todays = buildAgendaForDate(data, new Date()).filter((a) => a.kind === "deep");
+  const timer = useTimer();
+  const focusIds = data.meta.focusCategoryIds ?? [];
+  const [previewBlock, setPreviewBlock] = useState<{ title: string; start: string; end: string; kind: string } | null>(null);
+
+  if (focusIds.length === 0) {
+    return (
+      <>
+        <header className="mb-7">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.eyebrow}</div>
+          <h1 className="font-display text-4xl text-primary mt-1.5">{t.chronos.focus.title}</h1>
+          <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{t.chronos.focus.lead}</p>
+        </header>
+        <div className="chronos-card p-8">
+          <div className="mb-4">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
+            <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.focusPickCategory}</h3>
+          </div>
+          <FocusCategoryPicker />
+        </div>
+      </>
+    );
+  }
+
+  const todays = buildAgendaForDate(data, new Date()).filter((a) => focusIds.includes(a.kind));
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const activeScheduled = todays.find((b) => timeToMinutes(b.start) <= nowMin && nowMin < timeToMinutes(b.end));
   const nextScheduled = todays.find((b) => timeToMinutes(b.start) > nowMin);
-  const upcoming = data.routine.filter((r) => r.kind === "deep");
-  const [running, setRunning] = useState(false);
-  const [seconds, setSeconds] = useState(25 * 60);
-  const [target, setTarget] = useState(25 * 60);
-  const ref = useRef<number | null>(null);
-  useEffect(() => {
-    if (!running) return;
-    ref.current = window.setInterval(() => {
-      setSeconds((s) => { if (s <= 1) { window.clearInterval(ref.current!); setRunning(false); toast({ title: t.chronos.focus.sealed_done }); return 0; } return s - 1; });
-    }, 1000);
-    return () => { if (ref.current) window.clearInterval(ref.current); };
-  }, [running, t]);
-  function start(min: number) { setTarget(min * 60); setSeconds(min * 60); setRunning(true); }
-  function startScheduled(startTime: string, endTime: string, title: string) {
-    const mins = Math.max(15, durationMin(startTime, endTime));
-    start(mins);
-    toast({ title: t.chronos.focus.focusBlockStarted, description: `${scheduleText.blockTitle(title)} · ${startTime}-${endTime}` });
-  }
-  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
-  const ss = String(seconds % 60).padStart(2, "0");
+  const upcoming = data.routine.filter((r) => focusIds.includes(r.kind));
+
+  const previewDot = kindStyle[(previewBlock?.kind ?? activeScheduled?.kind ?? "deep") as BlockKind]?.dot ?? "bg-primary";
+  const previewColor = TAILWIND_TO_HEX[previewDot] ?? "hsl(var(--primary))";
+
   return (
     <>
-      <header className="mb-7">
+      <header className="mb-6">
         <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.eyebrow}</div>
         <h1 className="font-display text-4xl text-primary mt-1.5">{t.chronos.focus.title}</h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{t.chronos.focus.lead}</p>
       </header>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="chronos-card-elevated p-8 lg:col-span-2 grid place-items-center">
-          <div className="text-center">
-            <div className="font-display text-[120px] leading-none text-primary num">{mm}<span className="text-secondary">:</span>{ss}</div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mt-2">{t.chronos.focus.sealed}</div>
-            <div className="mt-8 flex items-center justify-center gap-2 flex-wrap">
+
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className="w-full lg:flex-1 min-w-0 space-y-6">
+          <div className="chronos-card-elevated p-6 flex flex-col items-center gap-5">
+            <div className="text-center">
+              <div className="font-display text-[100px] leading-none text-primary num">{timer.mm}<span className="text-secondary">:</span>{timer.ss}</div>
+              <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mt-1">{t.chronos.focus.sealed}</div>
+            </div>
+
+            {previewBlock ? (
+              <div className="w-full max-w-xs flex items-center gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3">
+                <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: previewColor }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-primary font-medium truncate">{previewBlock.title}</div>
+                  <div className="text-[11px] text-muted-foreground num">{previewBlock.start}–{previewBlock.end}</div>
+                </div>
+                <span className="text-[10px] uppercase tracking-wider text-secondary shrink-0">{t.chronos.focus.inProgress}</span>
+              </div>
+            ) : activeScheduled ? (
+              <div className="w-full max-w-xs flex items-center gap-3 rounded-lg border border-dashed border-secondary/40 px-4 py-3">
+                <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: TAILWIND_TO_HEX[kindStyle[activeScheduled.kind as BlockKind]?.dot ?? "bg-primary"] ?? "hsl(var(--primary))" }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-primary truncate">{scheduleText.blockTitle(activeScheduled.title, activeScheduled.titleCustom)}</div>
+                  <div className="text-[11px] text-muted-foreground num">{activeScheduled.start}–{activeScheduled.end}</div>
+                </div>
+                <Button size="sm" className="h-8 shrink-0" onClick={() => {
+                  const mins = Math.max(15, durationMin(activeScheduled.start, activeScheduled.end));
+                  timer.startScheduled(mins, { title: activeScheduled.title, start: activeScheduled.start, end: activeScheduled.end, kind: activeScheduled.kind });
+                  setPreviewBlock({ title: activeScheduled.title, start: activeScheduled.start, end: activeScheduled.end, kind: activeScheduled.kind });
+                  toast({ title: t.chronos.focus.focusBlockStarted, description: `${scheduleText.blockTitle(activeScheduled.title)} · ${activeScheduled.start}–${activeScheduled.end}` });
+                }}>
+                  {t.chronos.focus.startWhenBegins}
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-center gap-2 flex-wrap">
               {[25, 45, 60, 90].map((m) => (
-                <Button key={m} variant={target === m * 60 ? "default" : "outline"} onClick={() => start(m)} className={target === m * 60 ? "bg-primary text-primary-foreground" : ""}>{m}m</Button>
+                <Button key={m} variant={timer.target === m * 60 ? "default" : "outline"} onClick={() => { timer.start(m); setPreviewBlock(null); }} className={timer.target === m * 60 ? "bg-primary text-primary-foreground" : ""}>{m}m</Button>
               ))}
-              <Button onClick={() => setRunning((r) => !r)} className="bg-bronze text-primary-deep hover:opacity-90">{running ? <><Pause className="h-4 w-4 mr-1" /> {t.chronos.focus.pause}</> : <><Play className="h-4 w-4 mr-1" /> {t.chronos.focus.begin}</>}</Button>
-              <Button variant="outline" onClick={() => { setRunning(false); setSeconds(target); }}><RotateCcw className="h-4 w-4 mr-1" /> {t.chronos.focus.reset}</Button>
+              <Button onClick={timer.togglePause} className="bg-bronze text-primary-deep hover:opacity-90">{timer.running ? <><Pause className="h-4 w-4 mr-1" /> {t.chronos.focus.pause}</> : <><Play className="h-4 w-4 mr-1" /> {t.chronos.focus.begin}</>}</Button>
+              <Button variant="outline" onClick={() => { timer.reset(); setPreviewBlock(null); }}><RotateCcw className="h-4 w-4 mr-1" /> {t.chronos.focus.reset}</Button>
             </div>
           </div>
+
+          <div className="chronos-card p-4"><FocusCategoryPicker /></div>
+
+          <div className="chronos-card p-6">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.recurringDepth}</div>
+            <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.focus.recurringTitle}</h3>
+            <table className="w-full mt-4 text-sm">
+              <thead className="text-[11px] uppercase tracking-wider text-muted-foreground"><tr className="border-b border-border"><th className="text-left py-2">{t.chronos.focus.tableDay}</th><th className="text-left">{t.chronos.focus.tableTitle}</th><th className="text-right">{t.chronos.focus.tableStart}</th><th className="text-right">{t.chronos.focus.tableEnd}</th><th className="text-right">{t.chronos.focus.tableDuration}</th></tr></thead>
+              <tbody>
+                {upcoming.map((r) => (
+                  <tr key={r.id} className="border-b border-border/60">
+                    <td className="py-2.5 text-muted-foreground">{t.common.days.short[r.day]}</td>
+                    <td className="text-primary py-2.5">
+                      <span className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${kindStyle[r.kind as BlockKind]?.dot ?? "bg-primary"}`} />
+                        {scheduleText.blockTitle(r.title, r.titleCustom)}
+                      </span>
+                    </td>
+                    <td className="text-right num">{r.start}</td><td className="text-right num">{r.end}</td>
+                    <td className="text-right num text-secondary">{fmtDur(durationMin(r.start, r.end))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="chronos-card p-6">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.todaysDepth}</div>
-          <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.focus.composed(todays.length)}</h3>
-          {(activeScheduled || nextScheduled) && (
-            <div className="mt-4 rounded-md border border-secondary/30 bg-secondary/5 p-3.5">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-secondary">{t.chronos.focus.scheduledFocus}</div>
-              {activeScheduled ? (
-                <>
-                  <div className="text-sm text-primary mt-1">{scheduleText.blockTitle(activeScheduled.title, activeScheduled.titleCustom)}</div>
-                  <div className="text-[11px] text-muted-foreground num">{activeScheduled.start}-{activeScheduled.end} · {t.chronos.focus.inProgress}</div>
-                  <Button size="sm" className="mt-2 h-8" onClick={() => startScheduled(activeScheduled.start, activeScheduled.end, activeScheduled.title)}>
-                    {t.chronos.focus.continueBlock}
-                  </Button>
-                </>
-              ) : nextScheduled ? (
-                <>
-                  <div className="text-sm text-primary mt-1">{scheduleText.blockTitle(nextScheduled.title, nextScheduled.titleCustom)}</div>
-                  <div className="text-[11px] text-muted-foreground num">{nextScheduled.start}-{nextScheduled.end}</div>
-                  <Button size="sm" variant="outline" className="mt-2 h-8" onClick={() => startScheduled(nextScheduled.start, nextScheduled.end, nextScheduled.title)}>
-                    {t.chronos.focus.startWhenBegins}
-                  </Button>
-                </>
-              ) : null}
-            </div>
-          )}
-          <ul className="mt-4 space-y-3">
-            {todays.length === 0 && <li className="text-sm text-muted-foreground italic">{t.chronos.focus.noDeepToday}</li>}
-            {todays.map((s) => (
-              <li key={s.id} className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-md bg-primary text-primary-foreground grid place-items-center"><Brain className="h-4 w-4 text-secondary-soft" /></div>
-                <div className="flex-1 min-w-0"><div className="text-sm text-primary truncate">{scheduleText.blockTitle(s.title, s.titleCustom)}</div><div className="text-[11px] text-muted-foreground num">{s.start}–{s.end} · {fmtDur(durationMin(s.start, s.end))}</div></div>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-5"><ComposeBlockDialog trigger={<Button variant="outline" className="w-full">{t.chronos.focus.addDeep}</Button>} defaultKind="deep" /></div>
+        <div className="w-full lg:w-80 shrink-0">
+          <div className="chronos-card p-6">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.todaysDepth}</div>
+            <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.focus.composed(todays.length)}</h3>
+            {(activeScheduled || nextScheduled) && (
+              <div className="mt-4 rounded-md border border-secondary/30 bg-secondary/5 p-3.5">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-secondary">{t.chronos.focus.scheduledFocus}</div>
+                {activeScheduled ? (
+                  <>
+                    <div className="text-sm text-primary mt-1">{scheduleText.blockTitle(activeScheduled.title, activeScheduled.titleCustom)}</div>
+                    <div className="text-[11px] text-muted-foreground num">{activeScheduled.start}–{activeScheduled.end}</div>
+                  </>
+                ) : nextScheduled ? (
+                  <>
+                    <div className="text-sm text-primary mt-1">{scheduleText.blockTitle(nextScheduled.title, nextScheduled.titleCustom)}</div>
+                    <div className="text-[11px] text-muted-foreground num">{nextScheduled.start}–{nextScheduled.end}</div>
+                  </>
+                ) : null}
+              </div>
+            )}
+            <ul className="mt-4 space-y-3">
+              {todays.length === 0 && <li className="text-sm text-muted-foreground italic">{t.chronos.focus.noDeepToday}</li>}
+              {todays.map((s) => (
+                <li key={s.id} className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-md bg-primary text-primary-foreground grid place-items-center"><Brain className="h-4 w-4 text-secondary-soft" /></div>
+                  <div className="flex-1 min-w-0"><div className="text-sm text-primary truncate">{scheduleText.blockTitle(s.title, s.titleCustom)}</div><div className="text-[11px] text-muted-foreground num">{s.start}–{s.end} · {fmtDur(durationMin(s.start, s.end))}</div></div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5"><ComposeBlockDialog trigger={<Button variant="outline" className="w-full">{t.chronos.focus.addDeep}</Button>} defaultKind={focusIds[0] ?? "deep"} /></div>
+          </div>
         </div>
       </div>
-      <section className="mt-8 chronos-card p-6">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.focus.recurringDepth}</div>
-        <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.focus.recurringTitle}</h3>
-        <table className="w-full mt-4 text-sm">
-          <thead className="text-[11px] uppercase tracking-wider text-muted-foreground"><tr className="border-b border-border"><th className="text-left py-2">{t.chronos.focus.tableDay}</th><th className="text-left">{t.chronos.focus.tableTitle}</th><th className="text-right">{t.chronos.focus.tableStart}</th><th className="text-right">{t.chronos.focus.tableEnd}</th><th className="text-right">{t.chronos.focus.tableDuration}</th></tr></thead>
-          <tbody>
-            {upcoming.map((r) => (
-              <tr key={r.id} className="border-b border-border/60">
-                <td className="py-2.5 text-muted-foreground">{t.common.days.short[r.day]}</td>
-                <td className="text-primary">{scheduleText.blockTitle(r.title, r.titleCustom)}</td>
-                <td className="text-right num">{r.start}</td><td className="text-right num">{r.end}</td>
-                <td className="text-right num text-secondary">{fmtDur(durationMin(r.start, r.end))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
     </>
   );
 }

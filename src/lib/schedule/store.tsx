@@ -52,6 +52,7 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
       ...data.meta,
       version: SCHEMA_VERSION,
       enforceSleepBoundary: data.meta.enforceSleepBoundary ?? true,
+      focusCategoryIds: data.meta.focusCategoryIds ?? (data.meta.focusCategoryId ? [data.meta.focusCategoryId] as string[] : undefined),
       sleepSchedule,
       sleepWindow: normalizeSleepWindow(data), // keep for legacy compat
     },
@@ -369,49 +370,48 @@ function getDayLabel(day: number, locale: Locale): string {
   return DICTIONARIES[locale].common.days.long[day];
 }
 
-function dayKindMin(data: ScheduleData, day: number, kind: RoutineBlock["kind"]) {
-  return data.routine
-    .filter((r) => r.day === day && r.kind === kind)
-    .reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
-}
-
 function buildLedger(data: ScheduleData): ScheduleData["ledger"] {
+  const catSet = new Set(data.routine.map((r) => r.kind));
+  const catCount = catSet.size;
+
   const totalRoutineMin = data.routine.reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
-  const deepMin = data.routine
-    .filter((r) => r.kind === "deep")
-    .reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
-  const recoveryMin = data.routine
-    .filter((r) => r.kind === "recovery")
-    .reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
 
-  const deepWeekdays = new Set(
-    data.routine.filter((r) => r.kind === "deep" && r.day >= 1 && r.day <= 5).map((r) => r.day),
-  ).size;
+  const maxCatMin = Math.max(1, ...data.categories.map((c) =>
+    data.routine.filter((r) => r.kind === c.id)
+      .reduce((s, r) => s + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0)
+  ));
+  const topCatRatio = maxCatMin / Math.max(1, totalRoutineMin);
 
-  const depthScore = clamp(Math.round((deepMin / (10 * 60)) * 100));
-  const cadenceScore = clamp(Math.round((deepWeekdays / 5) * 100));
-  const recoveryScore = clamp(Math.round((recoveryMin / (3 * 60)) * 100));
+  const weekdays = [1, 2, 3, 4, 5];
+  const dayMins = weekdays.map((d) =>
+    data.routine.filter((r) => r.day === d)
+      .reduce((s, r) => s + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0)
+  );
+  const avgDayMin = dayMins.reduce((s, v) => s + v, 0) / Math.max(1, dayMins.length);
+  const variance = dayMins.reduce((s, v) => s + (v - avgDayMin) ** 2, 0) / Math.max(1, dayMins.length);
+  const consistencyScore = clamp(Math.round((1 - Math.min(1, Math.sqrt(variance) / Math.max(1, avgDayMin))) * 100));
+  const loadScore = clamp(Math.round((totalRoutineMin / (40 * 60)) * 100));
+  const varietyScore = clamp(Math.round((catCount / Math.max(1, data.categories.length)) * 100));
+
   const compositionScore = clamp(
-    Math.round(depthScore * 0.45 + cadenceScore * 0.3 + recoveryScore * 0.25),
+    Math.round(loadScore * 0.45 + consistencyScore * 0.3 + varietyScore * 0.25),
   );
 
   const metrics = [
-    { label: "Depth", value: depthScore },
-    { label: "Cadence", value: cadenceScore },
-    { label: "Recovery", value: recoveryScore },
+    { label: "Load", value: loadScore },
+    { label: "Consistency", value: consistencyScore },
+    { label: "Variety", value: varietyScore },
   ];
 
-  const deepHours = Array.from({ length: 14 }, (_, i) => {
+  const scheduledHours = Array.from({ length: 14 }, (_, i) => {
     const d = i % 7;
-    return Number((dayKindMin(data, d, "deep") / 60).toFixed(1));
-  });
-  const recoveryHours = Array.from({ length: 14 }, (_, i) => {
-    const d = i % 7;
-    return Number((dayKindMin(data, d, "recovery") / 60).toFixed(1));
+    const total = data.routine
+      .filter((r) => r.day === d)
+      .reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
+    return Number((total / 60).toFixed(1));
   });
 
-  void totalRoutineMin;
-  return { compositionScore, metrics, deepHours, recoveryHours };
+  return { compositionScore, metrics, scheduledHours };
 }
 
 function sortedDayBlocks(routine: RoutineBlock[], day: number) {
@@ -586,6 +586,7 @@ interface Ctx {
   updateCommitment: (id: string, patch: Partial<Commitment>) => string | null;
   pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number, dragEdge?: "top" | "bottom") => string | null;
   setSleepBoundaryEnforced: (enforced: boolean) => void;
+  setFocusCategories: (ids: string[]) => void;
   updateSleepWindow: (patch: Partial<{ start: string; end: string }>) => void;
   updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
@@ -1091,6 +1092,14 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     ));
   }, [locale]);
 
+  const setFocusCategories = useCallback((ids: string[]) => {
+    setData((d) => withDerived(
+      { ...d, meta: { ...d.meta, focusCategoryIds: ids.length > 0 ? ids : undefined } },
+      false,
+      locale,
+    ));
+  }, [locale]);
+
   const updateSleepSchedule = useCallback((schedule: SleepScheduleEntry[]) => {
     setData((d) => {
       // Keep sleepWindow in sync with the first all-day entry for legacy compat
@@ -1193,6 +1202,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCommitment,
       pushMoveDayChain,
       setSleepBoundaryEnforced,
+      setFocusCategories,
       updateSleepWindow,
       updateSleepSchedule,
       addSleepCut,
@@ -1215,6 +1225,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCommitment,
       pushMoveDayChain,
       setSleepBoundaryEnforced,
+      setFocusCategories,
       updateSleepWindow,
       updateSleepSchedule,
       addSleepCut,

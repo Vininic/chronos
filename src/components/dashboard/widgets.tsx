@@ -1,4 +1,4 @@
-import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon } from "lucide-react";
+import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target } from "lucide-react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
+
 
 function categoryLabel(
   data: ReturnType<typeof useSchedule>["data"],
@@ -353,9 +354,39 @@ export function FocusBlocksCard() {
   const t = useT();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
+  const focusIds = data.meta.focusCategoryIds ?? [];
   const today = new Date();
-  const todays = buildAgendaForDate(data, today).filter((a) => a.kind === "deep");
-  const totalMin = todays.reduce((s, a) => s + durationMin(a.start, a.end), 0);
+
+  if (focusIds.length === 0) {
+    return (
+      <div className="chronos-card p-6 h-full flex flex-col">
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
+            <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.focusToday}</h3>
+          </div>
+        </div>
+        <div className="flex-1 grid place-items-center">
+          <p className="text-sm text-muted-foreground text-center max-w-[20ch] leading-relaxed">
+            {t.chronos.widgets.focusPickCategory}
+          </p>
+        </div>
+        <Link
+          to="/dashboard/settings"
+          className="w-full h-10 rounded-md border border-secondary/30 bg-primary text-primary-foreground text-sm hover:bg-primary-deep inline-flex items-center justify-center gap-2 shadow-sm"
+        >
+          {t.chronos.widgets.openFocusRoom}
+        </Link>
+      </div>
+    );
+  }
+
+  const agenda = buildAgendaForDate(data, today).filter(
+    (a) => focusIds.includes(a.kind) && durationMin(a.start, a.end) >= 15,
+  );
+  const sorted = [...agenda].sort((a, b) => durationMin(b.start, b.end) - durationMin(a.start, a.end));
+  const top = sorted.slice(0, 5);
+  const totalMin = top.reduce((s, a) => s + durationMin(a.start, a.end), 0);
 
   return (
     <div className="chronos-card p-6 h-full flex flex-col">
@@ -364,13 +395,13 @@ export function FocusBlocksCard() {
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
           <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.focusToday}</h3>
         </div>
-        <span className="text-xs text-muted-foreground num">{t.chronos.widgets.focusComposed(todays.length, fmtDur(totalMin))}</span>
+        <span className="text-xs text-muted-foreground num">{t.chronos.widgets.focusComposed(top.length, fmtDur(totalMin))}</span>
       </div>
-      {todays.length === 0 ? (
+      {top.length === 0 ? (
         <p className="mt-5 text-sm text-muted-foreground italic">{t.chronos.widgets.focusEmpty}</p>
       ) : (
         <ul className="mt-5 space-y-3">
-          {todays.map((s) => {
+          {top.map((s) => {
             const dur = durationMin(s.start, s.end);
             const pct = Math.min(100, Math.round((dur / 120) * 100));
             return (
@@ -404,18 +435,76 @@ export function FocusBlocksCard() {
   );
 }
 
-/* ---------------- Deep / recovery balance ---------------- */
+export const TAILWIND_TO_HEX: Record<string, string> = {
+  "bg-amber-500": "#f59e0b",
+  "bg-blue-500": "#3b82f6",
+  "bg-violet-500": "#8b5cf6",
+  "bg-emerald-500": "#10b981",
+  "bg-slate-400": "#94a3b8",
+  "bg-indigo-400": "#818cf8",
+};
+
+/* ---------------- Focus vs other chart ---------------- */
 export function BalanceCard() {
   const { data } = useSchedule();
   const t = useT();
-  const deep = data.ledger.deepHours;
-  const recovery = data.ledger.recoveryHours;
-  const max = Math.max(...deep, ...recovery);
+  const fmtDur = useFmtDur();
+  const DAYS = 14;
+  const focusIds = data.meta.focusCategoryIds ?? [];
+
+  if (focusIds.length === 0) {
+    return (
+      <div className="chronos-card p-6 h-full flex flex-col">
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.equilibrium}</div>
+            <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.balanceTitle}</h3>
+          </div>
+        </div>
+        <div className="flex-1 grid place-items-center">
+          <p className="text-sm text-muted-foreground text-center max-w-[20ch] leading-relaxed">
+            {t.chronos.widgets.focusPickCategory}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const allCats = new Set(data.categories.map((c) => c.id));
+  const dayMin = (day: number, id: string) =>
+    data.routine
+      .filter((r) => r.day === day && r.kind === id)
+      .reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
+  const dayMinAll = (day: number, ids: Set<string>) =>
+    data.routine
+      .filter((r) => r.day === day && ids.has(r.kind))
+      .reduce((sum, r) => sum + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
+
+  const focusLines = focusIds.map((id) => {
+    const dayMins = Array.from({ length: DAYS }, (_, i) => dayMin(i % 7, id));
+    const hours = dayMins.map((m) => Math.round(m / 6) / 10);
+    const totalMin = Math.round(dayMins.reduce((s, v) => s + v, 0) / 2);
+    const style = kindStyle[id as BlockKind];
+    const colorKey = style?.dot ?? "bg-primary";
+    const color = TAILWIND_TO_HEX[colorKey] ?? "hsl(var(--primary))";
+    const name = t.common.kinds[id] ?? data.categories.find((c) => c.id === id)?.label ?? id;
+    return { hours, totalMin, color, name };
+  });
+
+  const otherSet = new Set([...allCats].filter((c) => !focusIds.includes(c)));
+  const otherDayMins = Array.from({ length: DAYS }, (_, i) => dayMinAll(i % 7, otherSet));
+  const otherHours = otherDayMins.map((m) => Math.round(m / 6) / 10);
+  const otherTotalMin = Math.round(otherDayMins.reduce((s, v) => s + v, 0) / 2);
+
+  const max = Math.max(...focusLines.flatMap((l) => l.hours), ...otherHours, 1);
   const W = 320, H = 120, P = 8;
-  const x = (i: number) => P + (i / (deep.length - 1)) * (W - 2 * P);
+  const x = (i: number) => P + (i / (DAYS - 1)) * (W - 2 * P);
   const y = (v: number) => H - P - (v / max) * (H - 2 * P);
-  const path = (arr: number[]) => arr.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
-  const avg = (arr: number[]) => (arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1);
+  const makePath = (hours: number[]) =>
+    hours.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
+  const lastIdx = DAYS - 1;
+  const OTHER_COLOR = "#94a3b8";
+
   return (
     <div className="chronos-card p-6 h-full flex flex-col">
       <div className="flex items-end justify-between gap-4">
@@ -423,48 +512,64 @@ export function BalanceCard() {
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.equilibrium}</div>
           <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.balanceTitle}</h3>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-primary" /> {t.chronos.widgets.deep}</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-emerald-700" /> {t.chronos.widgets.recovery}</span>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap justify-end">
+          {focusLines.map((l) => (
+            <span key={l.name} className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-3 rounded-sm" style={{ backgroundColor: l.color }} /> {l.name}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-3 rounded-sm" style={{ backgroundColor: OTHER_COLOR }} /> {t.chronos.widgets.other}
+          </span>
         </div>
       </div>
       <div className="mt-5 flex-1">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-36">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
           <defs>
-            <linearGradient id="deepFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.32" />
-              <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="recoveryFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#047857" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="#047857" stopOpacity="0" />
+            {focusLines.map((_, i) => (
+              <linearGradient key={`fg-${i}`} id={`focusFill-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={focusLines[i].color} stopOpacity="0.32" />
+                <stop offset="100%" stopColor={focusLines[i].color} stopOpacity="0" />
+              </linearGradient>
+            ))}
+            <linearGradient id="otherFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={OTHER_COLOR} stopOpacity="0.28" />
+              <stop offset="100%" stopColor={OTHER_COLOR} stopOpacity="0" />
             </linearGradient>
           </defs>
-          {/* baseline ticks */}
           {[0.25, 0.5, 0.75].map((f) => (
             <line key={f} x1={P} x2={W - P} y1={P + f * (H - 2 * P)} y2={P + f * (H - 2 * P)} stroke="hsl(var(--border))" strokeWidth="0.5" strokeDasharray="2 4" />
           ))}
-          <path d={`${path(recovery)} L ${x(recovery.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#recoveryFill)" />
-          <path d={`${path(deep)} L ${x(deep.length - 1)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#deepFill)" />
-          <path d={path(deep)} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
-          <path d={path(recovery)} fill="none" stroke="#047857" strokeWidth="2" strokeDasharray="4 3" />
-          {/* end-point markers */}
-          <circle cx={x(deep.length - 1)} cy={y(deep[deep.length - 1])} r="3" fill="hsl(var(--primary))" />
-          <circle cx={x(recovery.length - 1)} cy={y(recovery[recovery.length - 1])} r="3" fill="#047857" />
+          <path d={`${makePath(otherHours)} L ${x(lastIdx)} ${H - P} L ${x(0)} ${H - P} Z`} fill="url(#otherFill)" />
+          <path d={makePath(otherHours)} fill="none" stroke={OTHER_COLOR} strokeWidth="2" strokeDasharray="4 3" />
+          <circle cx={x(lastIdx)} cy={y(otherHours[lastIdx])} r="3" fill={OTHER_COLOR} />
+          {focusLines.map((l, i) => (
+            <g key={l.name}>
+              <path d={`${makePath(l.hours)} L ${x(lastIdx)} ${H - P} L ${x(0)} ${H - P} Z`} fill={`url(#focusFill-${i})`} />
+              <path d={makePath(l.hours)} fill="none" stroke={l.color} strokeWidth="2" />
+              <circle cx={x(lastIdx)} cy={y(l.hours[lastIdx])} r="3" fill={l.color} />
+            </g>
+          ))}
         </svg>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3">
+      <div className="mt-3 grid grid-cols-1 gap-2">
+        {focusLines.map((l) => (
+          <div key={l.name} className="rounded-md bg-surface-raised border p-3">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} /> {t.chronos.widgets.total}
+            </div>
+            <div className="font-display text-xl text-primary mt-0.5 num">
+              {fmtDur(l.totalMin)} <span className="text-xs text-muted-foreground font-sans">{l.name}</span>
+            </div>
+          </div>
+        ))}
         <div className="rounded-md bg-surface-raised border p-3">
           <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-primary" /> {t.chronos.widgets.deep}
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: OTHER_COLOR }} /> {t.chronos.widgets.total}
           </div>
-          <div className="font-display text-xl text-primary mt-0.5 num">{avg(deep)}h <span className="text-xs text-muted-foreground font-sans">{t.chronos.widgets.avg}</span></div>
-        </div>
-        <div className="rounded-md bg-surface-raised border p-3">
-          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-emerald-700" /> {t.chronos.widgets.recovery}
+          <div className="font-display text-xl text-primary mt-0.5 num">
+            {fmtDur(otherTotalMin)} <span className="text-xs text-muted-foreground font-sans">{t.chronos.widgets.other}</span>
           </div>
-          <div className="font-display text-xl text-primary mt-0.5 num">{avg(recovery)}h <span className="text-xs text-muted-foreground font-sans">{t.chronos.widgets.avg}</span></div>
         </div>
       </div>
     </div>
@@ -477,19 +582,25 @@ export function OptimizationStrip() {
   const t = useT();
   const fmtDur = useFmtDur();
   const totalRoutineMin = data.routine.reduce((s, b) => s + durationMin(b.start, b.end), 0);
-  const deepMin = data.routine.filter((r) => r.kind === "deep").reduce((s, b) => s + durationMin(b.start, b.end), 0);
-  const meetingMin = data.routine.filter((r) => r.kind === "meeting").reduce((s, b) => s + durationMin(b.start, b.end), 0);
-  const recoveryMin = data.routine.filter((r) => r.kind === "recovery").reduce((s, b) => s + durationMin(b.start, b.end), 0);
+  const catMins = data.categories.map((c) => ({
+    id: c.id,
+    min: data.routine.filter((r) => r.kind === c.id).reduce((s, b) => s + durationMin(b.start, b.end), 0),
+  }));
+  const topCat = catMins.reduce((best, c) => (c.min > best.min ? c : best), { id: "", min: 0 });
+  const activeDaysSet = new Set<number>();
+  data.routine.forEach((r) => activeDaysSet.add(r.day));
+  const activeDays = activeDaysSet.size;
+  const catUsedCount = catMins.filter((c) => c.min > 0).length;
   const cards = [
     { k: t.chronos.widgets.composedWeekly, v: fmtDur(totalRoutineMin), d: t.chronos.widgets.composedWeeklyDesc(data.routine.length), trend: t.chronos.widgets.thisWeek },
-    { k: t.chronos.widgets.deepRatio,      v: `${Math.round((deepMin / Math.max(1, totalRoutineMin)) * 100)}%`, d: t.chronos.widgets.deepRatioDesc, trend: t.chronos.widgets.deepRatioTrend },
-    { k: t.chronos.widgets.meetingLoad,    v: fmtDur(meetingMin), d: t.chronos.widgets.meetingLoadDesc, trend: t.chronos.widgets.weekly },
-    { k: t.chronos.widgets.recoveryDebt,   v: recoveryMin >= 120 ? t.chronos.widgets.recoveryDebtCleared : fmtDur(120 - recoveryMin), d: t.chronos.widgets.recoveryDebtDesc, trend: t.chronos.widgets.outstanding },
+    { k: t.chronos.widgets.topCat,         v: `${Math.round((topCat.min / Math.max(1, totalRoutineMin)) * 100)}%`, d: t.chronos.widgets.topCatDesc, trend: t.chronos.widgets.topCatTrend },
+    { k: t.chronos.widgets.daySpread,      v: `${activeDays} / 7`, d: t.chronos.widgets.daySpreadDesc, trend: t.chronos.widgets.daySpreadBase },
+    { k: t.chronos.widgets.catUsed,        v: catUsedCount === data.categories.length ? t.chronos.widgets.catUsedAll : `${catUsedCount} / ${data.categories.length}`, d: t.chronos.widgets.catUsedDesc, trend: t.chronos.widgets.catUsedTrend },
   ];
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {cards.map((c) => (
-        <div key={c.k} className="chronos-card p-5">
+        <div key={c.k} className="chronos-card p-5 cursor-default" tabIndex={-1}>
           <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{c.k}</div>
           <div className="font-display text-3xl text-primary mt-1.5 num">{c.v}</div>
           <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{c.d}</p>
@@ -499,6 +610,41 @@ export function OptimizationStrip() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ---------------- Focus categories inline picker ---------------- */
+export function FocusCategoryPicker() {
+  const { data, setFocusCategories } = useSchedule();
+  const t = useT();
+  const scheduleText = useScheduleText();
+  const selected = data.meta.focusCategoryIds ?? [];
+  function toggle(id: string) {
+    const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+    setFocusCategories(next);
+  }
+  return (
+    <div className="space-y-1.5">
+      {data.categories.map((c) => {
+        const on = selected.includes(c.id);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => toggle(c.id)}
+            className={`w-full flex items-center gap-3 rounded-md border px-3 py-2 text-sm text-left transition-colors ${
+              on
+                ? "border-primary/50 bg-primary/5 text-primary"
+                : "border-border/60 text-muted-foreground hover:border-border hover:text-primary"
+            }`}
+          >
+            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${on ? kindStyle[c.id as BlockKind]?.dot ?? "bg-primary" : "bg-secondary/40"}`} />
+            <span className="flex-1">{scheduleText.categoryLabel(c.id, c.label, c.labelCustom)}</span>
+            {on && <Check className="h-3.5 w-3.5 text-primary" />}
+          </button>
+        );
+      })}
     </div>
   );
 }

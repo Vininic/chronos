@@ -64,7 +64,7 @@ function makeData(overrides?: Partial<ScheduleData>): ScheduleData {
     routine: overrides?.routine ?? [],
     commitments: overrides?.commitments ?? [],
     suggestions: [],
-    ledger: { compositionScore: 0, metrics: [], deepHours: [], recoveryHours: [] },
+    ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
     ...overrides,
   };
 }
@@ -183,7 +183,7 @@ describe("pushMoveDayChain — cross-day boundary constraints", () => {
       ],
       commitments: [],
       suggestions: [],
-      ledger: { compositionScore: 0, metrics: [], deepHours: [], recoveryHours: [] },
+      ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
     };
     // Tuesday = day 2
     const agenda = buildAgendaForDate(data, new Date("2026-06-02T12:00:00"));

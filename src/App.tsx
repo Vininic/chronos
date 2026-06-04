@@ -16,6 +16,7 @@ import Atlas from "./pages/dashboard/Atlas";
 import Settings from "./pages/dashboard/Settings";
 import Support from "./pages/dashboard/Support";
 import { ScheduleProvider } from "@/lib/schedule/store";
+import { TimerProvider } from "@/lib/timer/TimerContext";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
@@ -37,6 +38,7 @@ const App = () => (
           <BrowserRouter>
             <AuthProvider>
               <ScheduleProvider>
+                <TimerProvider>
                 <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
@@ -52,6 +54,7 @@ const App = () => (
               </Route>
               <Route path="*" element={<NotFound />} />
                 </Routes>
+                </TimerProvider>
               </ScheduleProvider>
             </AuthProvider>
           </BrowserRouter>

@@ -26,7 +26,7 @@ const baseData: ScheduleData = {
   ],
   commitments: [],
   suggestions: [],
-  ledger: { compositionScore: 0, metrics: [], deepHours: [], recoveryHours: [] },
+  ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
 };
 
 describe("crossday schedule boundaries", () => {

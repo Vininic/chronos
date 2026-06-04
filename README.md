@@ -390,7 +390,14 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Better overflow transitions
 - [x] Responsive timeline max-height (adapts to viewport via ResizeObserver)
 - [x] Unified time selection combobox (Command+Popover) replacing flat Select / native inputs
+- [x] Focus card: user-picks-focus-category via Settings; blank state prompts to pick one
+- [x] Focus page: also uses user-picked focus category; blank state when unset
+- [x] Today composition bar: 24h horizontal bar (sleep · blocks · free), markers at 6/12/18/24
+- [x] Settings: focus category picker dropdown in preferences, saved immediately
+- [x] Category-agnostic OptimizationStrip (dynamic per-category stats, no hardcoded deep/meeting/recovery)
+- [x] Category-agnostic ledger metrics (Load / Consistency / Variety replacing Depth / Cadence / Recovery)
 - [ ] Integrate Atlas (commitments) into Today page: commitment card with add button, highlighted commitments, next commitment, and loose (undated) commitment blocks draggable into DayPlanner timeline
+- [ ] Add block type categories section from Settings to main page and refinements
 
 ---
 
