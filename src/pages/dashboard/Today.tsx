@@ -4,19 +4,15 @@ import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, Optimizati
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
-import { useI18n, useT } from "@/lib/i18n/I18nProvider";
+import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
-import { ChevronDown, Plus, Trash2, Brain, Pencil, Upload, Download, CalendarDays, FileJson, RotateCcw, LogOut, Target, X, Check } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Brain, Pencil, X, Check } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TimeSelect } from "@/components/ui/time-select";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { exportToICS, exportToJSON, exportToXLSX } from "@/lib/schedule/export";
-import { LanguageToggle } from "@/components/suite/LanguageToggle";
-import { ThemeToggle } from "@/components/suite/ThemeToggle";
 
 function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
   const h = Math.floor(totalMin / 60);
@@ -29,10 +25,9 @@ function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
 export default function Today() {
   const { session } = useAuth();
   const { data, addCommitment, removeCommitment, updateCategory, resetCategoryNaming } = useSchedule();
-  const { bcp47, locale } = useI18n();
+  const { bcp47 } = useI18n();
   const t = useT();
   const scheduleText = useScheduleText();
-  const navigate = useNavigate();
   const firstName = session?.name?.trim().split(/\s+/)[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? t.chronos.today.greetingMorning : hour < 18 ? t.chronos.today.greetingAfternoon : t.chronos.today.greetingEvening;
@@ -107,6 +102,7 @@ export default function Today() {
         removeCommitment={removeCommitment}
         t={t}
         bcp47={bcp47}
+        isPt={isPt}
         scheduleText={scheduleText}
       />
 
@@ -164,7 +160,7 @@ function NowNextCards({
   );
 }
 
-function CommitmentCard({ data, addCommitment, removeCommitment, t, bcp47, scheduleText }: any) {
+function CommitmentCard({ data, addCommitment, removeCommitment, t, bcp47, isPt, scheduleText }: any) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [start, setStart] = useState("10:00");
   const [end, setEnd] = useState("11:00");
@@ -354,5 +350,3 @@ function CategorySection({ data, updateCategory, resetCategoryNaming, t, schedul
     </section>
   );
 }
-
-const isPt = (bcp47: string) => bcp47.toLowerCase().startsWith("pt");
