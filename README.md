@@ -396,8 +396,16 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Settings: focus category picker dropdown in preferences, saved immediately
 - [x] Category-agnostic OptimizationStrip (dynamic per-category stats, no hardcoded deep/meeting/recovery)
 - [x] Category-agnostic ledger metrics (Load / Consistency / Variety replacing Depth / Cadence / Recovery)
+
+---
+
+## Page Overhaul
+- [ ] Rearrange/Repurpose page section structuring, reduce unecessary pages, rearrange content (List content to make cohesive changes)
 - [ ] Integrate Atlas (commitments) into Today page: commitment card with add button, highlighted commitments, next commitment, and loose (undated) commitment blocks draggable into DayPlanner timeline
-- [ ] Add block type categories section from Settings to main page and refinements
+- [ ] Profile button (no function currently) repurposement
+- [ ] File selector with small preview horizontal slider (akin to save files)
+- [ ] Integrate block category creation section (from settings) into main page
+- [ ] Refine category creation section from config page (mini block previews, better color picking and UI, etc) - move into main page
 
 ---
 
