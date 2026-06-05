@@ -82,6 +82,7 @@ export default function Today() {
       </header>
 
       <NowNextCards
+        t={t}
         displayCurrentBlock={displayCurrentBlock}
         displayNextBlock={displayNextBlock}
         currentBlock={currentBlock}
@@ -131,7 +132,7 @@ export default function Today() {
 }
 
 function NowNextCards({
-  displayCurrentBlock, displayNextBlock, currentBlock, nextBlock, jumpToBlock,
+  t, displayCurrentBlock, displayNextBlock, currentBlock, nextBlock, jumpToBlock,
   nextLabel, emptyNowLabel, emptyNextLabel, fmtFriendlyDuration, isPt, scheduleText, bcp47,
 }: any) {
   return (
