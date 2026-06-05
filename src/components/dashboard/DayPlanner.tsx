@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
 import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
@@ -239,7 +239,12 @@ function useNowMin() {
   return n;
 }
 
-export function DayPlanner() {
+export interface DayPlannerHandle {
+  scrollToNow(): void;
+  scrollToMinute(minute: number, block?: "start" | "center" | "end"): void;
+}
+
+export const DayPlanner = forwardRef<DayPlannerHandle, {}>(function DayPlanner(_props, ref) {
   const { data, pushMoveDayChain, updateRoutine, updateSleepSchedule, setSleepBoundaryEnforced, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
@@ -264,7 +269,6 @@ export function DayPlanner() {
   );
 
   // ── Sleep schedule for this day ─────────────────────────────────────────────
-  const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
   const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
   const sleepEntry = getSleepWindowForDay(sleepSchedule, selectedDate.getDay());
 
@@ -273,6 +277,8 @@ export function DayPlanner() {
   const effectiveSleepEntry = sleepEntry && sleepEntry.start !== sleepEntry.end ? sleepEntry : null;
   const sleepStartMin = effectiveSleepEntry ? timeToMinutes(effectiveSleepEntry.start) : 0;
   const sleepEndMin   = effectiveSleepEntry ? timeToMinutes(effectiveSleepEntry.end) : 0;
+  // Enforce sleep boundary when there's a valid sleep window (not explicitly disabled via meta)
+  const enforceSleepBoundary = effectiveSleepEntry !== null && data.meta.enforceSleepBoundary !== false;
   const hasCrossDaySleep = enforceSleepBoundary && effectiveSleepEntry !== null && sleepStartMin > sleepEndMin;
   const hasSameDaySleep  = enforceSleepBoundary && effectiveSleepEntry !== null && sleepStartMin < sleepEndMin;
   const wakeOnlySleep = hasSameDaySleep && effectiveSleepEntry?.start === "00:00" && effectiveSleepEntry?.end !== "00:00";
@@ -339,10 +345,12 @@ export function DayPlanner() {
   if (endMin - startMin < 60) { startMin = defaultStartMin; endMin = defaultEndMin; }
   if (endMin - startMin < 60) { startMin = 0; endMin = 24 * 60; }
 
-  // For today: ensure "now" is always in view
-  if (isToday && enforceSleepBoundary) {
-    startMin = Math.min(startMin, Math.max(0, nowMin - 60));
-    endMin   = Math.max(endMin,   Math.min(24 * 60, nowMin + 60));
+  // For today: ensure "now" is always in view (but stay within sleep boundary)
+  if (isToday && enforceSleepBoundary && effectiveSleepEntry) {
+    const boundStart = hasCrossDaySleep ? sleepEndMin : sleepStartMin;
+    const boundEnd   = hasCrossDaySleep ? sleepStartMin : sleepEndMin;
+    startMin = Math.min(startMin, Math.max(boundStart, nowMin - 60));
+    endMin   = Math.max(endMin,   Math.min(boundEnd,   nowMin + 60));
   }
 
   const sleepSplits = useMemo(() => {
@@ -509,6 +517,16 @@ export function DayPlanner() {
       behavior: "smooth",
     });
   }
+
+  useImperativeHandle(ref, () => ({
+    scrollToNow: jumpToNow,
+    scrollToMinute(minute: number, block: "start" | "center" | "end" = "center") {
+      if (!scrollRef.current) return;
+      const top = ((projectMinute(minute) - projectMinute(startMin)) / 60) * HOUR_PX + topBadgeLane;
+      const offset = block === "center" ? -100 : block === "end" ? 0 : -200;
+      scrollRef.current.scrollTo({ top: Math.max(0, top + offset), behavior: "smooth" });
+    },
+  }), [startMin, topBadgeLane]);
 
   function clearDragState() {
     dragState.current = null;
@@ -1010,7 +1028,7 @@ export function DayPlanner() {
         </div>
       </div>
 
-      <div ref={scrollRef} className="overflow-y-auto" style={{ maxHeight: timelineMaxH }}>
+      <div id="dayplanner-scroll" ref={scrollRef} className="overflow-y-auto" style={{ maxHeight: timelineMaxH }}>
         <div className="relative" style={{ height: timelineHeight, userSelect: draggingId ? "none" : undefined }}>
           {showStartBoundaryMarker && (
             <div
@@ -1591,7 +1609,7 @@ export function DayPlanner() {
       )}
     </div>
   );
-}
+});
 
 function BlockDetailsDialog({
   item,

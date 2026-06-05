@@ -53,11 +53,11 @@ export default function DashboardLayout() {
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 chronos-surface overflow-y-auto overflow-x-hidden">
-          <div className="p-6 lg:p-8">
+        <main className="flex-1 chronos-surface overflow-y-auto overflow-x-hidden flex flex-col">
+          <div className="flex-1 p-6 lg:p-8">
             <Outlet />
           </div>
-          <footer className="py-8 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <footer className="py-8 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground shrink-0">
             Chronos · by Vinicius
           </footer>
         </main>

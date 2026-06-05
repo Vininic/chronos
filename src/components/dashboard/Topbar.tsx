@@ -1,27 +1,18 @@
-import { Search, Bell, LogOut, Download, Upload, CalendarDays, FileJson, RotateCcw } from "lucide-react";
+import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { buildAgendaForDate, useSchedule } from "@/lib/schedule/store";
-import { useAuth } from "@/lib/auth";
-import { useDateFormat, useI18n, useT } from "@/lib/i18n/I18nProvider";
+import { useDateFormat, useT } from "@/lib/i18n/I18nProvider";
+import { toast } from "@/hooks/use-toast";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
+import { timeToMinutes } from "@/lib/schedule/types";
 import { LanguageToggle } from "@/components/suite/LanguageToggle";
 import { ThemeToggle } from "@/components/suite/ThemeToggle";
-import { timeToMinutes } from "@/lib/schedule/types";
-import { toast } from "@/hooks/use-toast";
-import { exportToICS, exportToJSON, exportToXLSX } from "@/lib/schedule/export";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 export default function Topbar() {
-  const { data, replace, resetToSeed } = useSchedule();
-  const { session, signOut } = useAuth();
+  const { data } = useSchedule();
   const t = useT();
-  const { locale } = useI18n();
   const fmt = useDateFormat();
   const scheduleText = useScheduleText();
   const today = fmt.long(new Date());
@@ -30,19 +21,8 @@ export default function Topbar() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [dueFocus, setDueFocus] = useState<{ title: string; start: string } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLDivElement>(null);
   const remindedRef = useRef<Set<string>>(new Set());
-
-  function importJSON(file: File) {
-    file.text().then((txt) => {
-      try {
-        const next = JSON.parse(txt);
-        if (!next.routine || !Array.isArray(next.routine)) throw new Error("Invalid file");
-        replace(next); toast({ title: t.chronos.settings.imported });
-      } catch (e: any) { toast({ title: t.chronos.settings.importFail, description: e.message ?? String(e) }); }
-    });
-  }
 
   useEffect(() => {
     function onClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
@@ -159,76 +139,7 @@ export default function Topbar() {
         )}
         <LanguageToggle />
         <ThemeToggle />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="h-10 w-10 rounded-md border border-border bg-background grid place-items-center hover:bg-secondary/10 relative">
-              <Bell className="h-4 w-4 text-primary" />
-              {data.suggestions.length > 0 && <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-secondary" />}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel className="font-display text-base">{t.common.notifications}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {data.suggestions.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground italic">{t.common.allQuiet}</div>
-            ) : data.suggestions.map((s) => (
-              <DropdownMenuItem key={s.id} onClick={() => navigate("/dashboard/aetheris")} className="flex flex-col items-start gap-0.5 py-2">
-                <div className="text-sm text-primary">{s.title}</div>
-                <div className="text-[11px] text-muted-foreground">{s.impact}</div>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
         <ComposeBlockDialog />
-        {session && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-10 w-10 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold">
-                {session.name.charAt(0)}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>
-                <div className="font-display text-base text-primary">{session.name}</div>
-                <div className="text-[11px] text-muted-foreground">{scheduleText.cycleName(data.meta.cycle.name)} · #{data.meta.cycle.number}</div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <div className="px-2 py-1.5 space-y-2">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground px-2">{t.chronos.settings.appearance}</div>
-                <div className="flex items-center justify-between px-2">
-                  <span className="text-sm text-muted-foreground">{t.chronos.settings.languageLabel}</span>
-                  <LanguageToggle />
-                </div>
-                <div className="flex items-center justify-between px-2">
-                  <span className="text-sm text-muted-foreground">{t.chronos.settings.themeLabel}</span>
-                  <ThemeToggle />
-                </div>
-              </div>
-              <DropdownMenuSeparator />
-              <div className="px-2 py-1.5 space-y-1.5">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground px-2">{t.chronos.settings.export}</div>
-                <div className="grid grid-cols-3 gap-1 px-2">
-                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToXLSX(data, "chronos-schedule.xlsx", locale); toast({ title: t.chronos.settings.xlsxExported }); }}><Download className="h-3 w-3 mr-0.5" /> XLSX</Button>
-                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToICS(data); toast({ title: t.chronos.settings.icsExported }); }}><CalendarDays className="h-3 w-3 mr-0.5" /> ICS</Button>
-                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToJSON(data); toast({ title: t.chronos.settings.jsonExported }); }}><FileJson className="h-3 w-3 mr-0.5" /> JSON</Button>
-                </div>
-              </div>
-              <DropdownMenuSeparator />
-              <div className="px-2 py-1.5 space-y-1.5">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground px-2">{t.chronos.settings.scheduleData}</div>
-                <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importJSON(f); e.currentTarget.value = ""; }} />
-                <div className="grid grid-cols-2 gap-1 px-2">
-                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => fileRef.current?.click()}><Upload className="h-3 w-3 mr-0.5" /> {t.chronos.settings.importJSON}</Button>
-                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { resetToSeed(); toast({ title: t.chronos.settings.resetDone }); }}><RotateCcw className="h-3 w-3 mr-0.5" /> {t.chronos.settings.reset}</Button>
-                </div>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { signOut(); navigate("/login"); }}>
-                <LogOut className="h-4 w-4 mr-2" /> {t.common.signOut}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
     </header>
   );

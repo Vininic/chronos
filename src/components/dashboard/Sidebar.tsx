@@ -1,16 +1,36 @@
-import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp, LogOut, Upload, RotateCcw } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
+import { toast } from "@/hooks/use-toast";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { useRef } from "react";
 
 export default function Sidebar() {
-  const { data } = useSchedule();
-  const { session } = useAuth();
+  const { data, replace, resetToSeed } = useSchedule();
+  const { session, signOut } = useAuth();
   const t = useT();
   const scheduleText = useScheduleText();
+  const navigate = useNavigate();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function importJSON(file: File) {
+    file.text().then((txt) => {
+      try {
+        const next = JSON.parse(txt);
+        if (!next.routine || !Array.isArray(next.routine)) throw new Error("Invalid file");
+        replace(next); toast({ title: t.chronos.settings.imported });
+      } catch (e: any) { toast({ title: t.chronos.settings.importFail, description: e.message ?? String(e) }); }
+    });
+  }
+
   const main = [
     { to: "/dashboard",          label: t.chronos.nav.today,    icon: LayoutDashboard },
     { to: "/dashboard/week",     label: t.chronos.nav.week,     icon: Calendar },
@@ -84,13 +104,32 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-4">
-        <div className="rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3">
-          <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold">{initial}</div>
-          <div className="min-w-0">
-            <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
-            <div className="text-[11px] text-sidebar-foreground/50 truncate">{t.common.appName}</div>
-          </div>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="w-full rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3 hover:bg-sidebar-accent transition-colors text-left">
+              <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold shrink-0">{initial}</div>
+              <div className="min-w-0">
+                <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
+                <div className="text-[11px] text-sidebar-foreground/50 truncate">{t.common.appName}</div>
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="min-w-52">
+            <DropdownMenuLabel className="pb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{t.common.settings}</DropdownMenuLabel>
+            <div className="px-2 py-1.5">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground pb-1">{t.chronos.settings.scheduleData}</div>
+              <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importJSON(f); e.currentTarget.value = ""; }} />
+              <div className="flex gap-1">
+                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 flex-1" onClick={() => fileRef.current?.click()}><Upload className="h-3 w-3 mr-1" /> {t.chronos.settings.importJSON}</Button>
+                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2" onClick={() => { resetToSeed(); toast({ title: t.chronos.settings.resetDone }); }}><RotateCcw className="h-3 w-3 mr-1" /> {t.chronos.settings.reset}</Button>
+              </div>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => { signOut(); navigate("/login"); }}>
+              <LogOut className="h-4 w-4 mr-2" /> {t.common.signOut}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </aside>
   );

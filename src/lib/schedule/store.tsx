@@ -140,9 +140,12 @@ function migrateSleepSchedule(data: ScheduleData): SleepScheduleEntry[] {
 }
 
 /** Get the sleep window for a specific day-of-week (0=Sun..6=Sat).
- *  Returns the first matching SleepScheduleEntry, or null if none. */
+ *  Returns the first matching SleepScheduleEntry, or null if none.
+ *  Per-day entries always take precedence over all-days entries. */
 export function getSleepWindowForDay(schedule: SleepScheduleEntry[], dayOfWeek: number): SleepScheduleEntry | null {
-  return schedule.find((e) => !e.days || e.days.includes(dayOfWeek)) ?? null;
+  const perDay = schedule.find((e) => e.days?.includes(dayOfWeek));
+  if (perDay) return perDay;
+  return schedule.find((e) => !e.days) ?? null;
 }
 
 /** Normalize sleepWindow (legacy compat). */

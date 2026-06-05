@@ -1,18 +1,25 @@
-import { useState } from "react";
-import { DayPlanner } from "@/components/dashboard/DayPlanner";
+import { useState, useRef } from "react";
+import { DayPlanner, type DayPlannerHandle } from "@/components/dashboard/DayPlanner";
 import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, OptimizationStrip, kindStyle, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
-import { ChevronDown, Plus, Trash2, Brain, Pencil, X, Check } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TimeSelect } from "@/components/ui/time-select";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+function formatClock(time: string, bcp47: string) {
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString(bcp47, { hour: "numeric", minute: "2-digit" });
+}
 
 function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
   const h = Math.floor(totalMin / 60);
@@ -33,30 +40,51 @@ export default function Today() {
   const greeting = hour < 12 ? t.chronos.today.greetingMorning : hour < 18 ? t.chronos.today.greetingAfternoon : t.chronos.today.greetingEvening;
   const dateStr = new Date().toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "long" });
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-  const todayAgenda = buildAgendaForDate(data, new Date()).sort((a, b) => a.start.localeCompare(b.start));
-  const timelineAgenda = todayAgenda.filter((a) => !(a.kind === "sleep" && (a.continuesFromPrevDay || a.continuesToNextDay)));
-  const currentBlock = timelineAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end));
-  const nextTimelineBlock = timelineAgenda.find((a) => timeToMinutes(a.start) > nowMin);
-  const enforceSleepBoundary = data.meta.enforceSleepBoundary !== false;
-  const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
-  const sleepEntry = getSleepWindowForDay(sleepSchedule, new Date().getDay()) ?? sleepSchedule[0];
-  const sleepStartMin = timeToMinutes(sleepEntry.start);
-  const sleepEndMin = timeToMinutes(sleepEntry.end);
-  const sleepSpansNextDay = sleepEndMin <= sleepStartMin;
-  const nextSleepWindow = enforceSleepBoundary && sleepSpansNextDay && nowMin < sleepStartMin
-    ? { id: "next-sleep-window", source: "routine" as const, kind: "sleep" as const, title: "sleep", titleCustom: undefined, start: sleepEntry.start, end: sleepEntry.end, synthetic: true }
-    : null;
-  const nextBlock = nextTimelineBlock ?? nextSleepWindow;
-  const nextLabel = bcp47.toLowerCase().startsWith("pt") ? "Próximo" : "Next";
+  const todayDate = new Date();
+  const dayPlannerRef = useRef<DayPlannerHandle>(null);
+  const todayAgenda = buildAgendaForDate(data, todayDate).sort((a, b) => a.start.localeCompare(b.start));
+  const currentBlock = todayAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end)) ?? null;
+  const nextNonSleep = todayAgenda.find((a) => a.kind !== "sleep" && timeToMinutes(a.start) > nowMin) ?? null;
+  const tomorrow = new Date(todayDate);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowAgenda = buildAgendaForDate(data, tomorrow);
+  const firstTomorrowNonSleep = tomorrowAgenda.find((a) => a.kind !== "sleep") ?? null;
+  const nextBlock = nextNonSleep
+    ?? todayAgenda.find((a) => timeToMinutes(a.start) > nowMin)
+    ?? (currentBlock?.kind !== "sleep" ? todayAgenda.find((a) => a.start === "00:00") : null)
+    ?? firstTomorrowNonSleep
+    ?? null;
   const isPt = bcp47.toLowerCase().startsWith("pt");
+  const isNextFromTomorrow = !nextNonSleep && firstTomorrowNonSleep !== null && nextBlock === firstTomorrowNonSleep;
+  const nextLabel = isPt ? "Próximo" : "Next";
   const emptyNowLabel = isPt ? "Sem bloco atual" : "No current block";
   const emptyNextLabel = isPt ? "Sem próximo bloco" : "No next block";
+
+  const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
+  const sleepEntry = getSleepWindowForDay(sleepSchedule, todayDate.getDay()) ?? sleepSchedule[0];
 
   const routineById = new Map(data.routine.map((r) => [r.id, r]));
   const commitmentById = new Map(data.commitments.map((c) => [c.id, c]));
 
   function resolveDisplayBlock<T extends { id: string; source: "routine" | "commitment"; sourceId?: string; start: string; end: string; title: string; titleCustom?: string; kind: keyof typeof kindStyle }>(block: T | null) {
     if (!block) return null;
+    if (block.kind === "sleep") {
+      // PM segment (bedtime): sleep ends tomorrow morning — use next day's entry for wake time
+      if (block.continuesToNextDay) {
+        const tomorrow = (todayDate.getDay() + 1) % 7;
+        const tmwEntry = getSleepWindowForDay(sleepSchedule, tomorrow);
+        const end = tmwEntry?.end ?? block.end;
+        return { ...block, start: block.start, end };
+      }
+      // AM segment (wake-up): sleep started last night — use previous day's entry for bedtime
+      if (block.continuesFromPrevDay) {
+        const yesterday = (todayDate.getDay() + 6) % 7;
+        const ystEntry = getSleepWindowForDay(sleepSchedule, yesterday);
+        const start = ystEntry?.start ?? block.start;
+        return { ...block, start, end: block.end };
+      }
+      return block;
+    }
     const sourceId = block.sourceId ?? block.id;
     if (block.source === "routine") { const src = routineById.get(sourceId); if (src) return { ...block, start: src.start, end: src.end }; }
     if (block.source === "commitment") { const src = commitmentById.get(sourceId); if (src) return { ...block, start: src.start, end: src.end }; }
@@ -64,9 +92,17 @@ export default function Today() {
   }
 
   const displayCurrentBlock = resolveDisplayBlock(currentBlock ?? null);
-  const displayNextBlock = nextBlock && !("synthetic" in nextBlock) ? resolveDisplayBlock(nextBlock) : nextBlock;
+  const displayNextBlock = resolveDisplayBlock(nextBlock ?? null);
 
-  function jumpToBlock(id: string, source: "routine" | "commitment") {
+  function jumpToBlock(id: string, source: "routine" | "commitment", kind?: string) {
+    if (kind === "sleep") {
+      const block = currentBlock?.kind === "sleep" ? currentBlock : nextBlock;
+      if (block) {
+        const startMin = timeToMinutes(block.start);
+        dayPlannerRef.current?.scrollToMinute(startMin, block.continuesToNextDay ? "end" : "start");
+      }
+      return;
+    }
     const target = document.getElementById(`day-block-${source}-${id}`);
     if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
   }
@@ -95,19 +131,25 @@ export default function Today() {
         isPt={isPt}
         scheduleText={scheduleText}
         bcp47={bcp47}
+        isNextFromTomorrow={isNextFromTomorrow}
       />
 
-      <DayPlanner />
+      <div id="today-dayplanner" className="mt-8 border-t border-border/30 pt-5">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary mb-3">{t.chronos.today.eyebrow}</div>
+        <DayPlanner ref={dayPlannerRef} />
+      </div>
 
-      <CommitmentCard
-        data={data}
-        addCommitment={addCommitment}
-        removeCommitment={removeCommitment}
-        t={t}
-        bcp47={bcp47}
-        isPt={isPt}
-        scheduleText={scheduleText}
-      />
+      <div className="mt-10 border-t border-border/30 pt-5">
+        <CommitmentCard
+          data={data}
+          addCommitment={addCommitment}
+          removeCommitment={removeCommitment}
+          t={t}
+          bcp47={bcp47}
+          isPt={isPt}
+          scheduleText={scheduleText}
+        />
+      </div>
 
       <section className="mt-10">
         <div className="flex items-center gap-2 mb-4">
@@ -120,47 +162,57 @@ export default function Today() {
         </div>
       </section>
 
-      <PerformanceStatsSection />
+      <div className="mt-10 border-t border-border/30 pt-5">
+        <PerformanceStatsSection />
+      </div>
 
-      <section className="mt-10">
-        <AetherisCard compact />
-      </section>
+      <div className="mt-10 border-t border-border/30 pt-5">
+        <section>
+          <AetherisCard compact />
+        </section>
+      </div>
 
-      <CategorySection
-        data={data}
-        updateCategory={updateCategory}
-        resetCategoryNaming={resetCategoryNaming}
-        t={t}
-        scheduleText={scheduleText}
-      />
+      <div className="mt-10 border-t border-border/30 pt-5">
+        <BlockTypeGallery
+          data={data}
+          t={t}
+          scheduleText={scheduleText}
+        />
+      </div>
     </>
   );
 }
 
 function NowNextCards({
   t, displayCurrentBlock, displayNextBlock, currentBlock, nextBlock, jumpToBlock,
-  nextLabel, emptyNowLabel, emptyNextLabel, fmtFriendlyDuration, isPt, scheduleText, bcp47,
+  nextLabel, emptyNowLabel, emptyNextLabel, fmtFriendlyDuration, isPt, scheduleText, bcp47, isNextFromTomorrow,
 }: any) {
+  function cardStyle(kind: string) {
+    if (kind === "sleep") return "border-primary/35 bg-muted/45";
+    const s = kindStyle[kind as keyof typeof kindStyle];
+    return s ? `${s.blockBorder} ${s.blockBg}` : "border-dashed border-border/60 bg-muted/5";
+  }
+
   return (
     <section className="mb-4 grid grid-cols-1 lg:grid-cols-2 gap-3 animate-fade-up">
-      <div className={`rounded-lg border px-4 py-3 ${displayCurrentBlock ? `${kindStyle[displayCurrentBlock.kind].blockBorder} ${kindStyle[displayCurrentBlock.kind].blockBg}` : "border-dashed border-border/60 bg-muted/5"}`}>
+      <div className={`rounded-lg border px-4 py-3 ${displayCurrentBlock ? cardStyle(displayCurrentBlock.kind) : "border-dashed border-border/60 bg-muted/5"}`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{t.chronos.today.now}</div>
-            <div className="mt-1 text-sm font-medium text-primary truncate">{currentBlock ? scheduleText.blockTitle(currentBlock.title, currentBlock.titleCustom) : emptyNowLabel}</div>
-            <div className="mt-1 text-xs num text-muted-foreground">{displayCurrentBlock ? `${displayCurrentBlock.start}–${displayCurrentBlock.end} · ${fmtFriendlyDuration(durationMin(displayCurrentBlock.start, displayCurrentBlock.end), isPt)}` : "--:--"}</div>
+            <div className="mt-1 text-sm font-medium text-primary truncate">{currentBlock ? (currentBlock.kind === "sleep" ? scheduleText.categoryLabel("sleep", currentBlock.title, currentBlock.titleCustom) : scheduleText.blockTitle(currentBlock.title, currentBlock.titleCustom)) : emptyNowLabel}</div>
+            <div className="mt-1 text-xs num text-muted-foreground">{displayCurrentBlock ? `${formatClock(displayCurrentBlock.start, bcp47)}–${formatClock(displayCurrentBlock.end, bcp47)} · ${fmtFriendlyDuration(durationMin(displayCurrentBlock.start, displayCurrentBlock.end), isPt)}` : "--:--"}</div>
           </div>
-          <button type="button" onClick={() => currentBlock && jumpToBlock(currentBlock.id, currentBlock.source)} disabled={!currentBlock} className="h-7 w-7 rounded-md border border-border/60 grid place-items-center text-muted-foreground enabled:hover:text-primary enabled:hover:border-secondary/50 disabled:opacity-40"><ChevronDown className="h-4 w-4" /></button>
+          <button type="button" onClick={() => currentBlock && jumpToBlock(currentBlock.id, currentBlock.source, currentBlock.kind)} disabled={!currentBlock} className="h-7 w-7 rounded-md border border-border/60 grid place-items-center text-muted-foreground enabled:hover:text-primary enabled:hover:border-secondary/50 disabled:opacity-40"><ChevronDown className="h-4 w-4" /></button>
         </div>
       </div>
-      <div className={`rounded-lg border px-4 py-3 ${displayNextBlock ? `${kindStyle[displayNextBlock.kind].blockBorder} ${kindStyle[displayNextBlock.kind].blockBg}` : "border-dashed border-border/60 bg-muted/5"}`}>
+      <div className={`rounded-lg border px-4 py-3 ${displayNextBlock ? cardStyle(displayNextBlock.kind) : "border-dashed border-border/60 bg-muted/5"}`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{nextLabel}</div>
-            <div className="mt-1 text-sm font-medium text-primary truncate">{displayNextBlock ? (displayNextBlock.kind === "sleep" ? (isPt ? "Sono" : "Sleep") : scheduleText.blockTitle(displayNextBlock.title, displayNextBlock.titleCustom)) : emptyNextLabel}</div>
-            <div className="mt-1 text-xs num text-muted-foreground">{displayNextBlock ? `${displayNextBlock.start}–${displayNextBlock.end} · ${fmtFriendlyDuration(durationMin(displayNextBlock.start, displayNextBlock.end), isPt)}` : "--:--"}</div>
+            <div className="mt-1 text-sm font-medium text-primary truncate">{displayNextBlock ? (displayNextBlock.kind === "sleep" ? scheduleText.categoryLabel("sleep", displayNextBlock.title, displayNextBlock.titleCustom) : scheduleText.blockTitle(displayNextBlock.title, displayNextBlock.titleCustom)) : emptyNextLabel}</div>
+            <div className="mt-1 text-xs num text-muted-foreground">{displayNextBlock ? `${formatClock(displayNextBlock.start, bcp47)}–${formatClock(displayNextBlock.end, bcp47)} · ${fmtFriendlyDuration(durationMin(displayNextBlock.start, displayNextBlock.end), isPt)}` : "--:--"}</div>
           </div>
-          <button type="button" onClick={() => nextBlock && !("synthetic" in nextBlock) && jumpToBlock(nextBlock.id, nextBlock.source)} disabled={!nextBlock || ("synthetic" in nextBlock)} className="h-7 w-7 rounded-md border border-border/60 grid place-items-center text-muted-foreground enabled:hover:text-primary enabled:hover:border-secondary/50 disabled:opacity-40"><ChevronDown className="h-4 w-4" /></button>
+          <button type="button" onClick={() => nextBlock && !isNextFromTomorrow && jumpToBlock(nextBlock.id, nextBlock.source, nextBlock.kind)} disabled={!nextBlock || isNextFromTomorrow} className="h-7 w-7 rounded-md border border-border/60 grid place-items-center text-muted-foreground enabled:hover:text-primary enabled:hover:border-secondary/50 disabled:opacity-40"><ChevronDown className="h-4 w-4" /></button>
         </div>
       </div>
     </section>
@@ -298,94 +350,29 @@ function PerformanceStatsSection() {
   );
 }
 
-function CategorySection({ data, updateCategory, resetCategoryNaming, t, scheduleText }: any) {
-  const [open, setOpen] = useState(false);
-  const [draftCategories, setDraftCategories] = useState(() =>
-    data.categories.reduce((acc: any, c: any) => {
-      acc[c.id] = { customLabel: c.labelCustom ?? "", customDescription: c.descriptionCustom ?? "", tone: c.tone };
-      return acc;
-    }, {} as Record<string, { customLabel: string; customDescription: string; tone: string }>)
-  );
-
-  if (!open) {
-    return (
-      <section className="mt-10">
-        <button onClick={() => setOpen(true)} className="chronos-card p-6 w-full text-left flex items-center justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
-            <h3 className="font-display text-xl text-primary mt-0.5">{t.chronos.settings.vocabulary}</h3>
-          </div>
-          <Pencil className="h-4 w-4 text-muted-foreground" />
-        </button>
-      </section>
-    );
-  }
-
+function BlockTypeGallery({ data, t, scheduleText }: any) {
   return (
-    <section className="mt-10">
-      <div className="chronos-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
-            <h3 className="font-display text-xl text-primary mt-0.5">{t.chronos.settings.vocabulary}</h3>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}><X className="h-3.5 w-3.5" /></Button>
-        </div>
-        <div className="space-y-3">
-          {data.categories.map((c: any) => {
-            const draft = draftCategories[c.id] ?? { customLabel: c.labelCustom ?? "", customDescription: c.descriptionCustom ?? "", tone: c.tone };
-            const defaultLabel = scheduleText.categoryLabel(c.id, c.label);
-            const defaultDescription = scheduleText.categoryDescription(c.id, c.description);
-            return (
-              <div key={c.id} className="rounded-md border border-border/60 bg-surface-raised p-3 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${kindStyle[c.id as BlockKind]?.dot ?? "bg-secondary"}`} />
-                    <div className="text-sm text-primary font-medium">{scheduleText.categoryLabel(c.id, c.label, c.labelCustom)}</div>
-                  </div>
-                  <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{c.id}</span>
-                </div>
-                <div className="rounded-md border border-border/50 bg-background/60 p-2.5 space-y-1.5">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.defaultCategoryName}</Label>
-                    <div className="text-sm text-primary">{defaultLabel}</div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.defaultCategoryDescription}</Label>
-                    <div className="text-xs text-muted-foreground">{defaultDescription}</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.customCategoryName}</Label>
-                    <Input value={draft.customLabel} onChange={(e) => setDraftCategories((prev: any) => ({ ...prev, [c.id]: { ...draft, customLabel: e.target.value } }))} placeholder={defaultLabel} className="h-8" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.customCategoryDescription}</Label>
-                    <Input value={draft.customDescription} onChange={(e) => setDraftCategories((prev: any) => ({ ...prev, [c.id]: { ...draft, customDescription: e.target.value } }))} placeholder={defaultDescription} className="h-8" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.categoryTone}</Label>
-                    <Select value={draft.tone} onValueChange={(v) => setDraftCategories((prev: any) => ({ ...prev, [c.id]: { ...draft, tone: v } }))}>
-                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {["bronze", "midnight", "primary-glow", "emerald", "neutral", "indigo", "amber"].map((tone) => (<SelectItem key={tone} value={tone}>{tone}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <Button size="sm" variant="outline" className="h-8" onClick={() => { resetCategoryNaming(c.id); setDraftCategories((prev: any) => ({ ...prev, [c.id]: { ...draft, customLabel: "", customDescription: "" } })); toast({ title: t.chronos.settings.categoryRestored }); }}>
-                    {t.chronos.settings.restoreDefaultNames}
-                  </Button>
-                  <Button size="sm" className="h-8" onClick={() => { updateCategory(c.id, { labelCustom: draft.customLabel.trim() || undefined, descriptionCustom: draft.customDescription.trim() || undefined, tone: draft.tone }); toast({ title: t.chronos.settings.categoryUpdated }); }}>
-                    {t.common.save}
-                  </Button>
-                </div>
+    <section>
+      <div className="flex items-center gap-2 mb-4">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
+        <span className="text-xs text-muted-foreground">· {t.chronos.settings.vocabulary}</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {data.categories.map((c: any) => {
+          const label = scheduleText.categoryLabel(c.id, c.label, c.labelCustom);
+          const description = scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom);
+          const s = kindStyle[c.id as BlockKind];
+          return (
+            <div key={c.id} className="chronos-card p-4 flex items-start gap-3">
+              <div className={`mt-0.5 h-3 w-3 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-primary">{label}</div>
+                <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{description}</div>
+                <div className="text-[10px] text-muted-foreground/40 mt-1 uppercase tracking-wide">{c.id}</div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
