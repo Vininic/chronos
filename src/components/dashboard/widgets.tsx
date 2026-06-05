@@ -102,6 +102,9 @@ export function PerformanceCard() {
   const r = 56;
   const c = 2 * Math.PI * r;
   const offset = c - (score / 100) * c;
+  const load = data.ledger.metrics.find((m) => m.label === "Load")?.value ?? 0;
+  const consistency = data.ledger.metrics.find((m) => m.label === "Consistency")?.value ?? 0;
+  const variety = data.ledger.metrics.find((m) => m.label === "Variety")?.value ?? 0;
   return (
     <div className="chronos-card p-6 h-full">
       <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
@@ -127,27 +130,33 @@ export function PerformanceCard() {
       </div>
 
       <div className="mt-6 grid grid-cols-3 gap-3">
-        {data.ledger.metrics.map((m) => (
-          <div key={m.label} className="rounded-md bg-surface-raised border border-border p-3">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{translateMetric(t, m.label)}</div>
-            <div className="font-display text-xl text-primary mt-0.5 num">{m.value}</div>
-            <div className="h-1 mt-1.5 rounded-full bg-muted overflow-hidden">
-              <div className="h-full bg-bronze" style={{ width: `${m.value}%` }} />
-            </div>
+        <div className="rounded-md bg-surface-raised border border-border p-3">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Load</div>
+          <div className="font-display text-xl text-primary mt-0.5 num">{load}</div>
+          <div className="h-1.5 mt-1.5 rounded-full bg-muted overflow-hidden">
+            <div className="h-full bg-bronze" style={{ width: `${load}%` }} />
           </div>
-        ))}
+          <div className="text-[10px] text-muted-foreground mt-1.5 leading-tight">Scheduled hours vs 40h baseline · 45% weight</div>
+        </div>
+        <div className="rounded-md bg-surface-raised border border-border p-3">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Consistency</div>
+          <div className="font-display text-xl text-primary mt-0.5 num">{consistency}</div>
+          <div className="h-1.5 mt-1.5 rounded-full bg-muted overflow-hidden">
+            <div className="h-full bg-bronze" style={{ width: `${consistency}%` }} />
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-1.5 leading-tight">Evenness across weekdays · 30% weight</div>
+        </div>
+        <div className="rounded-md bg-surface-raised border border-border p-3">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Variety</div>
+          <div className="font-display text-xl text-primary mt-0.5 num">{variety}</div>
+          <div className="h-1.5 mt-1.5 rounded-full bg-muted overflow-hidden">
+            <div className="h-full bg-bronze" style={{ width: `${variety}%` }} />
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-1.5 leading-tight">Categories used vs available · 25% weight</div>
+        </div>
       </div>
     </div>
   );
-}
-
-function translateMetric(t: ReturnType<typeof useT>, label: string): string {
-  const map: Record<string, string> = {
-    Depth:    t.chronos.widgets.deep,
-    Cadence:  t.chronos.widgets.weekly,
-    Recovery: t.chronos.widgets.recovery,
-  };
-  return map[label] ?? label;
 }
 
 /* ---------------- AI suggestions ---------------- */

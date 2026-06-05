@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function Topbar() {
-  const { data } = useSchedule();
+  const { data, replace, resetToSeed } = useSchedule();
   const { session, signOut } = useAuth();
   const t = useT();
   const { locale } = useI18n();
@@ -30,8 +30,19 @@ export default function Topbar() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [dueFocus, setDueFocus] = useState<{ title: string; start: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const ref = useRef<HTMLDivElement>(null);
   const remindedRef = useRef<Set<string>>(new Set());
+
+  function importJSON(file: File) {
+    file.text().then((txt) => {
+      try {
+        const next = JSON.parse(txt);
+        if (!next.routine || !Array.isArray(next.routine)) throw new Error("Invalid file");
+        replace(next); toast({ title: t.chronos.settings.imported });
+      } catch (e: any) { toast({ title: t.chronos.settings.importFail, description: e.message ?? String(e) }); }
+    });
+  }
 
   useEffect(() => {
     function onClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
@@ -200,6 +211,15 @@ export default function Topbar() {
                   <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToXLSX(data, "chronos-schedule.xlsx", locale); toast({ title: t.chronos.settings.xlsxExported }); }}><Download className="h-3 w-3 mr-0.5" /> XLSX</Button>
                   <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToICS(data); toast({ title: t.chronos.settings.icsExported }); }}><CalendarDays className="h-3 w-3 mr-0.5" /> ICS</Button>
                   <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToJSON(data); toast({ title: t.chronos.settings.jsonExported }); }}><FileJson className="h-3 w-3 mr-0.5" /> JSON</Button>
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <div className="px-2 py-1.5 space-y-1.5">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground px-2">{t.chronos.settings.scheduleData}</div>
+                <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importJSON(f); e.currentTarget.value = ""; }} />
+                <div className="grid grid-cols-2 gap-1 px-2">
+                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => fileRef.current?.click()}><Upload className="h-3 w-3 mr-0.5" /> {t.chronos.settings.importJSON}</Button>
+                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { resetToSeed(); toast({ title: t.chronos.settings.resetDone }); }}><RotateCcw className="h-3 w-3 mr-0.5" /> {t.chronos.settings.reset}</Button>
                 </div>
               </div>
               <DropdownMenuSeparator />

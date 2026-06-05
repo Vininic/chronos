@@ -53,7 +53,7 @@ export default function DashboardLayout() {
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 chronos-surface overflow-y-auto">
+        <main className="flex-1 chronos-surface overflow-y-auto overflow-x-hidden">
           <div className="p-6 lg:p-8">
             <Outlet />
           </div>

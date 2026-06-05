@@ -12,7 +12,7 @@ import Week from "./pages/dashboard/Week";
 import Focus from "./pages/dashboard/Focus";
 import Aetheris from "./pages/dashboard/Aetheris";
 import About from "./pages/dashboard/About";
-import AIAssistant from "./pages/dashboard/AIAssistant";
+
 import { ScheduleProvider } from "@/lib/schedule/store";
 import { TimerProvider } from "@/lib/timer/TimerContext";
 import { AuthProvider, useAuth } from "@/lib/auth";
@@ -46,7 +46,6 @@ const App = () => (
                 <Route path="focus" element={<Focus />} />
                 <Route path="aetheris" element={<Aetheris />} />
                 <Route path="about" element={<About />} />
-                <Route path="ai-assistant" element={<AIAssistant />} />
                 <Route path="ledger" element={<Navigate to="/dashboard" replace />} />
                 <Route path="atlas" element={<Navigate to="/dashboard" replace />} />
                 <Route path="settings" element={<Navigate to="/dashboard" replace />} />
