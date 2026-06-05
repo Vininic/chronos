@@ -11,10 +11,8 @@ import Today from "./pages/dashboard/Today";
 import Week from "./pages/dashboard/Week";
 import Focus from "./pages/dashboard/Focus";
 import Aetheris from "./pages/dashboard/Aetheris";
-import Ledger from "./pages/dashboard/Ledger";
-import Atlas from "./pages/dashboard/Atlas";
-import Settings from "./pages/dashboard/Settings";
-import Support from "./pages/dashboard/Support";
+import About from "./pages/dashboard/About";
+import AIAssistant from "./pages/dashboard/AIAssistant";
 import { ScheduleProvider } from "@/lib/schedule/store";
 import { TimerProvider } from "@/lib/timer/TimerContext";
 import { AuthProvider, useAuth } from "@/lib/auth";
@@ -47,10 +45,12 @@ const App = () => (
                 <Route path="week" element={<Week />} />
                 <Route path="focus" element={<Focus />} />
                 <Route path="aetheris" element={<Aetheris />} />
-                <Route path="ledger" element={<Ledger />} />
-                <Route path="atlas" element={<Atlas />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="support" element={<Support />} />
+                <Route path="about" element={<About />} />
+                <Route path="ai-assistant" element={<AIAssistant />} />
+                <Route path="ledger" element={<Navigate to="/dashboard" replace />} />
+                <Route path="atlas" element={<Navigate to="/dashboard" replace />} />
+                <Route path="settings" element={<Navigate to="/dashboard" replace />} />
+                <Route path="support" element={<Navigate to="/dashboard/about" replace />} />
               </Route>
               <Route path="*" element={<NotFound />} />
                 </Routes>

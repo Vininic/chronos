@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, BarChart3, Settings, LifeBuoy, Compass } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp, Bot } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
@@ -16,12 +16,10 @@ export default function Sidebar() {
     { to: "/dashboard/week",     label: t.chronos.nav.week,     icon: Calendar },
     { to: "/dashboard/focus",    label: t.chronos.nav.focus,    icon: Brain },
     { to: "/dashboard/aetheris", label: t.chronos.nav.aetheris, icon: Sparkles },
-    { to: "/dashboard/ledger",   label: t.chronos.nav.ledger,   icon: BarChart3 },
   ];
   const meta = [
-    { to: "/dashboard/atlas",    label: t.chronos.nav.atlas,    icon: Compass },
-    { to: "/dashboard/settings", label: t.chronos.nav.settings, icon: Settings },
-    { to: "/dashboard/support",  label: t.chronos.nav.support,  icon: LifeBuoy },
+    { to: "/dashboard/about",    label: t.chronos.nav.about,    icon: CircleHelp },
+    { to: "/dashboard/ai-assistant", label: t.chronos.nav.aiAssistant, icon: Bot },
   ];
   const cycle = data.meta.cycle;
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();

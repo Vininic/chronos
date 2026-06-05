@@ -372,7 +372,7 @@ export function FocusBlocksCard() {
           </p>
         </div>
         <Link
-          to="/dashboard/settings"
+          to="/dashboard"
           className="w-full h-10 rounded-md border border-secondary/30 bg-primary text-primary-foreground text-sm hover:bg-primary-deep inline-flex items-center justify-center gap-2 shadow-sm"
         >
           {t.chronos.widgets.openFocusRoom}

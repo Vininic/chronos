@@ -400,11 +400,11 @@ Future versions may introduce optional cloud synchronization while preserving lo
 ---
 
 ## Page Overhaul
-- [ ] Rearrange/Repurpose page section structuring, reduce unecessary pages, rearrange content (List content to make cohesive changes)
-- [ ] Integrate Atlas (commitments) into Today page: commitment card with add button, highlighted commitments, next commitment, and loose (undated) commitment blocks draggable into DayPlanner timeline
-- [ ] Profile button (no function currently) repurposement
+- [x] Rearrange/Repurpose page section structuring, reduce unecessary pages, rearrange content (List content to make cohesive changes)
+- [x] Integrate Atlas (commitments) into Today page: commitment card with add button, highlighted commitments, next commitment, and loose (undated) commitment blocks draggable into DayPlanner timeline
+- [x] Profile button (no function currently) repurposement
 - [ ] File selector with small preview horizontal slider (akin to save files)
-- [ ] Integrate block category creation section (from settings) into main page
+- [x] Integrate block category creation section (from settings) into main page
 - [ ] Refine category creation section from config page (mini block previews, better color picking and UI, etc) - move into main page
 
 ---

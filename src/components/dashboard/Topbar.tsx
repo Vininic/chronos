@@ -1,15 +1,17 @@
-import { Search, Bell, LogOut } from "lucide-react";
+import { Search, Bell, LogOut, Download, Upload, CalendarDays, FileJson, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { buildAgendaForDate, useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
-import { useDateFormat, useT } from "@/lib/i18n/I18nProvider";
+import { useDateFormat, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { LanguageToggle } from "@/components/suite/LanguageToggle";
 import { ThemeToggle } from "@/components/suite/ThemeToggle";
 import { timeToMinutes } from "@/lib/schedule/types";
 import { toast } from "@/hooks/use-toast";
+import { exportToICS, exportToJSON, exportToXLSX } from "@/lib/schedule/export";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -19,6 +21,7 @@ export default function Topbar() {
   const { data } = useSchedule();
   const { session, signOut } = useAuth();
   const t = useT();
+  const { locale } = useI18n();
   const fmt = useDateFormat();
   const scheduleText = useScheduleText();
   const today = fmt.long(new Date());
@@ -49,7 +52,7 @@ export default function Topbar() {
       const localizedTitle = scheduleText.blockTitle(x.title, x.titleCustom).toLowerCase();
       return x.title.toLowerCase().includes(term) || localizedTitle.includes(term);
     }).slice(0, 5).map((x) => ({
-      id: x.id, label: scheduleText.blockTitle(x.title, x.titleCustom), sub: `${fmt.fromISO(x.date)} · ${x.start}–${x.end}`, kind: "commitment" as const, kindLabel: t.chronos.nav.atlas,
+      id: x.id, label: scheduleText.blockTitle(x.title, x.titleCustom), sub: `${fmt.fromISO(x.date)} · ${x.start}–${x.end}`, kind: "commitment" as const, kindLabel: t.chronos.nav.today,
     }));
     const s = data.suggestions.filter((x) => x.title.toLowerCase().includes(term)).slice(0, 3).map((x) => ({
       id: x.id, label: x.title, sub: x.impact, kind: "suggestion" as const, kindLabel: t.chronos.nav.aetheris,
@@ -95,7 +98,7 @@ export default function Topbar() {
   function go(kind: string) {
     setOpen(false); setQ("");
     if (kind === "routine") navigate("/dashboard/week");
-    else if (kind === "commitment") navigate("/dashboard/atlas");
+    else if (kind === "commitment") navigate("/dashboard");
     else navigate("/dashboard/aetheris");
   }
 
@@ -173,12 +176,33 @@ export default function Topbar() {
                 {session.name.charAt(0)}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>
                 <div className="font-display text-base text-primary">{session.name}</div>
+                <div className="text-[11px] text-muted-foreground">{scheduleText.cycleName(data.meta.cycle.name)} · #{data.meta.cycle.number}</div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/dashboard/settings")}>{t.common.settings}</DropdownMenuItem>
+              <div className="px-2 py-1.5 space-y-2">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground px-2">{t.chronos.settings.appearance}</div>
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-sm text-muted-foreground">{t.chronos.settings.languageLabel}</span>
+                  <LanguageToggle />
+                </div>
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-sm text-muted-foreground">{t.chronos.settings.themeLabel}</span>
+                  <ThemeToggle />
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <div className="px-2 py-1.5 space-y-1.5">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground px-2">{t.chronos.settings.export}</div>
+                <div className="grid grid-cols-3 gap-1 px-2">
+                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToXLSX(data, "chronos-schedule.xlsx", locale); toast({ title: t.chronos.settings.xlsxExported }); }}><Download className="h-3 w-3 mr-0.5" /> XLSX</Button>
+                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToICS(data); toast({ title: t.chronos.settings.icsExported }); }}><CalendarDays className="h-3 w-3 mr-0.5" /> ICS</Button>
+                  <Button size="sm" variant="outline" className="h-8 text-[10px] px-1" onClick={() => { exportToJSON(data); toast({ title: t.chronos.settings.jsonExported }); }}><FileJson className="h-3 w-3 mr-0.5" /> JSON</Button>
+                </div>
+              </div>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => { signOut(); navigate("/login"); }}>
                 <LogOut className="h-4 w-4 mr-2" /> {t.common.signOut}
               </DropdownMenuItem>
