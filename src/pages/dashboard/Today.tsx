@@ -97,6 +97,8 @@ export default function Today() {
         bcp47={bcp47}
       />
 
+      <DayPlanner />
+
       <CommitmentCard
         data={data}
         addCommitment={addCommitment}
@@ -107,14 +109,12 @@ export default function Today() {
         scheduleText={scheduleText}
       />
 
-      <DayPlanner />
-
-      <StatsSection />
-
       <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5"><FocusBlocksCard /></div>
         <div className="lg:col-span-7"><BalanceCard /></div>
       </div>
+
+      <PerformanceStatsSection />
 
       <div className="mt-6">
         <AetherisCard compact />
@@ -180,81 +180,92 @@ function CommitmentCard({ data, addCommitment, removeCommitment, t, bcp47, isPt,
 
   const todayIso = new Date().toISOString().slice(0, 10);
   const todayCommitments = data.commitments.filter((c: any) => c.date === todayIso).sort((a: any, b: any) => a.start.localeCompare(b.start));
-  const upcomingCommitments = data.commitments.filter((c: any) => c.date > todayIso).sort((a: any, b: any) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start)).slice(0, 5);
+  const upcomingCommitments = data.commitments.filter((c: any) => c.date > todayIso).sort((a: any, b: any) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
 
   return (
-    <section className="mb-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <form onSubmit={add} className="chronos-card p-4 space-y-3">
+    <section className="mt-8">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.atlas.eyebrow}</div>
+        <span className="text-xs text-muted-foreground num">· {t.chronos.atlas.countLabel(data.commitments.length)}</span>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <form onSubmit={add} className="chronos-card p-5 space-y-3 lg:col-span-2">
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.atlas.addEyebrow}</div>
           <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.titleField}</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t.chronos.atlas.titlePlaceholder} className="h-8" /></div>
-          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.date}</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8" /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.date}</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8" /></div>
+            <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.category}</Label>
+              <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>{data.categories.map((c: any) => (<SelectItem key={c.id} value={c.id}>{scheduleText.categoryLabel(c.id, c.label, c.labelCustom)}</SelectItem>))}</SelectContent>
+              </Select></div>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.start}</Label><TimeSelect value={start} onValueChange={setStart} bcp47={bcp47} /></div>
             <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.end}</Label><TimeSelect value={end} onValueChange={setEnd} bcp47={bcp47} /></div>
           </div>
-          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.atlas.category}</Label>
-            <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-              <SelectContent>{data.categories.map((c: any) => (<SelectItem key={c.id} value={c.id}>{scheduleText.categoryLabel(c.id, c.label, c.labelCustom)}</SelectItem>))}</SelectContent>
-            </Select></div>
           <Button type="submit" className="w-full h-8 text-xs"><Plus className="h-3.5 w-3.5 mr-1" /> {t.chronos.atlas.addCommitment}</Button>
         </form>
-        <div className="chronos-card p-4 lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.atlas.eyebrow}</div>
-            <span className="text-xs text-muted-foreground num">{t.chronos.atlas.countLabel(data.commitments.length)}</span>
-          </div>
-          {todayCommitments.length > 0 && (
-            <div className="mb-3">
-              <div className="text-xs font-medium text-primary mb-1.5">{t.chronos.today.eyebrow}</div>
-              <ul className="space-y-1.5">
-                {todayCommitments.map((c: any) => {
-                  const s = kindStyle[c.kind as BlockKind];
-                  return (
-                    <li key={c.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-surface-raised px-3 py-2 text-sm">
-                      <span className={`h-2 w-2 rounded-full ${s?.dot ?? "bg-secondary"}`} />
-                      <span className="flex-1 truncate text-primary">{scheduleText.blockTitle(c.title, c.titleCustom)}</span>
-                      <span className="text-xs num text-muted-foreground">{c.start}–{c.end}</span>
-                      <button onClick={() => { removeCommitment(c.id); toast({ title: t.chronos.atlas.removed }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </li>
-                  );
-                })}
-              </ul>
+        <div className="chronos-card p-5 lg:col-span-3">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.atlas.inTheBook}</div>
+          {data.commitments.length === 0 ? (
+            <div className="mt-6 rounded-md border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">{t.chronos.atlas.empty}</div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {todayCommitments.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-primary mb-2 flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
+                    {t.chronos.today.eyebrow}
+                  </div>
+                  <ul className="space-y-1.5">
+                    {todayCommitments.map((c: any) => {
+                      const s = kindStyle[c.kind as BlockKind];
+                      return (
+                        <li key={c.id} className="flex items-center gap-2.5 rounded-md border border-border/60 bg-surface-raised px-3.5 py-2.5 text-sm group hover:border-secondary/30 transition-colors">
+                          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
+                          <span className="flex-1 truncate text-primary font-medium">{scheduleText.blockTitle(c.title, c.titleCustom)}</span>
+                          <span className="text-xs num text-muted-foreground">{c.start}–{c.end} · {fmtDur(durationMin(c.start, c.end))}</span>
+                          <button onClick={() => { removeCommitment(c.id); toast({ title: t.chronos.atlas.removed }); }} className="text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+              {upcomingCommitments.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-primary mb-2 flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                    {isPt ? "Próximos" : "Upcoming"}
+                  </div>
+                  <ul className="space-y-1.5">
+                    {upcomingCommitments.map((c: any) => {
+                      const s = kindStyle[c.kind as BlockKind];
+                      return (
+                        <li key={c.id} className="flex items-center gap-2.5 rounded-md border border-border/60 bg-surface-raised px-3.5 py-2.5 text-sm group hover:border-secondary/30 transition-colors">
+                          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
+                          <span className="flex-1 truncate text-primary font-medium">{scheduleText.blockTitle(c.title, c.titleCustom)}</span>
+                          <span className="text-xs num text-muted-foreground">{c.date.slice(5)} · {c.start} · {fmtDur(durationMin(c.start, c.end))}</span>
+                          <button onClick={() => { removeCommitment(c.id); toast({ title: t.chronos.atlas.removed }); }} className="text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
-          {upcomingCommitments.length > 0 && (
-            <div>
-              <div className="text-xs font-medium text-primary mb-1.5">{isPt ? "Próximos" : "Upcoming"}</div>
-              <ul className="space-y-1.5">
-                {upcomingCommitments.map((c: any) => {
-                  const s = kindStyle[c.kind as BlockKind];
-                  return (
-                    <li key={c.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-surface-raised px-3 py-2 text-sm">
-                      <span className={`h-2 w-2 rounded-full ${s?.dot ?? "bg-secondary"}`} />
-                      <span className="flex-1 truncate text-primary">{scheduleText.blockTitle(c.title, c.titleCustom)}</span>
-                      <span className="text-xs num text-muted-foreground">{c.date.slice(5)} · {c.start}</span>
-                      <button onClick={() => { removeCommitment(c.id); toast({ title: t.chronos.atlas.removed }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-          {data.commitments.length === 0 && <p className="text-sm text-muted-foreground italic">{t.chronos.atlas.empty}</p>}
         </div>
       </div>
     </section>
   );
 }
 
-function StatsSection() {
+function PerformanceStatsSection() {
   return (
     <section className="mt-10">
-      <OptimizationStrip />
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5"><PerformanceCard /></div>
-        <div className="lg:col-span-7"><BalanceCard /></div>
-      </div>
+      <PerformanceCard />
+      <div className="mt-6"><OptimizationStrip /></div>
     </section>
   );
 }
