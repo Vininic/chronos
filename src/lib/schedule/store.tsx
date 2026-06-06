@@ -1,16 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
+import type { Category, Commitment, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
 import { durationMin, timeToMinutes } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { DICTIONARIES } from "@/lib/i18n/dictionaries";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { isDefaultCategoryDescription, isDefaultCategoryLabel } from "@/lib/i18n/scheduleText";
 
-const SCHEMA_VERSION = 3;
-const STORAGE_KEY = "chronos.schedule.v3";
-const LEGACY_STORAGE_KEYS = ["chronos.schedule.v2", "chronos.schedule.v1"];
+const SCHEMA_VERSION = 4;
+const STORAGE_KEY = "chronos.schedule.v4";
+const LEGACY_STORAGE_KEYS = ["chronos.schedule.v3", "chronos.schedule.v2", "chronos.schedule.v1"];
 
 function getSeedForLocale(locale: Locale): ScheduleData {
   return locale === "pt" ? (seedPt as ScheduleData) : (seedEn as ScheduleData);
@@ -48,6 +48,7 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
     ...data,
     categories,
     routine,
+    presets: data.presets ?? [],
     meta: {
       ...data.meta,
       version: SCHEMA_VERSION,
@@ -155,14 +156,16 @@ function normalizeSleepWindow(data: ScheduleData): { start: string; end: string 
 }
 
 function resolveCommitmentEndDate(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  if (!c.date) return c.date;
   if (c.endDate) return c.endDate;
   if (c.endsNextDay || c.end <= c.start) return addDaysToIso(c.date, 1);
   return c.date;
 }
 
 function commitmentInterval(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  if (!c.date) return { start: new Date(NaN), end: new Date(NaN) };
   const start = toDateTime(c.date, c.start);
-  const end = toDateTime(resolveCommitmentEndDate(c), c.end);
+  const end = toDateTime(resolveCommitmentEndDate(c)!, c.end);
   return { start, end };
 }
 
@@ -237,8 +240,10 @@ function validateRoutineSleepOverlap(data: ScheduleData, candidate: Pick<Routine
 }
 
 function commitmentDaySlices(c: Pick<Commitment, "date" | "start" | "end" | "endDate" | "endsNextDay">) {
+  if (!c.date) return [];
   const startDate = c.date;
   const resolvedEndDate = resolveCommitmentEndDate(c);
+  if (!resolvedEndDate) return [];
   const spans = resolvedEndDate > startDate || c.end <= c.start || c.endsNextDay;
   if (!spans) {
     return [{ dateIso: startDate, day: dayFromIsoDate(startDate), startMin: timeToMinutes(c.start), endMin: timeToMinutes(c.end) }];
@@ -587,6 +592,9 @@ interface Ctx {
   addCommitment: (c: Omit<Commitment, "id">) => string | null;
   removeCommitment: (id: string) => void;
   updateCommitment: (id: string, patch: Partial<Commitment>) => string | null;
+  addPreset: (p: Omit<Preset, "id">) => string;
+  removePreset: (id: string) => void;
+  updatePreset: (id: string, patch: Partial<Preset>) => void;
   pushMoveDayChain: (date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number, dragEdge?: "top" | "bottom") => string | null;
   setSleepBoundaryEnforced: (enforced: boolean) => void;
   setFocusCategories: (ids: string[]) => void;
@@ -702,13 +710,15 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       ...c,
       endsNextDay: c.endsNextDay ?? c.end <= c.start,
     };
-    const sleepErr = validateCommitmentSleepOverlap(data, next);
-    if (sleepErr) return sleepErr;
-    const nextInterval = commitmentInterval(next);
+    if (c.date) {
+      const sleepErr = validateCommitmentSleepOverlap(data, next);
+      if (sleepErr) return sleepErr;
+      const nextInterval = commitmentInterval(next);
 
-    const conflictCommitment = data.commitments.find((x) => intervalsOverlap(commitmentInterval(x), nextInterval));
-    if (conflictCommitment) {
-      return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
+      const conflictCommitment = data.commitments.find((x) => intervalsOverlap(commitmentInterval(x), nextInterval));
+      if (conflictCommitment) {
+        return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
+      }
     }
 
     setData((d) => withDerived({ ...d, commitments: [...d.commitments, { ...next, id: uid("c") }] }));
@@ -725,17 +735,31 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       ...patch,
       endsNextDay: patch.endsNextDay ?? current.endsNextDay ?? ((patch.end ?? current.end) <= (patch.start ?? current.start)),
     };
-    const sleepErr = validateCommitmentSleepOverlap(data, next);
-    if (sleepErr) return sleepErr;
-    const nextInterval = commitmentInterval(next);
-    const conflictCommitment = data.commitments.find((c) => c.id !== id && intervalsOverlap(commitmentInterval(c), nextInterval));
-    if (conflictCommitment) {
-      return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
+    if (next.date) {
+      const sleepErr = validateCommitmentSleepOverlap(data, next);
+      if (sleepErr) return sleepErr;
+      const nextInterval = commitmentInterval(next);
+      const conflictCommitment = data.commitments.find((c) => c.id !== id && intervalsOverlap(commitmentInterval(c), nextInterval));
+      if (conflictCommitment) {
+        return `Conflicts with "${conflictCommitment.title}" (${conflictCommitment.start}-${conflictCommitment.end}).`;
+      }
     }
 
     setData((d) => withDerived({ ...d, commitments: d.commitments.map((c) => (c.id === id ? next : c)) }));
     return null;
   }, [data]);
+
+  const addPreset = useCallback((p: Omit<Preset, "id">) => {
+    const id = uid("p");
+    setData((d) => withDerived({ ...d, presets: [...d.presets, { ...p, id }] }));
+    return id;
+  }, []);
+  const removePreset = useCallback((id: string) => {
+    setData((d) => withDerived({ ...d, presets: d.presets.filter((p) => p.id !== id) }));
+  }, []);
+  const updatePreset = useCallback((id: string, patch: Partial<Preset>) => {
+    setData((d) => withDerived({ ...d, presets: d.presets.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
+  }, []);
 
   const pushMoveDayChain = useCallback((date: Date, source: "routine" | "commitment", id: string, newStart: string, newEnd: string, dragDeltaMin?: number, dragEdge?: "top" | "bottom") => {
     const day = date.getDay();
@@ -749,7 +773,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     const sourceDuration = sourceRoutine
       ? durationMin(sourceRoutine.start, sourceRoutine.end)
       : sourceCommitment
-        ? Math.max(15, Math.round((commitmentInterval(sourceCommitment).end.getTime() - commitmentInterval(sourceCommitment).start.getTime()) / 60_000))
+        ? Math.max(15, Math.round((commitmentInterval(sourceCommitment).end.getTime() - commitmentInterval(sourceCommitment).start.getTime()) / 60_000) || durationMin(sourceCommitment.start, sourceCommitment.end))
         : durationMin(newStart, newEnd);
     const sourceStartMin = sourceRoutine
       ? timeToMinutes(sourceRoutine.start)
@@ -1203,6 +1227,9 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addCommitment,
       removeCommitment,
       updateCommitment,
+      addPreset,
+      removePreset,
+      updatePreset,
       pushMoveDayChain,
       setSleepBoundaryEnforced,
       setFocusCategories,
@@ -1226,6 +1253,9 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addCommitment,
       removeCommitment,
       updateCommitment,
+      addPreset,
+      removePreset,
+      updatePreset,
       pushMoveDayChain,
       setSleepBoundaryEnforced,
       setFocusCategories,
@@ -1266,6 +1296,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
   };
 
   const fromCommit = data.commitments.flatMap((c) => {
+    if (!c.date) return [];
     const interval = commitmentInterval(c);
     if (!intervalsOverlap(interval, { start: dayStart, end: dayEnd })) return [];
     const segStart = interval.start > dayStart ? interval.start : dayStart;

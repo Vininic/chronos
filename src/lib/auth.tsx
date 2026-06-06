@@ -7,6 +7,7 @@ interface Ctx {
   session: Session | null;
   signIn: (name: string) => void;
   signOut: () => void;
+  updateName: (name: string) => void;
 }
 const AuthCtx = createContext<Ctx | null>(null);
 
@@ -31,8 +32,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession({ name: trimmed, signedInAt: new Date().toISOString() });
   }
   function signOut() { setSession(null); }
+  function updateName(name: string) {
+    setSession((prev) => (prev ? { ...prev, name } : null));
+  }
 
-  return <AuthCtx.Provider value={{ session, signIn, signOut }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ session, signIn, signOut, updateName }}>{children}</AuthCtx.Provider>;
 }
 
 export function useAuth() {

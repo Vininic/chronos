@@ -27,6 +27,7 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Schedule state: `src/lib/schedule/store.tsx` (localStorage key `chronos.schedule.v3`, migrates older versions)
 - Data types: `src/lib/schedule/types.ts` (`ScheduleData` v3)
 - Planner UI hotspot: `src/components/dashboard/DayPlanner.tsx`
+- Profile dialog hotspot: `src/components/dashboard/ProfileDialog.tsx` (carousel with multi-profile state `extraProfiles: (ScheduleData | null)[]`)
 
 ## Project conventions
 - Time math is string-based (`HH:mm`) with explicit `24:00` boundary handling in agenda generation

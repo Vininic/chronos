@@ -5,7 +5,7 @@ import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { isKnownDefaultBlockTitle, useScheduleText } from "@/lib/i18n/scheduleText";
-import { ArrowDownToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { TimeSelect } from "@/components/ui/time-select";
+import { setDragCommitmentInfo, getDragCommitmentInfo } from "@/lib/dragStore";
 
 const HOUR_PX = 64;
 const STACK_GAP_PX = 4;
@@ -244,7 +245,11 @@ export interface DayPlannerHandle {
   scrollToMinute(minute: number, block?: "start" | "center" | "end"): void;
 }
 
-export const DayPlanner = forwardRef<DayPlannerHandle, {}>(function DayPlanner(_props, ref) {
+interface DayPlannerProps {
+  onCommitmentDrop?: (commitmentId: string, date: string, start: string) => void;
+}
+
+export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function DayPlanner({ onCommitmentDrop }, ref) {
   const { data, pushMoveDayChain, updateRoutine, updateSleepSchedule, setSleepBoundaryEnforced, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
@@ -477,7 +482,8 @@ export const DayPlanner = forwardRef<DayPlannerHandle, {}>(function DayPlanner(_
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const [dragLimitHint, setDragLimitHint] = useState<string | null>(null);
   const [dragTransitionHint, setDragTransitionHint] = useState<{ edge: "top" | "bottom"; direction: "up" | "down"; pending: boolean } | null>(null);
-  const hasDraggedRef = useRef(false); // true once mouse moves during a drag session
+  const hasDraggedRef = useRef(false);
+  const [commitmentDropPos, setCommitmentDropPos] = useState<{ start: string; duration: number } | null>(null);
 
   const [editItem, setEditItem] = useState<AgendaItem | null>(null);
   const [editSleep, setEditSleep] = useState(false);
@@ -1028,7 +1034,37 @@ export const DayPlanner = forwardRef<DayPlannerHandle, {}>(function DayPlanner(_
         </div>
       </div>
 
-      <div id="dayplanner-scroll" ref={scrollRef} className="overflow-y-auto" style={{ maxHeight: timelineMaxH }}>
+      <div
+        id="dayplanner-scroll"
+        ref={scrollRef}
+        className="overflow-y-auto"
+        style={{ maxHeight: timelineMaxH }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          if (!e.dataTransfer.types.includes("application/x-chronos-commitment")) return;
+          const info = getDragCommitmentInfo();
+          if (!info) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const relativeY = e.clientY - rect.top + scrollRef.current!.scrollTop;
+          const rawMinute = startMin + ((relativeY - topBadgeLane) / HOUR_PX) * 60;
+          const snapped = snapTime(Math.round(rawMinute / SNAP) * SNAP);
+          setCommitmentDropPos({ start: snapped, duration: info.dur });
+        }}
+        onDragLeave={() => setCommitmentDropPos(null)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setCommitmentDropPos(null);
+          const info = getDragCommitmentInfo();
+          setDragCommitmentInfo(null);
+          if (!info) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const relativeY = e.clientY - rect.top + scrollRef.current!.scrollTop;
+          const rawMinute = startMin + ((relativeY - topBadgeLane) / HOUR_PX) * 60;
+          const snapped = snapTime(Math.round(rawMinute / SNAP) * SNAP);
+          onCommitmentDrop?.(info.id, selectedDateIso, snapped);
+        }}
+      >
         <div className="relative" style={{ height: timelineHeight, userSelect: draggingId ? "none" : undefined }}>
           {showStartBoundaryMarker && (
             <div
@@ -1158,6 +1194,32 @@ export const DayPlanner = forwardRef<DayPlannerHandle, {}>(function DayPlanner(_
 
 
           <div className="absolute left-[68px] right-4 top-0 bottom-0 z-10">
+            {commitmentDropPos && (
+              <>
+                {/* Glow line at the top of the drop position */}
+                <div
+                  className="absolute left-0 right-0 z-30 pointer-events-none"
+                  style={{
+                    top: topForProjected(commitmentDropPos.start) + topBadgeLane,
+                    height: 0,
+                    borderTop: "2px solid rgba(251, 191, 36, 0.6)",
+                    boxShadow: "0 0 12px rgba(251, 191, 36, 0.35)",
+                  }}
+                />
+                {/* Left arrow indicator */}
+                <div
+                  className="absolute z-30 pointer-events-none flex items-center justify-center rounded-full bg-card border border-amber-500/30"
+                  style={{
+                    left: -10,
+                    top: topForProjected(commitmentDropPos.start) + topBadgeLane - 10,
+                    height: 20,
+                    width: 20,
+                  }}
+                >
+                  <ArrowRightToLine className="h-3.5 w-3.5 text-amber-500/80" />
+                </div>
+              </>
+            )}
             {positionedTimeline.map(({ item, top, height }) => {
               if ("type" in item && item.type === "free") {
                 const fh = height;
@@ -1332,10 +1394,13 @@ export const DayPlanner = forwardRef<DayPlannerHandle, {}>(function DayPlanner(_
                     if (draggingId) return;
                     setInspectItem(a);
                   }}
-                >
-                  <div className={`absolute ${railShape} ${dotLeft} ${s.dot}`} />
-                  <div className="flex items-center h-full overflow-hidden">
-                    <div
+                  >
+                    <div className={`absolute ${railShape} ${dotLeft} ${s.dot}`} />
+                    {a.source === "commitment" && (
+                      <div className={`absolute ${isMicro ? "top-0.5 bottom-0.5 w-[2px] rounded-none" : "top-1 bottom-1 w-[2px] rounded-full"} left-8 bg-amber-500/50 opacity-0 group-hover:opacity-100 transition-opacity`} />
+                    )}
+                    <div className="flex items-center h-full overflow-hidden">
+                      <div
                       className={`${gripW} h-full shrink-0 flex items-center justify-center touch-none ${
                         "text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing"
                       }`}
@@ -1647,6 +1712,11 @@ function BlockDetailsDialog({
             <span className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wider ${kindVisual.chip} ${kindVisual.blockBorder}`}>
               {t.common.kinds[item.kind]}
             </span>
+            {item.source === "commitment" && (
+              <span className="rounded border border-amber-500/30 bg-amber-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">
+                {bcp47.toLowerCase().startsWith("pt") ? "Compromisso" : "Commitment"}
+              </span>
+            )}
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{t.chronos.dialog.notes}</div>

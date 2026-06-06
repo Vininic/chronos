@@ -23,7 +23,7 @@ export interface RoutineBlock {
 
 export interface Commitment {
   id: string;
-  date: string; // YYYY-MM-DD
+  date?: string; // YYYY-MM-DD — undefined means "undated" (pool)
   start: string;
   end: string;
   endDate?: string; // optional explicit end date for cross-day commitments
@@ -32,6 +32,22 @@ export interface Commitment {
   title: string;
   titleCustom?: string;
   notes?: string;
+  priority?: CommitmentPriority;
+}
+
+export interface CommitmentPriority {
+  urgent: boolean;
+  important: boolean;
+}
+
+export interface Preset {
+  id: string;
+  title: string;
+  titleCustom?: string;
+  kind: BlockKind;
+  duration: number; // minutes
+  notes?: string;
+  priority?: CommitmentPriority;
 }
 
 export interface Suggestion {
@@ -85,6 +101,7 @@ export interface ScheduleData {
   categories: Category[];
   routine: RoutineBlock[];
   commitments: Commitment[];
+  presets: Preset[];
   suggestions: Suggestion[];
   ledger: {
     compositionScore: number;
@@ -128,3 +145,38 @@ export function fmtDur(min: number): string {
   const h = Math.floor(min / 60), m = min % 60;
   return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }
+
+export type EisenhowerQuadrant = "do-first" | "schedule" | "delegate" | "eliminate";
+
+export function eisenhowerQuadrant(p: CommitmentPriority | undefined | null): EisenhowerQuadrant {
+  if (!p) return "eliminate";
+  if (p.urgent && p.important) return "do-first";
+  if (!p.urgent && p.important) return "schedule";
+  if (p.urgent && !p.important) return "delegate";
+  return "eliminate";
+}
+
+export function quadrantOrder(q: EisenhowerQuadrant): number {
+  return q === "do-first" ? 0 : q === "schedule" ? 1 : q === "delegate" ? 2 : 3;
+}
+
+export const QUADRANT_COLORS: Record<EisenhowerQuadrant, string> = {
+  "do-first": "bg-red-500",
+  "schedule": "bg-blue-500",
+  "delegate": "bg-amber-500",
+  "eliminate": "bg-muted-foreground/30",
+};
+
+export const QUADRANT_TEXT_COLORS: Record<EisenhowerQuadrant, string> = {
+  "do-first": "text-red-500",
+  "schedule": "text-blue-500",
+  "delegate": "text-amber-500",
+  "eliminate": "text-muted-foreground/40",
+};
+
+export const QUADRANT_LABELS: Record<EisenhowerQuadrant, { pt: string; en: string }> = {
+  "do-first": { pt: "Fazer", en: "Do First" },
+  "schedule": { pt: "Agendar", en: "Schedule" },
+  "delegate": { pt: "Delegar", en: "Delegate" },
+  "eliminate": { pt: "Eliminar", en: "Eliminate" },
+};

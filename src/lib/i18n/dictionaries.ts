@@ -275,6 +275,7 @@ const pt = {
       needsTitle: "O compromisso precisa de um título.",
       endAfterStart: "O fim deve ser após o início.",
       added: "Compromisso adicionado",
+      notes: "Notas",
     },
     settings: {
       eyebrow: "Configurações",
@@ -744,6 +745,7 @@ const en: typeof pt = {
       needsTitle: "A commitment needs a title.",
       endAfterStart: "End must be after start.",
       added: "Commitment added",
+      notes: "Notes",
     },
     settings: {
       eyebrow: "Settings",
