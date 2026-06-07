@@ -405,7 +405,7 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Profile button repurposement — sidebar profile now opens full settings dropdown (language/theme/import/export/reset/signout); topbar simplified to search+compose only
 - [ ] File selector with small preview horizontal slider (akin to save files)
 - [x] Integrate block category creation section (from settings) into main page
-- [x] Refine category creation section from config page — replaced collapsible editing form with BlockTypeGallery (visual cards with color dots)
+- [x] Refine category creation section — inline label/description editing with save/cancel, mini block preview pills, restore defaults, create/delete categories with warning dialog, color picker palette
 
 ---
 

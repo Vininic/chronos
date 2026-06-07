@@ -1,10 +1,12 @@
-export type BlockKind = "deep" | "meeting" | "ritual" | "recovery" | "shallow" | "sleep";
+export type BlockKind = string;
+export const BUILTIN_KINDS = ["deep", "meeting", "ritual", "recovery", "shallow", "sleep"] as const;
 
 export interface Category {
   id: BlockKind;
   label: string;
   labelCustom?: string;
   tone: string;
+  color?: string; // hex color for dynamic block styling
   description: string;
   descriptionCustom?: string;
 }

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -30,6 +30,21 @@ function toMin(value: string): number {
   return h * 60 + m;
 }
 
+function matchesSearch(time: string, q: string, bcp47: string): boolean {
+  const lq = q.toLowerCase();
+  if (time.includes(lq)) return true;
+  const display = formatTime(time, bcp47).toLowerCase();
+  if (display.includes(lq)) return true;
+  const hour = parseInt(time, 10);
+  const hourStr = `${hour}`;
+  if (hourStr === lq) return true;
+  const hour12 = `${hour % 12 || 12}`;
+  if (hour12 === lq) return true;
+  if (lq === "am" || lq === "a.m.") return display.includes("am");
+  if (lq === "pm" || lq === "p.m.") return display.includes("pm");
+  return false;
+}
+
 export function TimeSelect({
   value,
   onValueChange,
@@ -54,6 +69,8 @@ export function TimeSelect({
   times?: string[];
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => {
     const lo = min != null ? toMin(min) : 0;
@@ -81,8 +98,23 @@ export function TimeSelect({
     return result;
   }, [min, max, exclude, allowMidnight]);
 
+  const filteredGroups = useMemo(() => {
+    if (!search) return groups;
+    const q = search.toLowerCase();
+    return groups
+      .map((g) => ({ ...g, items: g.items.filter((t) => matchesSearch(t, q, bcp47)) }))
+      .filter((g) => g.items.length > 0);
+  }, [groups, search, bcp47]);
+
+  useEffect(() => {
+    if (open && value && listRef.current) {
+      const el = listRef.current.querySelector(`[data-value="${value}"]`);
+      if (el) el.scrollIntoView({ block: "center", behavior: "auto" });
+    }
+  }, [open, value]);
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSearch(""); }}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -98,12 +130,17 @@ export function TimeSelect({
           <Clock className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search time&hellip;" className="h-9" />
-          <CommandList className="max-h-[260px]">
+      <PopoverContent className="w-[220px] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search time…"
+            className="h-9"
+            value={search}
+            onValueChange={setSearch}
+          />
+          <CommandList ref={listRef} className="max-h-[300px]">
             <CommandEmpty>No time found.</CommandEmpty>
-            {groups.map((group, i) => (
+            {filteredGroups.map((group, i) => (
               <Fragment key={group.hour}>
                 {i > 0 && <CommandSeparator />}
                 <CommandGroup>

@@ -18,7 +18,7 @@ function categoryLabel(
   return category ? localizeCategoryLabel(kind, category.label, category.labelCustom) : fallback.common.kinds[kind];
 }
 
-export const kindStyle: Record<BlockKind, { dot: string; chip: string; icon: any; blockBg: string; blockBorder: string }> = {
+export const kindStyle: Record<string, { dot: string; chip: string; icon: any; blockBg: string; blockBorder: string }> = {
   deep:     { dot: "bg-amber-500",   chip: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",     icon: Brain,   blockBg: "bg-amber-500/10 dark:bg-amber-400/15",    blockBorder: "border-amber-500/35 dark:border-amber-400/30" },
   meeting:  { dot: "bg-blue-500",    chip: "bg-blue-500/15  text-blue-700  dark:bg-blue-400/20  dark:text-blue-300",      icon: CalIcon, blockBg: "bg-blue-500/10  dark:bg-blue-400/15",     blockBorder: "border-blue-500/30  dark:border-blue-400/25" },
   ritual:   { dot: "bg-violet-500",  chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300", icon: Zap,     blockBg: "bg-violet-500/10 dark:bg-violet-400/15", blockBorder: "border-violet-500/30 dark:border-violet-400/25" },
@@ -26,6 +26,10 @@ export const kindStyle: Record<BlockKind, { dot: string; chip: string; icon: any
   shallow:  { dot: "bg-slate-400",   chip: "bg-slate-400/15  text-slate-600  dark:bg-slate-400/20  dark:text-slate-300",  icon: Clock,   blockBg: "bg-slate-400/10",                         blockBorder: "border-slate-400/30" },
   sleep:    { dot: "bg-indigo-400",  chip: "bg-indigo-400/15  text-indigo-700 dark:bg-indigo-400/20  dark:text-indigo-300",  icon: Moon,    blockBg: "bg-indigo-400/10  dark:bg-indigo-400/12",  blockBorder: "border-indigo-400/30 dark:border-indigo-400/20" },
 };
+
+export function safeKindStyle(kind: string): { dot: string; chip: string; icon: any; blockBg: string; blockBorder: string } {
+  return kindStyle[kind] ?? { dot: "bg-muted-foreground", chip: "bg-muted/50 text-muted-foreground", icon: Clock, blockBg: "bg-muted/30", blockBorder: "border-border/50" };
+}
 
 /* ---------------- Daily agenda (data-driven) ---------------- */
 export function DailyAgenda() {
@@ -107,8 +111,6 @@ export function PerformanceCard() {
   const variety = data.ledger.metrics.find((m) => m.label === "Variety")?.value ?? 0;
   return (
     <div className="chronos-card p-6 h-full">
-      <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
-      <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.compositionScore}</h3>
 
       <div className="mt-6 grid place-items-center relative">
         <svg width="180" height="180" viewBox="0 0 140 140">
@@ -173,12 +175,9 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
             <Sparkles className="h-4 w-4 text-primary-deep" />
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.nav.aetheris}</div>
-            <h3 className="font-display text-xl text-primary -mt-0.5">{t.chronos.aetheris.quietSuggestions}</h3>
-            <div className="text-[11px] text-muted-foreground">Local rule engine · no external AI calls</div>
+            <span className="text-[11px] text-muted-foreground">{data.suggestions.length} {t.common.awaitingReview}</span>
           </div>
         </div>
-        <span className="text-[11px] text-muted-foreground">{data.suggestions.length} {t.common.awaitingReview}</span>
       </div>
 
       {data.suggestions.length === 0 ? (
@@ -452,6 +451,52 @@ export const TAILWIND_TO_HEX: Record<string, string> = {
   "bg-slate-400": "#94a3b8",
   "bg-indigo-400": "#818cf8",
 };
+
+export const COLOR_FAMILIES = [
+  {
+    family: "Crimson",
+    shades: ["#fca5a5", "#f87171", "#ef4444", "#dc2626", "#b91c1c"],
+  },
+  {
+    family: "Rose",
+    shades: ["#fda4af", "#fb7185", "#f43f5e", "#e11d48", "#be123c"],
+  },
+  {
+    family: "Amber",
+    shades: ["#fcd34d", "#fbbf24", "#f59e0b", "#d97706", "#b45309"],
+  },
+  {
+    family: "Chartreuse",
+    shades: ["#bef264", "#a3e635", "#84cc16", "#65a30d", "#4d7c0f"],
+  },
+  {
+    family: "Emerald",
+    shades: ["#6ee7b7", "#34d399", "#10b981", "#059669", "#047857"],
+  },
+  {
+    family: "Teal",
+    shades: ["#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e"],
+  },
+  {
+    family: "Sky",
+    shades: ["#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1"],
+  },
+  {
+    family: "Violet",
+    shades: ["#c4b5fd", "#a78bfa", "#8b5cf6", "#7c3aed", "#6d28d9"],
+  },
+  {
+    family: "Indigo",
+    shades: ["#a5b4fc", "#818cf8", "#6366f1", "#4f46e5", "#4338ca"],
+  },
+  {
+    family: "Slate",
+    shades: ["#cbd5e1", "#94a3b8", "#64748b", "#475569", "#334155"],
+  },
+];
+
+/** Flat list of all system hex colors */
+export const COLOR_PALETTE = COLOR_FAMILIES.flatMap((f) => f.shades);
 
 /* ---------------- Focus vs other chart ---------------- */
 export function BalanceCard() {

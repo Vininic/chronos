@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { DayPlanner, type DayPlannerHandle } from "@/components/dashboard/DayPlanner";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
-import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, OptimizationStrip, kindStyle } from "@/components/dashboard/widgets";
+import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, OptimizationStrip, kindStyle, safeKindStyle, TAILWIND_TO_HEX, COLOR_PALETTE, COLOR_FAMILIES } from "@/components/dashboard/widgets";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
-import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur } from "@/lib/schedule/types";
+import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS } from "@/lib/schedule/types";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, StickyNote, Trash2, Eye } from "lucide-react";
+import { ChevronDown, Plus, StickyNote, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -31,7 +31,7 @@ function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
 
 export default function Today() {
   const { session } = useAuth();
-  const { data, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, removePreset } = useSchedule();
+  const { data, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, removePreset } = useSchedule();
   const { bcp47 } = useI18n();
   const t = useT();
   const scheduleText = useScheduleText();
@@ -154,8 +154,11 @@ export default function Today() {
         isNextFromTomorrow={isNextFromTomorrow}
       />
 
-      <div id="today-dayplanner" className="mt-8 border-t border-border/30 pt-5">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary mb-3">{t.chronos.today.eyebrow}</div>
+      <div id="today-dayplanner" className="mt-10 border-t border-border/30 pt-5">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.today.eyebrow}</div>
+          <span className="text-xs text-muted-foreground">· {t.chronos.widgets.dailyAgenda}</span>
+        </div>
         <DayPlanner ref={dayPlannerRef} onCommitmentDrop={handleCommitmentDrop} />
       </div>
 
@@ -173,22 +176,32 @@ export default function Today() {
         />
       </div>
 
-      <section className="mt-10">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
-          <span className="text-xs text-muted-foreground">· {t.chronos.widgets.balanceTitle}</span>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-5"><FocusBlocksCard /></div>
-          <div className="lg:col-span-7"><BalanceCard /></div>
-        </div>
-      </section>
+      <div className="mt-10 border-t border-border/30 pt-5">
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
+            <span className="text-xs text-muted-foreground">· {t.chronos.widgets.balanceTitle}</span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-5"><FocusBlocksCard /></div>
+            <div className="lg:col-span-7"><BalanceCard /></div>
+          </div>
+        </section>
+      </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
+          <span className="text-xs text-muted-foreground">· {t.chronos.widgets.compositionScore}</span>
+        </div>
         <PerformanceStatsSection />
       </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.nav.aetheris}</div>
+          <span className="text-xs text-muted-foreground">· {t.chronos.aetheris.quietSuggestions}</span>
+        </div>
         <section>
           <AetherisCard compact />
         </section>
@@ -198,7 +211,12 @@ export default function Today() {
         <BlockTypeGallery
           data={data}
           t={t}
+          isPt={isPt}
           scheduleText={scheduleText}
+          onUpdate={updateCategory}
+          onReset={resetCategoryNaming}
+          onAdd={addCategory}
+          onRemove={removeCategory}
         />
       </div>
     </>
@@ -588,7 +606,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
   }
 
   return (
-    <section className="mt-8">
+    <section>
       <style>{`.prio-group:hover .prio-label { opacity: 1 !important; }`}</style>
       <div className="flex items-center justify-between gap-2 mb-4">
         <div className="flex items-center gap-2">
@@ -698,37 +716,269 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
 
 function PerformanceStatsSection() {
   return (
-    <section className="mt-10">
+    <section>
       <PerformanceCard />
       <div className="mt-6"><OptimizationStrip /></div>
     </section>
   );
 }
 
-function BlockTypeGallery({ data, t, scheduleText }: any) {
-  return (
-    <section>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
-        <span className="text-xs text-muted-foreground">· {t.chronos.settings.vocabulary}</span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {data.categories.map((c: any) => {
-          const label = scheduleText.categoryLabel(c.id, c.label, c.labelCustom);
-          const description = scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom);
-          const s = kindStyle[c.id as BlockKind];
-          return (
-            <div key={c.id} className="chronos-card p-4 flex items-start gap-3">
-              <div className={`mt-0.5 h-3 w-3 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-primary">{label}</div>
-                <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{description}</div>
-                <div className="text-[10px] text-muted-foreground/40 mt-1 uppercase tracking-wide">{c.id}</div>
+function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove }: any) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState("");
+  const [draftDesc, setDraftDesc] = useState("");
+  const [draftColor, setDraftColor] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [createLabel, setCreateLabel] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createColor, setCreateColor] = useState(COLOR_PALETTE[0]);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  function startEdit(c: any) {
+    setEditingId(c.id);
+    setDraftLabel(scheduleText.categoryLabel(c.id, c.label, c.labelCustom));
+    setDraftDesc(scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom));
+    setDraftColor(c.color ?? TAILWIND_TO_HEX[kindStyle[c.id]?.dot] ?? "#f59e0b");
+  }
+
+  function saveEdit(c: any) {
+    const labelCustom = draftLabel !== scheduleText.categoryLabel(c.id, c.label, undefined) ? draftLabel : undefined;
+    const descriptionCustom = draftDesc !== scheduleText.categoryDescription(c.id, c.description, undefined) ? draftDesc : undefined;
+    onUpdate(c.id, { labelCustom, descriptionCustom, color: draftColor });
+    setEditingId(null);
+    toast({ title: t.chronos.settings.categoryUpdated });
+  }
+
+  function cancelEdit() { setEditingId(null); }
+
+  function handleCreate() {
+    const id = createLabel.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    if (!id) { toast({ title: "Invalid name" }); return; }
+    if (data.categories.find((c: any) => c.id === id)) { toast({ title: "Category already exists" }); return; }
+    onAdd({ id, label: createLabel, description: createDesc, tone: "custom", color: createColor });
+    setShowCreate(false);
+    setCreateLabel("");
+    setCreateDesc("");
+    setCreateColor(COLOR_PALETTE[0]);
+    toast({ title: t.chronos.settings.categorySaved(id) });
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const kind = deleteTarget;
+    const blockCount = data.routine.filter((r: any) => r.kind === kind).length + data.commitments.filter((c: any) => c.kind === kind).length;
+    onRemove(kind);
+    setDeleteTarget(null);
+    toast({ title: `"${kind}" removed` + (blockCount > 0 ? ` · ${blockCount} blocks deleted` : "") });
+  }
+
+  function renderColorPicker(color: string, onChange: (c: string) => void) {
+    return (
+      <div className="bg-card rounded-lg p-3 border border-border/50 space-y-2">
+        <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{t.chronos.settings.categoryTone}</div>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-x-3 gap-y-2.5">
+          {COLOR_FAMILIES.map((f) => (
+            <div key={f.family} className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50">{f.family}</span>
+              <div className="flex items-center gap-0.5">
+                {f.shades.map((hex) => (
+                  <button
+                    key={hex}
+                    onClick={() => onChange(hex)}
+                    className="rounded-sm transition-all border shrink-0"
+                    style={{
+                      width: 18,
+                      height: 18,
+                      backgroundColor: hex,
+                      borderColor: color === hex ? "hsl(var(--primary))" : "transparent",
+                      outline: color === hex ? "2px solid hsl(var(--secondary))" : "none",
+                      outlineOffset: "1px",
+                    }}
+                  />
+                ))}
               </div>
             </div>
-          );
-        })}
+          ))}
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <span className="w-14 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground/50">Custom</span>
+          <div className="flex items-center gap-2 flex-1">
+            <div className="flex items-center gap-2 flex-1 bg-muted/50 rounded px-3 py-1.5 border border-border">
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => onChange(e.target.value)}
+                className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0"
+              />
+              <span className="font-mono text-xs text-muted-foreground">{color}</span>
+            </div>
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <section>
+      <div className="chronos-card p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
+          <span className="text-xs text-muted-foreground">· {t.chronos.settings.vocabulary}</span>
+        </div>
+
+        <div className="space-y-px">
+          {data.categories.map((c: any) => {
+            const blockStyle = safeKindStyle(c.id);
+            const dotKey = blockStyle.dot;
+            const dotHex = c.color ?? TAILWIND_TO_HEX[dotKey] ?? "#f59e0b";
+            const isEditing = editingId === c.id;
+            const label = scheduleText.categoryLabel(c.id, c.label, c.labelCustom);
+            const description = scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom);
+            const isBuiltin = BUILTIN_KINDS.includes(c.id);
+            const hasCustom = !!(c.labelCustom || c.descriptionCustom || c.color);
+            const customBorder = c.color && !kindStyle[c.id] ? `${c.color}66` : undefined;
+
+            return (
+              <div
+                key={c.id}
+                className={`${blockStyle.blockBg} ${blockStyle.blockBorder} rounded-lg px-4 py-3`}
+                style={customBorder ? { borderColor: customBorder } : undefined}
+              >
+                {isEditing ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: dotHex }} />
+                      <input
+                        autoFocus
+                        value={draftLabel}
+                        onChange={(e) => setDraftLabel(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveEdit(c); if (e.key === "Escape") cancelEdit(); }}
+                        className="flex-1 bg-card/80 text-sm font-medium text-primary rounded px-2 py-1 outline-none border border-border"
+                      />
+                    </div>
+                    <textarea
+                      value={draftDesc}
+                      onChange={(e) => setDraftDesc(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") cancelEdit(); }}
+                      rows={2}
+                      className="w-full bg-card/80 text-xs text-muted-foreground rounded px-2 py-1.5 outline-none border border-border resize-none"
+                    />
+                    <div>{renderColorPicker(draftColor, setDraftColor)}</div>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => saveEdit(c)} className="h-7 px-3 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1">
+                          <Check className="h-3 w-3" /> {t.common.save}
+                        </button>
+                        <button onClick={cancelEdit} className="h-7 px-3 rounded text-xs font-medium text-muted-foreground hover:bg-muted/60 transition-colors flex items-center gap-1">
+                          <X className="h-3 w-3" /> {t.common.cancel}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {hasCustom && isBuiltin && (
+                          <button onClick={() => { onReset(c.id); setEditingId(null); toast({ title: t.chronos.settings.categoryRestored }); }} className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground/60 flex items-center gap-1">
+                            <RotateCcw className="h-3 w-3" /> {t.chronos.settings.restoreDefaultNames}
+                          </button>
+                        )}
+                        <button onClick={() => { setDeleteTarget(c.id); cancelEdit(); }} className="text-[10px] text-rose-500/50 hover:text-rose-500/80 flex items-center gap-1">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: dotHex }} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-primary truncate">{label}</div>
+                        {description && <div className="text-xs text-muted-foreground truncate">{description}</div>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">{c.id}</div>
+                      <button onClick={() => startEdit(c)} className="text-[10px] text-muted-foreground/50 hover:text-secondary/80 transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/40">
+                        <Pencil className="h-3 w-3" /> Edit
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            onClick={() => setShowCreate(true)}
+            className="w-full border-2 border-dashed border-border/40 rounded-lg py-5 flex items-center justify-center gap-2 text-sm text-muted-foreground/50 hover:text-muted-foreground hover:border-muted-foreground/30 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            {t.common.add}
+          </button>
+        </div>
+      </div>
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.chronos.settings.category}</DialogTitle>
+            <DialogDescription>{isPt ? "Criar novo tipo de bloco" : "Create a new block type"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.categoryName}</Label>
+              <input
+                autoFocus
+                value={createLabel}
+                onChange={(e) => setCreateLabel(e.target.value)}
+                placeholder={isPt ? "Ex: Leitura" : "e.g. Reading"}
+                className="w-full bg-muted/60 text-sm text-primary rounded px-3 py-2 mt-1 outline-none border border-border"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.categoryDescription}</Label>
+              <input
+                value={createDesc}
+                onChange={(e) => setCreateDesc(e.target.value)}
+                placeholder={isPt ? "Descrição opcional" : "Optional description"}
+                className="w-full bg-muted/60 text-sm text-primary rounded px-3 py-2 mt-1 outline-none border border-border"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.categoryTone}</Label>
+              <div className="mt-2">{renderColorPicker(createColor, setCreateColor)}</div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: createColor }} />
+                <span className="font-mono">{createColor}</span>
+              </div>
+              <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowCreate(false)}>{t.common.cancel}</Button>
+              <Button size="sm" onClick={handleCreate}>{t.common.save}</Button>
+            </div>
+          </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-rose-500" /> {isPt ? "Remover categoria" : "Remove category"}</DialogTitle>
+            <DialogDescription>
+              {deleteTarget && (() => {
+                const blockCount = data.routine.filter((r: any) => r.kind === deleteTarget).length + data.commitments.filter((c: any) => c.kind === deleteTarget).length;
+                return isPt
+                  ? `Isso removerá "${deleteTarget}" e ${blockCount} bloco(s) que usam esta categoria. Esta ação não pode ser desfeita.`
+                  : `This will remove "${deleteTarget}" and ${blockCount} block(s) using this category. This action cannot be undone.`;
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => setDeleteTarget(null)}>{t.common.cancel}</Button>
+            <Button size="sm" variant="destructive" onClick={confirmDelete}>{isPt ? "Remover" : "Remove"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

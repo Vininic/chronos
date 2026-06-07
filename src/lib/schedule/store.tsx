@@ -602,8 +602,10 @@ interface Ctx {
   updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
   removeSleepCut: (target: { date: string; start?: string; end?: string }) => void;
-  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone">>) => void;
+  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color">>) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
+  addCategory: (category: Omit<Category, never>) => void;
+  removeCategory: (id: Category["id"]) => void;
   applySuggestion: (id: string) => void;
   deferSuggestion: (id: string) => void;
   refreshSuggestions: () => void;
@@ -1170,10 +1172,27 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone">>) => {
+  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color">>) => {
     setData((d) => withDerived({
       ...d,
       categories: d.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
+  }, []);
+
+  const addCategory = useCallback((cat: Category) => {
+    setData((d) => withDerived({
+      ...d,
+      categories: [...d.categories, cat],
+    }));
+  }, []);
+
+  const removeCategory = useCallback((id: Category["id"]) => {
+    setData((d) => withDerived({
+      ...d,
+      categories: d.categories.filter((c) => c.id !== id),
+      routine: d.routine.filter((r) => r.kind !== id),
+      commitments: d.commitments.filter((c) => c.kind !== id),
+      presets: d.presets.filter((p) => p.kind !== id),
     }));
   }, []);
 
@@ -1238,6 +1257,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addSleepCut,
       removeSleepCut,
       updateCategory,
+      addCategory,
+      removeCategory,
       resetCategoryNaming,
       applySuggestion,
       deferSuggestion,
@@ -1264,6 +1285,8 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addSleepCut,
       removeSleepCut,
       updateCategory,
+      addCategory,
+      removeCategory,
       resetCategoryNaming,
       applySuggestion,
       deferSuggestion,
