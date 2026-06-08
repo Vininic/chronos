@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
 import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
-import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
+import type { CustomField, SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { isKnownDefaultBlockTitle, useScheduleText } from "@/lib/i18n/scheduleText";
-import { ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2, Circle, CheckCircle2, CalendarDays } from "lucide-react";
+import { ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, Puzzle, StickyNote, Table2, Trash2, Circle, CheckCircle2, CalendarDays } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,9 +13,40 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
+import { ExtensionSheetDialog } from "./ExtensionSheetDialog";
 import { TimeSelect } from "@/components/ui/time-select";
 import { setDragCommitmentInfo, getDragCommitmentInfo } from "@/lib/dragStore";
+import { getExtension, getRegisteredExtensions } from "@/lib/extensions/registry";
+import type { BlockExtension } from "@/lib/extensions/types";
+import { SchemaBadge, SchemaDetails, SchemaEditor, SchemaSheetDialog, getCustomFields, getSchemaValues } from "./BlockSchemaUI";
+
+function ExtensionBadges({ extensions, onClick }: { extensions?: Record<string, unknown>; onClick?: (extId: string, data: unknown) => void }) {
+  if (!extensions) return null;
+  const keys = Object.keys(extensions);
+  if (keys.length === 0) return null;
+  return (
+    <>
+      {keys.map((extId) => {
+        const ext = getExtension(extId);
+        if (!ext) return null;
+        const data = extensions[extId];
+        return (
+          <button
+            key={extId}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onClick?.(extId, data); }}
+            className="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-secondary hover:bg-muted/40 transition-colors"
+            title={ext.label}
+          >
+            {ext.renderBadge ? ext.renderBadge(data) : <Puzzle className="h-2.5 w-2.5" />}
+          </button>
+        );
+      })}
+    </>
+  );
+}
 
 const HOUR_PX = 64;
 const STACK_GAP_PX = 4;
@@ -33,6 +64,7 @@ type AgendaItem = {
   derived?: boolean;
   continuesFromPrevDay?: boolean;
   continuesToNextDay?: boolean;
+  extensions?: Record<string, unknown>;
 };
 
 type FreeSlot = { type: "free"; id: string; start: string; end: string };
@@ -490,6 +522,33 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
   const [editItem, setEditItem] = useState<AgendaItem | null>(null);
   const [editSleep, setEditSleep] = useState(false);
   const [inspectItem, setInspectItem] = useState<AgendaItem | null>(null);
+  const [sheetTarget, setSheetTarget] = useState<{ extId: string; data: unknown; item: AgendaItem } | null>(null);
+  const [schemaTarget, setSchemaTarget] = useState<{ fields: CustomField[]; values: Record<string, unknown>; item: AgendaItem } | null>(null);
+
+  function onExtensionBadgeClick(item: AgendaItem, extId: string, data: unknown) {
+    setSheetTarget({ extId, data, item });
+  }
+
+  function BlockBadges({ a }: { a: AgendaItem }) {
+    const fields = getCustomFields(data, a.kind);
+    const cat = data.categories.find((c) => c.id === a.kind);
+    const values = getSchemaValues(a.extensions);
+    return (
+      <>
+        {fields && fields.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setSchemaTarget({ fields, values, item: a }); }}
+            className="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-secondary hover:bg-muted/40 transition-colors"
+            title={cat?.label ?? a.kind}
+          >
+            <SchemaBadge fields={fields} values={values} />
+          </button>
+        )}
+        <ExtensionBadges extensions={a.extensions} onClick={(extId, d) => onExtensionBadgeClick(a, extId, d)} />
+      </>
+    );
+  }
 
   useEffect(() => {
     if (!isToday || !scrollRef.current) return;
@@ -1525,6 +1584,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                               <StickyNote className="h-2 w-2" />
                             </span>
                           )}
+                          <BlockBadges a={a} />
                         </div>
                       )}
 
@@ -1552,6 +1612,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                                 <StickyNote className="h-2.5 w-2.5" />
                               </span>
                             )}
+                            <BlockBadges a={a} />
                           </div>
                         </div>
                       )}
@@ -1592,6 +1653,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                                 <StickyNote className="h-2.5 w-2.5" />
                               </span>
                             )}
+                            <BlockBadges a={a} />
                           </div>
                         </div>
                       )}
@@ -1618,6 +1680,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                                 <StickyNote className="h-2.5 w-2.5" />
                               </span>
                             )}
+                            <BlockBadges a={a} />
                           </div>
                           {showNotesBelow && (
                             noteLines.length === 1 ? (
@@ -1759,6 +1822,24 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
           onClose={() => setInspectItem(null)}
         />
       )}
+      {sheetTarget && (
+        <ExtensionSheetDialog
+          blockExtensionId={sheetTarget.extId}
+          blockData={sheetTarget.data}
+          categoryId={sheetTarget.item.kind}
+          categoryLabel={sheetTarget.item.title}
+          onClose={() => setSheetTarget(null)}
+        />
+      )}
+      {schemaTarget && (
+        <SchemaSheetDialog
+          fields={schemaTarget.fields}
+          values={schemaTarget.values}
+          title={schemaTarget.item.title}
+          schemaLabel={data.categories.find((c) => c.id === schemaTarget.item.kind)?.label ?? ""}
+          onClose={() => setSchemaTarget(null)}
+        />
+      )}
     </div>
   );
 });
@@ -1810,6 +1891,55 @@ function BlockDetailsDialog({
               </span>
             )}
           </div>
+          {(() => {
+            const fields = getCustomFields(data, item.kind);
+            if (!fields || fields.length === 0) return null;
+            const schemaValues = getSchemaValues(item.extensions);
+            if (Object.keys(schemaValues).length === 0) return null;
+            const cat = data.categories.find((c) => c.id === item.kind);
+            return (
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                  <Table2 className="h-3 w-3" />
+                  {cat?.label ?? item.kind}
+                </div>
+                <div className="rounded-lg border border-border/40 bg-muted/10 p-3 space-y-2">
+                  {fields.map((field) => {
+                    const v = schemaValues[field.name];
+                    let display: React.ReactNode = <span className="text-muted-foreground/40 italic">--</span>;
+                    if (v !== undefined && v !== null && v !== "") {
+                      if (field.type === "checklist" && Array.isArray(v)) {
+                        display = (
+                          <div className="space-y-0.5">
+                            {(v as boolean[]).map((checked, i) => (
+                              <div key={i} className="flex items-center gap-1.5">
+                                <span className={`h-1.5 w-1.5 rounded-full ${checked ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+                                <span className={checked ? "text-primary" : "text-muted-foreground/50"}>
+                                  {field.options?.[i] ?? `Item ${i + 1}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      } else if (field.type === "boolean") {
+                        display = v ? "✓ Yes" : "✗ No";
+                      } else {
+                        display = <span className="text-primary font-medium">{String(v)}</span>;
+                      }
+                    }
+                    return (
+                      <div key={field.name} className="flex items-start gap-3 min-w-0">
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 shrink-0 min-w-[64px] pt-0.5">{field.label || field.name}</span>
+                        <span className="text-[13px] leading-snug min-w-0 flex-1">
+                          {display}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
           <div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{t.chronos.dialog.notes}</div>
             {noteLines.length === 0 ? (
@@ -1863,6 +1993,31 @@ function BlockDetailsDialog({
               })}
             </div>
           )}
+          {item.extensions && Object.keys(item.extensions).some(k => k !== "structured-notes" && getExtension(k)) && (
+            <div className="border-t border-border/30 pt-3">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Puzzle className="h-3 w-3" />
+                {bcp47.toLowerCase().startsWith("pt") ? "Extens\u00f5es" : "Extensions"}
+              </div>
+              {Object.entries(item.extensions).map(([extId, data]) => {
+                const ext = getExtension(extId);
+                if (!ext) return null;
+                return (
+                  <div key={extId} className="mb-2 last:mb-0">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1">
+                      <ext.icon className="h-3 w-3" />
+                      {ext.label}
+                    </div>
+                    {ext.renderDetails ? (
+                      ext.renderDetails(data)
+                    ) : (
+                      <pre className="text-[10px] text-muted-foreground/60 whitespace-pre-wrap">{JSON.stringify(data, null, 2)}</pre>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
@@ -1893,13 +2048,38 @@ function BlockEditDialog({
   const { bcp47 } = useI18n();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
+  const { data } = useSchedule();
   const [title, setTitle] = useState(scheduleText.blockTitle(item.title, item.titleCustom));
   const [kind, setKind] = useState<BlockKind>(item.kind);
   const [start, setStart] = useState(item.start);
   const [end, setEnd] = useState(item.end);
   const [endsNextDay, setEndsNextDay] = useState(Boolean(item.continuesToNextDay) || end <= start);
   const [noteLines, setNoteLines] = useState<NoteLine[]>(() => parseNotes(item.notes));
+  const [editExtensions, setEditExtensions] = useState<Record<string, unknown>>(() => item.extensions ?? {});
   const dur = durationMin(start, end);
+
+  function getDefaultExtensionData(ext: BlockExtension) {
+    const defaults: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(ext.schema)) {
+      if (def.defaultValue !== undefined) defaults[key] = def.defaultValue;
+    }
+    return defaults;
+  }
+
+  function toggleEditExtension(ext: BlockExtension) {
+    setEditExtensions((prev) => {
+      if (prev[ext.id]) {
+        const next = { ...prev };
+        delete next[ext.id];
+        return next;
+      }
+      return { ...prev, [ext.id]: getDefaultExtensionData(ext) };
+    });
+  }
+
+  function updateEditExtensionData(id: string, data: unknown) {
+    setEditExtensions((prev) => ({ ...prev, [id]: data }));
+  }
 
   useEffect(() => {
     if (end <= start) setEndsNextDay(true);
@@ -1933,6 +2113,7 @@ function BlockEditDialog({
     const next = title.trim();
     if (!next) return;
     const defaultTitle = scheduleText.blockTitle(item.title);
+    const extData = Object.keys(editExtensions).length > 0 ? editExtensions : undefined;
     const patch: Partial<AgendaItem> & { titleCustom?: string; endsNextDay?: boolean } = {
       start,
       end,
@@ -1943,6 +2124,7 @@ function BlockEditDialog({
       titleCustom: isKnownDefaultBlockTitle(item.title)
         ? (next !== defaultTitle ? next : undefined)
         : undefined,
+      extensions: extData,
     };
     if (!isKnownDefaultBlockTitle(item.title)) {
       onSave({ ...patch, title: next });
@@ -2046,6 +2228,61 @@ function BlockEditDialog({
                   <Plus className="h-3 w-3" />
                   {bcp47.toLowerCase().startsWith("pt") ? "Adicionar outra nota" : "Add another note"}
                 </button>
+              </div>
+            )}
+            {(() => {
+              const fields = getCustomFields(data, item.kind);
+              if (!fields || fields.length === 0) return null;
+              const schemaValues = getSchemaValues(editExtensions);
+              const cat = data.categories.find((c) => c.id === item.kind);
+              return (
+                <div className="space-y-2 border-t border-border/30 pt-3">
+                  <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5">
+                    <StickyNote className="h-3 w-3" />
+                    {cat?.label ?? item.kind}
+                  </Label>
+                  <SchemaEditor
+                    fields={fields}
+                    values={schemaValues}
+                    onChange={(values) => setEditExtensions((prev) => ({
+                      ...prev,
+                      "structured-notes": { values },
+                    }))}
+                  />
+                </div>
+              );
+            })()}
+            {getRegisteredExtensions().length > 0 && (
+              <div className="space-y-2 border-t border-border/30 pt-3">
+                <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5">
+                  <Puzzle className="h-3 w-3" />
+                  {bcp47.toLowerCase().startsWith("pt") ? "Extens\u00f5es" : "Extensions"}
+                </Label>
+                <div className="space-y-2">
+                  {getRegisteredExtensions().map((ext) => {
+                    const isActive = !!editExtensions[ext.id];
+                    return (
+                      <div key={ext.id} className={`rounded-md border p-2.5 transition-colors ${isActive ? "border-secondary/40 bg-muted/20" : "border-border/40"}`}>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={() => toggleEditExtension(ext)}
+                            id={`edit-ext-${ext.id}`}
+                          />
+                          <Label htmlFor={`edit-ext-${ext.id}`} className="flex items-center gap-1.5 text-[11px] font-medium cursor-pointer">
+                            <ext.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                            {ext.label}
+                          </Label>
+                        </div>
+                        {isActive && ext.renderEditor && (
+                          <div className="mt-2 ml-0 border-t border-border/20 pt-2">
+                            {ext.renderEditor(editExtensions[ext.id], (next) => updateEditExtensionData(ext.id, next))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

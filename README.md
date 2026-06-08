@@ -488,14 +488,20 @@ Future versions may introduce optional cloud synchronization while preserving lo
 # Modular Block Extensions
 
 ## Extension Architecture
-- [ ] Generic extension system
-- [ ] Structured block metadata
-- [ ] Extension renderer pipeline
-- [ ] Reusable block modules
-- [ ] Extensions need to be generic and fit multiple purposes.
-- [ ] Example: Workout extension (Exercise templates; Set/repetition tracking)
-- [ ] Example: Study extension (Subject Checklist)
-- [ ] Example: Simple Checklist Extension
+- [x] Generic extension system (registry, BlockExtension interface, types)
+- [x] Structured block metadata (extensions field on RoutineBlock, Commitment, Preset)
+- [x] Extension renderer pipeline (renderBadge on DayPlanner, renderDetails on BlockDetailsDialog, renderEditor on ComposeBlockDialog + BlockEditDialog)
+- [x] Reusable block modules (extensions register themselves, zero core changes)
+- [x] Category-to-extension binding (category.extensionId + category.extensionConfig)
+- [x] Category config editor (renderCategoryConfig on BlockExtension)
+- [x] Full sheet view dialog (ExtensionSheetDialog, renderSheet on BlockExtension)
+- [x] Extension actions (renderActions → "Generate Week" for workout)
+- [x] Block generation hooks (generateBlockData for auto-creating blocks)
+- [x] Per-block metadata + category-level config coexist
+- [x] Example: Checklist Extension (per-block checklist)
+- [x] Example: Workout Extension (templates, rotation, per-block data, sheet, generate-week)
+- [x] Custom Fields per category (UI-defined, inline editor in category cards, Notion-style — replaces Block Schemas)
+- [ ] Example: Study extension
 - [ ] Review systems
 - [ ] Execution logs
 - [ ] Progress logging

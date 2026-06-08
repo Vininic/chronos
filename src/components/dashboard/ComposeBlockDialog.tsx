@@ -12,9 +12,12 @@ import { useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes, CommitmentPriority, eisenhowerQuadrant, QUADRANT_COLORS, QUADRANT_LABELS } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Trash2, Bookmark, CalendarDays } from "lucide-react";
+import { Plus, Trash2, Bookmark, CalendarDays, StickyNote, Puzzle } from "lucide-react";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
+import { getRegisteredExtensions } from "@/lib/extensions/registry";
+import type { BlockExtension } from "@/lib/extensions/types";
+import { getCustomFields } from "./BlockSchemaUI";
 
 type NoteTone = "amber" | "sky" | "emerald" | "rose" | "violet";
 
@@ -104,6 +107,30 @@ export function ComposeBlockDialog({
   const [commitmentUrgent, setCommitmentUrgent] = useState(false);
   const [commitmentImportant, setCommitmentImportant] = useState(false);
   const [saveAsPreset, setSaveAsPreset] = useState(false);
+  const [extensions, setExtensions] = useState<Record<string, unknown>>({});
+
+  function getDefaultExtensionData(ext: BlockExtension) {
+    const defaults: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(ext.schema)) {
+      if (def.defaultValue !== undefined) defaults[key] = def.defaultValue;
+    }
+    return defaults;
+  }
+
+  function toggleExtension(ext: BlockExtension) {
+    setExtensions((prev) => {
+      if (prev[ext.id]) {
+        const next = { ...prev };
+        delete next[ext.id];
+        return next;
+      }
+      return { ...prev, [ext.id]: getDefaultExtensionData(ext) };
+    });
+  }
+
+  function updateExtensionData(id: string, data: unknown) {
+    setExtensions((prev) => ({ ...prev, [id]: data }));
+  }
 
   const DURATION_OPTIONS = [
     { value: 15, label: "15m" },
@@ -167,6 +194,7 @@ export function ComposeBlockDialog({
     setCommitmentUrgent(false);
     setCommitmentImportant(false);
     setSaveAsPreset(false);
+    setExtensions({});
   }
 
   useEffect(() => {
@@ -182,6 +210,7 @@ export function ComposeBlockDialog({
     setCommitmentUrgent(false);
     setCommitmentImportant(false);
     setSaveAsPreset(false);
+    setExtensions({});
   }, [open, defaultDateIso, defaultDay, defaultEnd, defaultKind, defaultStart, defaultMode]);
 
   useEffect(() => {
@@ -205,9 +234,10 @@ export function ComposeBlockDialog({
     e.preventDefault();
     if (!title.trim()) { toast({ title: t.chronos.dialog.needsTitle }); return; }
     const isPt = bcp47.toLowerCase().startsWith("pt");
+    const extData = Object.keys(extensions).length > 0 ? extensions : undefined;
     if (mode === "routine") {
       const endsNextDay = routineEndsNextDay || end <= start;
-      const error = addRoutine({ day: Number(day), start, end, endsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines) });
+      const error = addRoutine({ day: Number(day), start, end, endsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines), extensions: extData });
       if (error) {
         toast({ title: "Scheduling conflict", description: error });
         return;
@@ -218,13 +248,13 @@ export function ComposeBlockDialog({
       const effectiveEndsNextDay = commitmentDate ? (commitmentEndsNextDay || end <= start) : (end <= start);
       const priority: CommitmentPriority = { urgent: commitmentUrgent, important: commitmentImportant };
       const normalizedEndDate = effectiveEndsNextDay && commitmentDate ? (endDate > date ? endDate : addIsoDays(date, 1)) : undefined;
-      const error = addCommitment({ date: commitmentDate, start, end, endDate: normalizedEndDate, endsNextDay: effectiveEndsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines), priority });
+      const error = addCommitment({ date: commitmentDate, start, end, endDate: normalizedEndDate, endsNextDay: effectiveEndsNextDay, kind, title: title.trim(), notes: serializeNotes(noteLines), priority, extensions: extData });
       if (error) {
         toast({ title: "Scheduling conflict", description: error });
         return;
       }
       if (saveAsPreset) {
-        addPreset({ title: title.trim(), titleCustom: undefined, kind, duration: hasDate ? durationMin(start, end) : looseDuration, notes: serializeNotes(noteLines), priority: { urgent: commitmentUrgent, important: commitmentImportant } });
+        addPreset({ title: title.trim(), titleCustom: undefined, kind, duration: hasDate ? durationMin(start, end) : looseDuration, notes: serializeNotes(noteLines), priority: { urgent: commitmentUrgent, important: commitmentImportant }, extensions: extData });
       }
       toast({
         title: t.chronos.dialog.commitmentAdded,
@@ -245,10 +275,26 @@ export function ComposeBlockDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-4rem)] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-4rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-primary">{t.chronos.dialog.title}</DialogTitle>
           <DialogDescription>{t.chronos.dialog.desc}</DialogDescription>
+          {(() => {
+            const fields = getCustomFields(data, kind);
+            if (!fields || fields.length === 0) return null;
+            const cat = data.categories.find((c) => c.id === kind);
+            const localePt = bcp47.toLowerCase().startsWith("pt");
+            return (
+              <div className="mt-2 flex items-center gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5">
+                <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="text-[11px] text-muted-foreground">
+                  {localePt
+                    ? `${fields.length} campo(s) — preencha clicando no selo do bloco depois de criá-lo.`
+                    : `${fields.length} field(s) — fill in by clicking the block's badge after creating it.`}
+                </span>
+              </div>
+            );
+          })()}
         </DialogHeader>
         <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="mt-2">
           <TabsList className="grid grid-cols-2 w-full">
@@ -513,6 +559,39 @@ export function ComposeBlockDialog({
                 </div>
               )}
             </div>
+            {getRegisteredExtensions().length > 0 && (
+              <div className="space-y-2 border-t border-border/30 pt-3">
+                <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5">
+                  <Puzzle className="h-3 w-3" />
+                  {bcp47.toLowerCase().startsWith("pt") ? "Extens\u00f5es" : "Extensions"}
+                </Label>
+                <div className="space-y-2">
+                  {getRegisteredExtensions().map((ext) => {
+                    const isActive = !!extensions[ext.id];
+                    return (
+                      <div key={ext.id} className={`rounded-md border p-2.5 transition-colors ${isActive ? "border-secondary/40 bg-muted/20" : "border-border/40"}`}>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={() => toggleExtension(ext)}
+                            id={`ext-${ext.id}`}
+                          />
+                          <Label htmlFor={`ext-${ext.id}`} className="flex items-center gap-1.5 text-[11px] font-medium cursor-pointer">
+                            <ext.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                            {ext.label}
+                          </Label>
+                        </div>
+                        {isActive && ext.renderEditor && (
+                          <div className="mt-2 ml-0 border-t border-border/20 pt-2">
+                            {ext.renderEditor(extensions[ext.id], (next) => updateExtensionData(ext.id, next))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t.chronos.dialog.cancel}</Button>
               <Button type="submit" className="bg-primary text-primary-foreground hover:bg-primary-deep">{t.chronos.dialog.submit}</Button>

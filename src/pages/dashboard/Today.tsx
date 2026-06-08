@@ -1,21 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPlanner, type DayPlannerHandle } from "@/components/dashboard/DayPlanner";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, OptimizationStrip, kindStyle, safeKindStyle, TAILWIND_TO_HEX, COLOR_PALETTE, COLOR_FAMILIES } from "@/components/dashboard/widgets";
 import { GoalSection } from "@/components/dashboard/GoalSection";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
-import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd } from "@/lib/schedule/types";
-import type { Goal } from "@/lib/schedule/types";
+import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd, DAY_LABELS } from "@/lib/schedule/types";
+import type { Goal, CustomField } from "@/lib/schedule/types";
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, StickyNote, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, Table2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { setDragCommitmentInfo } from "@/lib/dragStore";
+import { getSchemaValues } from "@/components/dashboard/BlockSchemaUI";
+
 
 function formatClock(time: string, bcp47: string) {
   const [h, m] = time.split(":").map(Number);
@@ -34,7 +36,7 @@ function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
 
 export default function Today() {
   const { session } = useAuth();
-  const { data, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
+  const { data, addRoutine, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
   const { bcp47 } = useI18n();
   const t = useT();
   const scheduleText = useScheduleText();
@@ -117,7 +119,7 @@ export default function Today() {
     if (!preset) return;
     const startMin = timeToMinutes(start);
     const end = snapTime(startMin + preset.duration);
-    const id = addCommitment({ title: preset.title, titleCustom: preset.titleCustom, kind: preset.kind, start, end, date, notes: preset.notes, priority: preset.priority });
+    const id = addCommitment({ title: preset.title, titleCustom: preset.titleCustom, kind: preset.kind, start, end, date, notes: preset.notes, priority: preset.priority, extensions: preset.extensions });
     if (id) toast({ title: isPt ? "Compromisso adicionado" : "Commitment added" });
   }
 
@@ -249,8 +251,12 @@ export default function Today() {
           onReset={resetCategoryNaming}
           onAdd={addCategory}
           onRemove={removeCategory}
+          addRoutine={addRoutine}
+          addCommitment={addCommitment}
+          todayIso={todayIso}
         />
       </div>
+
     </>
   );
 }
@@ -799,8 +805,9 @@ function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; 
   );
 }
 
-function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove }: any) {
+function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: any) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [sheetCategoryId, setSheetCategoryId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState("");
   const [draftDesc, setDraftDesc] = useState("");
   const [draftColor, setDraftColor] = useState("");
@@ -809,7 +816,6 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   const [createDesc, setCreateDesc] = useState("");
   const [createColor, setCreateColor] = useState(COLOR_PALETTE[0]);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-
   function startEdit(c: any) {
     setEditingId(c.id);
     setDraftLabel(scheduleText.categoryLabel(c.id, c.label, c.labelCustom));
@@ -820,7 +826,11 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   function saveEdit(c: any) {
     const labelCustom = draftLabel !== scheduleText.categoryLabel(c.id, c.label, undefined) ? draftLabel : undefined;
     const descriptionCustom = draftDesc !== scheduleText.categoryDescription(c.id, c.description, undefined) ? draftDesc : undefined;
-    onUpdate(c.id, { labelCustom, descriptionCustom, color: draftColor });
+    onUpdate(c.id, {
+      labelCustom,
+      descriptionCustom,
+      color: draftColor,
+    });
     setEditingId(null);
     toast({ title: t.chronos.settings.categoryUpdated });
   }
@@ -948,21 +958,30 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: dotHex }} />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-primary truncate">{label}</div>
-                        {description && <div className="text-xs text-muted-foreground truncate">{description}</div>}
+                  <>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: dotHex }} />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-primary truncate">{label}</div>
+                          {description && <div className="text-xs text-muted-foreground truncate">{description}</div>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">{c.id}</div>
+                        <button
+                          onClick={() => setSheetCategoryId(c.id)}
+                          className="text-[10px] text-muted-foreground/40 hover:text-secondary/80 transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/40"
+                          title={isPt ? "Planilha de dados" : "Data sheet"}
+                        >
+                          <Table2 className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => startEdit(c)} className="text-[10px] text-muted-foreground/50 hover:text-secondary/80 transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/40">
+                          <Pencil className="h-3 w-3" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">{c.id}</div>
-                      <button onClick={() => startEdit(c)} className="text-[10px] text-muted-foreground/50 hover:text-secondary/80 transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/40">
-                        <Pencil className="h-3 w-3" /> Edit
-                      </button>
-                    </div>
-                  </div>
+                  </>
                 )}
               </div>
             );
@@ -1041,6 +1060,285 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
           </div>
         </DialogContent>
       </Dialog>
+
+      {sheetCategoryId && (() => {
+        const cat = data.categories.find((c: any) => c.id === sheetCategoryId);
+        if (!cat) return null;
+        return (
+          <CategorySheetDialog
+            key={sheetCategoryId}
+            category={cat}
+            isPt={isPt}
+            onClose={() => setSheetCategoryId(null)}
+          />
+        );
+      })()}
     </section>
   );
 }
+
+function CategorySheetDialog({
+  category,
+  isPt,
+  onClose,
+}: {
+  category: any;
+  isPt: boolean;
+  onClose: () => void;
+}) {
+  const { data, updateCategory, updateCommitment, updateRoutine } = useSchedule();
+  const scheduleText = useScheduleText();
+  const [addingCol, setAddingCol] = useState(false);
+  const [newColName, setNewColName] = useState("");
+  const [editColName, setEditColName] = useState<string | null>(null);
+  const [editColDraft, setEditColDraft] = useState("");
+  const [editCell, setEditCell] = useState<{ blockId: string; source: string; fieldName: string } | null>(null);
+  const [editCellVal, setEditCellVal] = useState("");
+
+  const fields: CustomField[] = category.customFields ?? [];
+
+  const blocks = useMemo(() => [
+    ...data.routine.filter((r: any) => r.kind === category.id).map((r: any) => ({
+      id: r.id, source: "routine" as const,
+      title: scheduleText.blockTitle(r.title, r.titleCustom),
+      dateLabel: DAY_LABELS[r.day], timeLabel: `${r.start}–${r.end}`,
+      extensions: r.extensions,
+    })),
+    ...data.commitments.filter((c: any) => c.kind === category.id).map((c: any) => ({
+      id: c.id, source: "commitment" as const,
+      title: scheduleText.blockTitle(c.title, c.titleCustom),
+      dateLabel: c.date ?? "--", timeLabel: `${c.start}–${c.end}`,
+      extensions: c.extensions,
+    })),
+  ], [data, category.id, scheduleText]);
+
+  function addColumn() {
+    const raw = newColName.trim();
+    if (!raw) return;
+    const name = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    if (!name) return;
+    updateCategory(category.id, {
+      customFields: [...fields, { name, label: raw, type: "text" }],
+    });
+    setNewColName("");
+    setAddingCol(false);
+  }
+
+  function renameColumn(oldName: string) {
+    const raw = editColDraft.trim();
+    if (!raw || raw === fields.find(f => f.name === oldName)?.label) {
+      setEditColName(null);
+      return;
+    }
+    const newName = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    updateCategory(category.id, {
+      customFields: fields.map(f =>
+        f.name === oldName ? { ...f, name: newName || "field", label: raw } : f
+      ),
+    });
+    setEditColName(null);
+  }
+
+  function cycleFieldType(name: string) {
+    const idx = fields.findIndex(f => f.name === name);
+    if (idx === -1) return;
+    const types: CustomField["type"][] = ["text", "number", "boolean", "select", "checklist"];
+    const cur = fields[idx].type;
+    const next = types[(types.indexOf(cur) + 1) % types.length];
+    const patch: Partial<CustomField> = { type: next };
+    if (next !== "select" && next !== "checklist") patch.options = undefined;
+    if (next === "select" || next === "checklist") patch.options = fields[idx].options ?? [];
+    updateCategory(category.id, {
+      customFields: fields.map((f, i) => i === idx ? { ...f, ...patch } : f),
+    });
+  }
+
+  function removeColumn(name: string) {
+    updateCategory(category.id, {
+      customFields: fields.filter(f => f.name !== name),
+    });
+  }
+
+  function saveCell(block: typeof blocks[0], fieldName: string) {
+    if (!editCell) return;
+    const curValues = getSchemaValues(block.extensions);
+    const newValues = { ...curValues, [fieldName]: editCellVal || undefined };
+    const newExt = { ...(block.extensions || {}), "structured-notes": { values: newValues } };
+    if (block.source === "commitment") updateCommitment(block.id, { extensions: newExt });
+    else updateRoutine(block.id, { extensions: newExt });
+    setEditCell(null);
+  }
+
+  const typeLabels: Record<string, string> = {
+    text: isPt ? "Texto" : "Text",
+    number: isPt ? "Número" : "Number",
+    boolean: isPt ? "Bool" : "Bool",
+    select: isPt ? "Opção" : "Select",
+    checklist: isPt ? "Lista" : "List",
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Table2 className="h-4 w-4 text-secondary" />
+            {category.label ?? category.id}
+            <span className="text-xs text-muted-foreground font-normal">· {isPt ? "Planilha" : "Sheet"}</span>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="overflow-auto max-h-[65vh]">
+          {blocks.length === 0 && fields.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground space-y-3">
+              <div>{isPt ? "Nenhum bloco ou campo ainda." : "No blocks or fields yet."}</div>
+              <button
+                type="button"
+                onClick={() => setAddingCol(true)}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                {isPt ? "Adicionar coluna" : "Add column"}
+              </button>
+            </div>
+          ) : (
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className="border-b border-border/40">
+                  <th className="text-left py-2 px-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap">{isPt ? "Título" : "Title"}</th>
+                  <th className="text-left py-2 px-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap">{isPt ? "Data" : "Date"}</th>
+                  <th className="text-left py-2 px-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap">{isPt ? "Horário" : "Time"}</th>
+                  {fields.map((f) => (
+                    <th key={f.name} className="group relative text-left py-2 px-2 whitespace-nowrap min-w-[80px]">
+                      {editColName === f.name ? (
+                        <input
+                          autoFocus
+                          value={editColDraft}
+                          onChange={(e) => setEditColDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") renameColumn(f.name);
+                            if (e.key === "Escape") setEditColName(null);
+                          }}
+                          onBlur={() => renameColumn(f.name)}
+                          className="w-full bg-muted/50 text-[10px] text-primary rounded px-1 py-0.5 outline-none border border-border"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => { setEditColName(f.name); setEditColDraft(f.label || f.name); }}
+                            className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium hover:text-primary transition-colors truncate max-w-[80px]"
+                          >
+                            {f.label || f.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => cycleFieldType(f.name)}
+                            className="shrink-0 rounded px-1 py-0.5 text-[8px] font-medium bg-secondary/8 text-secondary/70 hover:bg-secondary/15 transition-colors leading-none"
+                            title={isPt ? "Clique para mudar o tipo" : "Click to change type"}
+                          >
+                            {typeLabels[f.type]}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeColumn(f.name)}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground/30 hover:text-rose-500/70 transition-all"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      )}
+                    </th>
+                  ))}
+                  <th className="py-2 px-2 w-8">
+                    {addingCol ? (
+                      <input
+                        autoFocus
+                        value={newColName}
+                        onChange={(e) => setNewColName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addColumn();
+                          if (e.key === "Escape") { setAddingCol(false); setNewColName(""); }
+                        }}
+                        onBlur={() => { if (newColName.trim()) addColumn(); else { setAddingCol(false); setNewColName(""); } }}
+                        placeholder={isPt ? "Nome" : "Name"}
+                        className="w-20 bg-muted/50 text-[10px] text-primary rounded px-1 py-0.5 outline-none border border-border"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAddingCol(true)}
+                        className="text-muted-foreground/40 hover:text-secondary transition-colors"
+                        title={isPt ? "Adicionar coluna" : "Add column"}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {blocks.map((block) => {
+                  const values = getSchemaValues(block.extensions);
+                  return (
+                    <tr key={`${block.source}-${block.id}`} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
+                      <td className="py-1.5 px-2 text-primary font-medium truncate max-w-[180px]">{block.title}</td>
+                      <td className="py-1.5 px-2 text-muted-foreground whitespace-nowrap">{block.dateLabel}</td>
+                      <td className="py-1.5 px-2 text-muted-foreground whitespace-nowrap">{block.timeLabel}</td>
+                      {fields.map((f) => {
+                        const cellKey = `${block.source}-${block.id}-${f.name}`;
+                        const isEditing = editCell?.blockId === block.id && editCell?.source === block.source && editCell?.fieldName === f.name;
+                        const v = values[f.name];
+                        let display = "--";
+                        if (v !== undefined && v !== null && v !== "") {
+                          if (f.type === "checklist" && Array.isArray(v)) {
+                            const checked = v.filter(Boolean).length;
+                            display = `${checked}/${v.length}`;
+                          } else if (f.type === "boolean") {
+                            display = v ? "✓" : "✗";
+                          } else {
+                            display = String(v);
+                          }
+                        }
+                        return (
+                          <td key={f.name} className="py-1.5 px-2 min-w-[80px]">
+                            {isEditing ? (
+                              <input
+                                autoFocus
+                                value={editCellVal}
+                                onChange={(e) => setEditCellVal(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveCell(block, f.name);
+                                  if (e.key === "Escape") setEditCell(null);
+                                }}
+                                onBlur={() => saveCell(block, f.name)}
+                                className="w-full bg-muted/50 text-[11px] text-primary rounded px-1 py-0.5 outline-none border border-border"
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditCell({ blockId: block.id, source: block.source, fieldName: f.name });
+                                  setEditCellVal(v !== undefined && v !== null && v !== "" ? String(v) : "");
+                                }}
+                                className="w-full text-left text-[11px] text-primary truncate hover:text-secondary transition-colors"
+                                title={display}
+                              >
+                                {display}
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+

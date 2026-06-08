@@ -28,6 +28,22 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Data types: `src/lib/schedule/types.ts` (`ScheduleData` v3)
 - Planner UI hotspot: `src/components/dashboard/DayPlanner.tsx`
 - Profile dialog hotspot: `src/components/dashboard/ProfileDialog.tsx` (carousel with multi-profile state `extraProfiles: (ScheduleData | null)[]`)
+- Block extension system: `src/lib/extensions/` — generic `BlockExtension` interface, registry (`registerExtension`/`getExtension`), init in `App.tsx`
+  - Extensions add `extensions?: Record<string, unknown>` to RoutineBlock/Commitment/Preset
+  - Integrated into ComposeBlockDialog, BlockEditDialog, BlockDetailsDialog, DayPlanner rendering
+  - Category binding: `Category.extensionId` + `Category.extensionConfig`
+  - Category config editor via `renderCategoryConfig` in category edit view
+  - Sheet dialog via `ExtensionSheetDialog` (opens from extension badge click on blocks)
+  - Actions via `renderActions` → returns `ActionDef[]` with `run(ctx)`
+  - Block generation via `generateBlockData(categoryConfig, day, date)`
+  - Example: `src/lib/extensions/checklist.tsx` (per-block checklist with add/toggle/remove)
+  - Example: `src/lib/extensions/workout.tsx` (templates, rotation, generate-week, full sheet view)
+- Custom Fields system (user-facing, no code required):
+  - `CustomField` type in `src/lib/schedule/types.ts` — fields live directly on `Category.customFields`
+  - Category editor in Today page has an inline field editor (Notion-style)
+  - Rendering: `src/components/dashboard/BlockSchemaUI.tsx` — `SchemaBadge`, `SchemaDetails`, `SchemaEditor`, `SchemaSheetDialog`
+  - Data stored per-block in `extensions["structured-notes"]` = `{ values: { fieldName: value } }`
+  - Badge appears in DayPlanner, editor in BlockEditDialog, details in BlockDetailsDialog, sheet on badge click
 
 ## Project conventions
 - Time math is string-based (`HH:mm`) with explicit `24:00` boundary handling in agenda generation

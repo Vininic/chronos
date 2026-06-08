@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
+import type { Category, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry, CustomField } from "./types";
+import type { ExtensionContext } from "@/lib/extensions/types";
 import { durationMin, timeToMinutes, getPeriodStartEnd, computeGoalProgress, isGoalTrackingValid, isGoalPeriodValid, getDefaultGoalTracking, getDefaultGoalPeriod } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { DICTIONARIES } from "@/lib/i18n/dictionaries";
@@ -28,10 +29,15 @@ function load(locale: Locale = "en"): ScheduleData {
 
 
 function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
-  const categories = data.categories.map((c) => {
+  // Migrate blockSchemaId → customFields (removed in v6)
+  const schemaMap = new Map((data.blockSchemas ?? []).map((s: any) => [s.id, s.fields]));
+  const categories = data.categories.map((c: any) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
-    return { ...c, labelCustom, descriptionCustom };
+    const customFields = c.blockSchemaId && schemaMap.has(c.blockSchemaId)
+      ? schemaMap.get(c.blockSchemaId)
+      : c.customFields ?? undefined;
+    return { id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone, color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, customFields };
   });
 
   const routine = data.routine
@@ -650,7 +656,7 @@ interface Ctx {
   updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
   removeSleepCut: (target: { date: string; start?: string; end?: string }) => void;
-  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color">>) => void;
+  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "extensionId" | "extensionConfig" | "customFields">>) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
   addCategory: (category: Omit<Category, never>) => void;
   removeCategory: (id: Category["id"]) => void;
@@ -1430,7 +1436,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color">>) => {
+  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "extensionId" | "extensionConfig" | "customFields">>) => {
     setData((d) => withDerived({
       ...d,
       categories: d.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
@@ -1627,6 +1633,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
       kind: c.kind,
       source: "commitment" as const,
       notes: c.notes,
+      extensions: c.extensions,
     }];
   });
 
@@ -1653,6 +1660,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
         kind: r.kind,
         source: "routine" as const,
         notes: r.notes,
+        extensions: r.extensions,
       }));
     });
 
@@ -1664,4 +1672,25 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
     : buildSleepSegmentsForDate(sleepEntry, date, sleepTitle);
 
   return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
+}
+
+export function makeExtensionContext(
+  data: ScheduleData,
+  categoryId: string,
+  selectedDate: string,
+  addRoutine: (b: Omit<RoutineBlock, "id">) => string | null,
+  addCommitment: (c: Omit<Commitment, "id">) => string | null,
+  updateCategoryConfig: (config: unknown) => void,
+): ExtensionContext {
+  const cat = data.categories.find((c) => c.id === categoryId);
+  return {
+    categoryId,
+    categoryConfig: cat?.extensionConfig,
+    selectedDate,
+    routines: data.routine,
+    commitments: data.commitments,
+    addRoutine,
+    addCommitment,
+    updateCategoryConfig,
+  };
 }

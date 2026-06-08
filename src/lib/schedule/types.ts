@@ -9,6 +9,17 @@ export interface Category {
   color?: string; // hex color for dynamic block styling
   description: string;
   descriptionCustom?: string;
+  extensionId?: string;
+  extensionConfig?: Record<string, unknown>;
+  customFields?: CustomField[];
+}
+
+export interface CustomField {
+  name: string;
+  label: string;
+  type: "text" | "number" | "boolean" | "select" | "checklist";
+  options?: string[];
+  defaultValue?: unknown;
 }
 
 export interface RoutineBlock {
@@ -21,6 +32,7 @@ export interface RoutineBlock {
   title: string;
   titleCustom?: string;
   notes?: string;
+  extensions?: Record<string, unknown>;
 }
 
 export interface Commitment {
@@ -35,6 +47,7 @@ export interface Commitment {
   titleCustom?: string;
   notes?: string;
   priority?: CommitmentPriority;
+  extensions?: Record<string, unknown>;
 }
 
 export interface CommitmentPriority {
@@ -50,6 +63,7 @@ export interface Preset {
   duration: number; // minutes
   notes?: string;
   priority?: CommitmentPriority;
+  extensions?: Record<string, unknown>;
 }
 
 export interface Suggestion {
