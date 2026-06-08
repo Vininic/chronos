@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { DayPlanner, type DayPlannerHandle } from "@/components/dashboard/DayPlanner";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, OptimizationStrip, kindStyle, safeKindStyle, TAILWIND_TO_HEX, COLOR_PALETTE, COLOR_FAMILIES } from "@/components/dashboard/widgets";
+import { GoalSection } from "@/components/dashboard/GoalSection";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
-import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS } from "@/lib/schedule/types";
+import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd } from "@/lib/schedule/types";
+import type { Goal } from "@/lib/schedule/types";
+import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, StickyNote, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle } from "lucide-react";
+import { ChevronDown, Plus, StickyNote, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -31,7 +34,7 @@ function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
 
 export default function Today() {
   const { session } = useAuth();
-  const { data, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, removePreset } = useSchedule();
+  const { data, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
   const { bcp47 } = useI18n();
   const t = useT();
   const scheduleText = useScheduleText();
@@ -42,6 +45,7 @@ export default function Today() {
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const todayDate = new Date();
   const dayPlannerRef = useRef<DayPlannerHandle>(null);
+  const [assignGoalId, setAssignGoalId] = useState<string | null>(null);
   const todayAgenda = buildAgendaForDate(data, todayDate).sort((a, b) => a.start.localeCompare(b.start));
   const currentBlock = todayAgenda.find((a) => timeToMinutes(a.start) <= nowMin && nowMin < timeToMinutes(a.end)) ?? null;
   const nextNonSleep = todayAgenda.find((a) => a.kind !== "sleep" && timeToMinutes(a.start) > nowMin) ?? null;
@@ -59,6 +63,9 @@ export default function Today() {
   const nextLabel = isPt ? "Próximo" : "Next";
   const emptyNowLabel = isPt ? "Sem bloco atual" : "No current block";
   const emptyNextLabel = isPt ? "Sem próximo bloco" : "No next block";
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayGoals = getGoalsForDate(todayIso);
 
   const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
   const sleepEntry = getSleepWindowForDay(sleepSchedule, todayDate.getDay()) ?? sleepSchedule[0];
@@ -159,7 +166,7 @@ export default function Today() {
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.today.eyebrow}</div>
           <span className="text-xs text-muted-foreground">· {t.chronos.widgets.dailyAgenda}</span>
         </div>
-        <DayPlanner ref={dayPlannerRef} onCommitmentDrop={handleCommitmentDrop} />
+        <DayPlanner ref={dayPlannerRef} onCommitmentDrop={handleCommitmentDrop} assignGoalId={assignGoalId} onAssignMode={setAssignGoalId} />
       </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
@@ -175,6 +182,31 @@ export default function Today() {
           scheduleText={scheduleText}
         />
       </div>
+
+      {todayGoals.length > 0 && (
+        <div className="mt-10 border-t border-border/30 pt-5">
+          <GoalSection
+            goals={todayGoals}
+            allGoals={data.goals}
+            commitments={data.commitments}
+            routine={data.routine}
+            snapshots={data.progressSnapshots}
+            categories={data.categories}
+            onAddGoal={(fields: GoalFields) => {
+              const id = addGoal({ ...fields, kind: fields.kind, tracking: fields.tracking });
+              if (fields.autoTrackMode === "commitments") generateGoalCommitments(id);
+            }}
+            onUpdateGoal={updateGoal}
+            onRemoveGoal={removeGoal}
+            onToggleBlock={toggleGoalBlock}
+            onToggleSubTask={toggleGoalSubTask}
+            onAddSubTask={addGoalSubTask}
+            onAddBlock={(goalId, duration) => addGoalBlock(goalId, { title: "", duration: duration ?? 60, date: todayIso, done: true, order: 0 })}
+            onAssignMode={setAssignGoalId}
+            compact
+          />
+        </div>
+      )}
 
       <div className="mt-10 border-t border-border/30 pt-5">
         <section>
@@ -194,7 +226,7 @@ export default function Today() {
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
           <span className="text-xs text-muted-foreground">· {t.chronos.widgets.compositionScore}</span>
         </div>
-        <PerformanceStatsSection />
+        <PerformanceStatsSection goals={data.goals} todayIso={todayIso} t={t} data={data} />
       </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
@@ -714,9 +746,53 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
   );
 }
 
-function PerformanceStatsSection() {
+function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; todayIso: string; t: any; data: any }) {
+  const activeGoals = goals.filter((g) => {
+    const pp = getPeriodStartEnd(g.startDate, g.period, todayIso);
+    return todayIso >= pp.start && todayIso <= pp.end;
+  });
+  const p = activeGoals.reduce((acc, g) => {
+    const gp = computeGoalProgress(g, todayIso, goals, data.routine, data.commitments);
+    acc.weighted += gp.ratio * g.weight;
+    acc.totalWeight += g.weight;
+    if (gp.denominator > 0 && gp.ratio >= 1) acc.done++;
+    return acc;
+  }, { weighted: 0, totalWeight: 0, done: 0 });
+  const overall = p.totalWeight > 0 ? p.weighted / p.totalWeight : 0;
+
   return (
-    <section>
+    <section className="space-y-6">
+      {activeGoals.length > 0 && (
+        <div className="chronos-card p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Target className="h-4 w-4 text-secondary" />
+            <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.goals.eyebrow}</span>
+          </div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.round(overall * 100)}%`, backgroundColor: "hsl(var(--secondary))" }} />
+            </div>
+            <span className="text-xs text-primary font-medium num">{Math.round(overall * 100)}%</span>
+          </div>
+          <div className="text-[10px] text-muted-foreground mb-3">
+            {p.done}/{activeGoals.length} goals completed
+          </div>
+          <div className="space-y-1.5">
+            {activeGoals.map((g) => {
+              const gp = computeGoalProgress(g, todayIso, goals, data.routine, data.commitments);
+              return (
+                <div key={g.id} className="flex items-center gap-2">
+                  <span className="text-[10px] text-primary truncate flex-1">{g.title}</span>
+                  <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.round(gp.ratio * 100)}%`, backgroundColor: g.color ?? "hsl(var(--secondary))" }} />
+                  </div>
+                  <span className="text-[9px] text-muted-foreground num w-7 text-right">{Math.round(gp.ratio * 100)}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <PerformanceCard />
       <div className="mt-6"><OptimizationStrip /></div>
     </section>
@@ -773,46 +849,32 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   }
 
   function renderColorPicker(color: string, onChange: (c: string) => void) {
+    const isCustomColor = color && !COLOR_FAMILIES.some((f) => f.shades.includes(color));
     return (
-      <div className="bg-card rounded-lg p-3 border border-border/50 space-y-2">
-        <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{t.chronos.settings.categoryTone}</div>
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-x-3 gap-y-2.5">
-          {COLOR_FAMILIES.map((f) => (
-            <div key={f.family} className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50">{f.family}</span>
-              <div className="flex items-center gap-0.5">
-                {f.shades.map((hex) => (
-                  <button
-                    key={hex}
-                    onClick={() => onChange(hex)}
-                    className="rounded-sm transition-all border shrink-0"
-                    style={{
-                      width: 18,
-                      height: 18,
-                      backgroundColor: hex,
-                      borderColor: color === hex ? "hsl(var(--primary))" : "transparent",
-                      outline: color === hex ? "2px solid hsl(var(--secondary))" : "none",
-                      outlineOffset: "1px",
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+      <div className="rounded-lg border border-border/60 bg-card p-2 space-y-1.5">
+        <div className="grid grid-cols-5 gap-0.5">
+          {COLOR_FAMILIES.map((fam) => (
+            fam.shades.map((s) => (
+              <button key={s} type="button" onClick={() => onChange(color === s ? "" : s)}
+                className={`h-5 w-full rounded-[2px] border transition-all ${color === s ? "ring-2 ring-offset-1 ring-secondary" : "border-border/40"}`}
+                style={{ backgroundColor: s }}
+                title={fam.family}
+              />
+            ))
           ))}
         </div>
-        <div className="flex items-center gap-3 pt-1">
-          <span className="w-14 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground/50">Custom</span>
-          <div className="flex items-center gap-2 flex-1">
-            <div className="flex items-center gap-2 flex-1 bg-muted/50 rounded px-3 py-1.5 border border-border">
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => onChange(e.target.value)}
-                className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0"
-              />
-              <span className="font-mono text-xs text-muted-foreground">{color}</span>
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-muted-foreground">Custom:</span>
+          <input type="color" value={color || "#f59e0b"} onChange={(e) => onChange(e.target.value)}
+            className="h-5 w-8 rounded border border-border/60 cursor-pointer p-0.5" />
+          {isCustomColor && (
+            <span className="text-[9px] font-mono text-muted-foreground">{color}</span>
+          )}
+          {color && (
+            <button type="button" onClick={() => onChange("")} className="text-muted-foreground hover:text-primary ml-auto">
+              <X className="h-2.5 w-2.5" />
+            </button>
+          )}
         </div>
       </div>
     );

@@ -183,20 +183,34 @@ Each block instance should contribute to long-term progression.
 
 ---
 
-# Modular Block Extensions
+# Final Interface Refinements
 
-Chronos should support generic structured block extensions.
+## Category Management
+- [x] Color picker redesign — 10 families × 5 shades, grid layout, custom hex input with live preview
+- [x] Inline label/description editing with save/cancel, restore defaults
+- [x] Category CRUD with delete warning dialog
 
-Examples:
-- workout templates
-- study systems
-- checklists
-- review logs
-- execution tracking
+## Goal UI
+- [x] Kind×Tracking×Period matrix enforcement (load, save, dialog)
+- [x] Period options filtered in GoalDialog based on matrix
+- [x] Inline subtask creation on GoalCard
+- [x] Deadline DayPlanner banner (interactive chips with day count)
+- [x] Milestone tracking mode (auto-completes on deadline date)
+- [x] Real minutes for duration+category tracking (not flat 60min)
+- [x] Total period capped at today/deadline (no infinite counting)
 
-These systems should remain modular and generic.
+## DayPlanner
+- [x] Smarter time-search combobox
+- [x] Timeline-block info cards
+- [x] BlockDetailsDialog with tracked-goals section
+- [x] Assign mode overlay + tracked block indicators
+- [x] ProgressChart fix (snapshot.ratio → inline computation)
 
-The project should avoid hardcoded feature-specific implementations.
+## Store & Persistence
+- [x] Schema migration v4→v5 (goal progress snapshots, count→numeric migration)
+- [x] Matrix-normalization on load (catches legacy invalid combos)
+- [x] Ledger metrics: Focus, Recovery, Goals progress
+- [x] `computeGoalProgress` deduplicated between ledger and GoalCard
 
 ---
 
@@ -423,32 +437,51 @@ Future versions may introduce optional cloud synchronization while preserving lo
 # Goals & Progression
 
 ## Goal System
-- [ ] Count goals
-- [ ] Duration goals
-- [ ] Numeric accumulation goals
-- [ ] Deadline goals
-- [ ] Weighted progression
-- [ ] Habit streaks
-- [ ] Long-term progression tracking
+- [x] Goal data model (types, schema migration, store CRUD)
+- [x] Count goals
+- [x] Duration goals
+- [x] Numeric accumulation goals
+- [x] Deadline goals
+- [x] Weighted progression
+- [x] Goal UI components (GoalDialog, GoalCard, GoalSection, GoalList)
+- [x] Category-based auto-tracking (goal blocks aggregate across shared categoryId)
+- [x] Prominent auto-track section in GoalDialog with 3 modes (Always / Selected / Commitments)
+- [x] Three auto-track modes with per-goal progress computation
+- [x] Commitment generation for goals (generateGoalCommitments, looseCommitmentIds)
+- [x] DayPlanner assign mode overlay + tracked block indicators
+- [x] BlockDetailsDialog tracked-goals section with per-goal toggle
+- [x] Goal completion indicator ("Complete" badge at 100%)
+- [x] Period-aware Today filtering (activity-based, not just period)
+- [x] Goal description editing in GoalDialog
+- [x] Tracking type badge on GoalCard (e.g. [Count] [Check-ins])
+- [x] Inverted card sizes (Today grid, Week stacked)
+- [x] [+ Add] dashed button on Week goal list
+- [x] Start date toggle as shadcn Switch
+- [x] Habit streaks
+- [x] Long-term progression tracking
 
 ---
 
 ## Metrics
-- [ ] Focus metrics
-- [ ] Recovery metrics
-- [ ] Consistency metrics
-- [ ] Completion metrics
-- [ ] Weekly analytics
-- [ ] Timeline progress overlays
+- [x] Focus metrics
+- [x] Recovery metrics
+- [x] Consistency metrics
+- [x] Completion metrics (goal progress in ledger)
+- [x] Weekly analytics
+- [x] Timeline progress overlays
 
 ---
 
 ## Goal Visualization
-- [ ] Progress bars
-- [ ] Weekly goal tracking
-- [ ] Deadline indicators
-- [ ] Long-term charts
-- [ ] Progress summaries
+- [x] Progress bars (linear for duration)
+- [x] Segmented dot-based progress (count + numeric goals)
+- [x] Circular ring progress (deadline goals)
+- [x] Period-aware progress (daily/weekly/monthly block filtering)
+- [x] Weekly goal tracking (GoalList on Week page)
+- [x] Progress summaries with per-goal breakdown (GoalSection + ProgressDialog)
+- [x] Goal completion badge indicator
+- [x] Deadline indicators (GoalCard badge, DayPlanner banner, Week upcoming deadlines chip list)
+- [x] Long-term charts (ProgressChart on non-compact GoalCard)
 
 ---
 
@@ -459,16 +492,11 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [ ] Structured block metadata
 - [ ] Extension renderer pipeline
 - [ ] Reusable block modules
-
----
-
-## Planned Extensions
-- [ ] Workout extension
-- [ ] Exercise templates
-- [ ] Set/repetition tracking
-- [ ] Study extension
+- [ ] Extensions need to be generic and fit multiple purposes.
+- [ ] Example: Workout extension (Exercise templates; Set/repetition tracking)
+- [ ] Example: Study extension (Subject Checklist)
+- [ ] Example: Simple Checklist Extension
 - [ ] Review systems
-- [ ] Checklist extension
 - [ ] Execution logs
 - [ ] Progress logging
 

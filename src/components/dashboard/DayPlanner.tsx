@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
-import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes } from "@/lib/schedule/types";
+import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
 import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { kindStyle } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { isKnownDefaultBlockTitle, useScheduleText } from "@/lib/i18n/scheduleText";
-import { ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Trash2, Circle, CheckCircle2, CalendarDays } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -247,10 +247,12 @@ export interface DayPlannerHandle {
 
 interface DayPlannerProps {
   onCommitmentDrop?: (commitmentId: string, date: string, start: string) => void;
+  assignGoalId?: string | null;
+  onAssignMode?: (goalId: string | null) => void;
 }
 
-export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function DayPlanner({ onCommitmentDrop }, ref) {
-  const { data, pushMoveDayChain, updateRoutine, updateSleepSchedule, setSleepBoundaryEnforced, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment } = useSchedule();
+export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function DayPlanner({ onCommitmentDrop, assignGoalId, onAssignMode }, ref) {
+  const { data, pushMoveDayChain, updateRoutine, updateSleepSchedule, setSleepBoundaryEnforced, addSleepCut, removeSleepCut, removeRoutine, updateCommitment, removeCommitment, trackBlockForGoal, isBlockTrackedForAnyGoal } = useSchedule();
   const t = useT();
   const fmtDur = useFmtDur();
   const { bcp47 } = useI18n();
@@ -1034,6 +1036,50 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
         </div>
       </div>
 
+      {(() => {
+        const isPt = bcp47.toLowerCase().startsWith("pt");
+        const td = selectedDateIso;
+        const dlGoals = data.goals.filter((g) => g.kind === "deadline" && g.deadline);
+        if (dlGoals.length === 0) return null;
+        const sorted = [...dlGoals].sort((a, b) => a.deadline!.localeCompare(b.deadline!));
+        return (
+          <div className="flex items-center gap-1.5 px-5 py-1.5 border-b border-border/40 overflow-x-auto">
+            <CalendarDays className="h-3 w-3 text-muted-foreground shrink-0" />
+            {sorted.slice(0, 3).map((g) => {
+              const d = daysUntilDeadline(g.deadline!);
+              const overdue = d < 0;
+              const isDue = d === 0;
+              return (
+                <button key={g.id}
+                  onClick={() => {
+                    const el = document.querySelector(`[data-goal-id="${g.id}"]`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth", block: "center" });
+                      (el as HTMLElement).classList.add("ring-2", "ring-primary/30", "rounded-lg");
+                      setTimeout(() => (el as HTMLElement).classList.remove("ring-2", "ring-primary/30", "rounded-lg"), 2000);
+                    }
+                  }}
+                  className={`rounded-md border px-2 py-0.5 text-[11px] flex items-center gap-1.5 shrink-0 transition-colors hover:opacity-80 ${
+                    overdue ? "border-rose-500/40 bg-rose-500/8 text-rose-600" :
+                    isDue ? "border-rose-500/30 bg-rose-500/6 text-rose-600" :
+                    d <= 3 ? "border-amber-500/30 bg-amber-500/6 text-amber-600" :
+                    "border-border/60 text-muted-foreground"
+                  }`}
+                >
+                  <span className="truncate max-w-[100px]">{g.title}</span>
+                  <span className="num font-medium">
+                    {overdue ? `${Math.abs(d)}d` : isDue ? t.chronos.today.today : `${d}d`}
+                  </span>
+                </button>
+              );
+            })}
+            {sorted.length > 3 && (
+              <span className="text-[10px] text-muted-foreground shrink-0">+{sorted.length - 3}</span>
+            )}
+          </div>
+        );
+      })()}
+
       <div
         id="dayplanner-scroll"
         ref={scrollRef}
@@ -1065,6 +1111,22 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
           onCommitmentDrop?.(info.id, selectedDateIso, snapped);
         }}
       >
+        {assignGoalId && (() => {
+          const ag = data.goals.find((g) => g.id === assignGoalId);
+          if (!ag) return null;
+          return (
+            <div className="flex items-center justify-between bg-secondary/10 border-b border-secondary/30 px-5 py-2">
+              <span className="text-xs text-primary font-medium">
+                Assigning blocks to <span className="text-secondary">{ag.title}</span>
+              </span>
+              <button onClick={() => onAssignMode?.(null)}
+                className="text-xs text-muted-foreground hover:text-primary px-2 py-1 rounded hover:bg-muted/50 transition-colors"
+              >
+                Exit
+              </button>
+            </div>
+          );
+        })()}
         <div className="relative" style={{ height: timelineHeight, userSelect: draggingId ? "none" : undefined }}>
           {showStartBoundaryMarker && (
             <div
@@ -1595,6 +1657,31 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                         <Pencil className={editIcon} />
                       </button>
                     )}
+                    {!assignGoalId && isBlockTrackedForAnyGoal(a.source + "-" + (a.sourceId ?? a.id)) && (
+                      <div className="shrink-0 w-7 h-full flex items-center justify-center">
+                        <div className="h-1.5 w-1.5 rounded-full bg-secondary" />
+                      </div>
+                    )}
+                    {assignGoalId && (() => {
+                      const ag = data.goals.find((g) => g.id === assignGoalId);
+                      if (!ag || ag.categoryId !== a.kind) return null;
+                      const blockKey = a.source + "-" + (a.sourceId ?? a.id);
+                      const isAssigned = ag.trackedBlockKeys?.includes(blockKey);
+                      return (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); trackBlockForGoal(assignGoalId, blockKey); }}
+                          data-no-open="true"
+                          className={`shrink-0 w-7 h-full flex items-center justify-center transition-colors ${isAssigned ? "text-secondary" : "text-muted-foreground/40 hover:text-secondary"}`}
+                          aria-label={isAssigned ? "Unassign" : "Assign"}
+                        >
+                          {isAssigned ? (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          ) : (
+                            <Plus className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -1689,8 +1776,13 @@ function BlockDetailsDialog({
   const { bcp47 } = useI18n();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
+  const { data, trackBlockForGoal } = useSchedule();
   const noteLines = parseNotes(item.notes);
   const kindVisual = kindStyle[item.kind];
+  const blockKey = item.source + "-" + (item.sourceId ?? item.id);
+  const dialogGoals = data.goals.filter(
+    (g) => g.categoryId === item.kind && g.autoTrackMode
+  );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -1735,6 +1827,42 @@ function BlockDetailsDialog({
               </div>
             )}
           </div>
+          {dialogGoals.length > 0 && (
+            <div className="border-t border-border/30 pt-3">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Tracked to goals</div>
+              {dialogGoals.map((g) => {
+                const mode = g.autoTrackMode ?? "always";
+                const isTracked = g.trackedBlockKeys?.includes(blockKey);
+                if (mode === "always") {
+                  return (
+                    <div key={g.id} className="flex items-center gap-2 w-full text-xs py-1.5 px-2 rounded opacity-60">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-primary font-medium">{g.title}</div>
+                        <div className="text-[10px] text-muted-foreground">Always (auto-tracked)</div>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <button key={g.id}
+                    onClick={() => trackBlockForGoal(g.id, blockKey)}
+                    className="flex items-center gap-2 w-full text-left text-xs py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
+                  >
+                    {isTracked ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-secondary shrink-0" />
+                    ) : (
+                      <Circle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate text-primary font-medium">{g.title}</div>
+                      <div className="text-[10px] text-muted-foreground">{mode === "selected" ? "Selected" : "Commitments"}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />

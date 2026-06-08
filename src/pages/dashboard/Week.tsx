@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { WeeklyRoutine, kindStyle } from "@/components/dashboard/widgets";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
+import { GoalList } from "@/components/dashboard/GoalList";
 import { useSchedule } from "@/lib/schedule/store";
-import { BlockKind, RoutineBlock, durationMin } from "@/lib/schedule/types";
+import type { Goal } from "@/lib/schedule/types";
+import { BlockKind, RoutineBlock, durationMin, computeGoalProgress, computeStreak, getPeriodStartEnd, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
+import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Expand, Shrink, Trash2, Pencil } from "lucide-react";
+import { Expand, Shrink, Trash2, Pencil, Target, BarChart3, Clock, CheckCircle2, CalendarDays } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
@@ -16,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 
 export default function Week() {
-  const { data, removeRoutine, updateRoutine } = useSchedule();
+  const { data, removeRoutine, updateRoutine, addGoal, updateGoal, removeGoal, addGoalBlock, toggleGoalBlock, toggleGoalSubTask, addGoalSubTask, generateGoalCommitments } = useSchedule();
   const t = useT();
   const { bcp47 } = useI18n();
   const fmtDur = useFmtDur();
@@ -120,7 +123,98 @@ export default function Week() {
         <div className="grid grid-cols-1 gap-6"><WeeklyRoutine /></div>
       )}
 
-      {!monthView && (
+      {!monthView && (() => {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const weekStart = getPeriodStartEnd(data.goals[0]?.startDate ?? todayIso, "weekly", todayIso).start;
+        const weekEnd = getPeriodStartEnd(data.goals[0]?.startDate ?? todayIso, "weekly", todayIso).end;
+        const totalSchedMin = data.routine.reduce((s, r) => {
+          if (new Date(todayIso + "T00:00:00").getDay() === r.day) return s + durationMin(r.start, r.end);
+          return s;
+        }, 0);
+        const goalStats = data.goals.reduce((acc, g) => {
+          const p = computeGoalProgress(g, todayIso, data.goals, data.routine, data.commitments);
+          acc.total++;
+          if (p.denominator > 0 && p.ratio >= 1) acc.completed++;
+          acc.weightedSum += p.ratio * g.weight;
+          acc.totalWeight += g.weight;
+          return acc;
+        }, { total: 0, completed: 0, weightedSum: 0, totalWeight: 0 });
+        const avgProgress = goalStats.totalWeight > 0 ? goalStats.weightedSum / goalStats.totalWeight : 0;
+        const goalsToday = data.goals.filter((g) => {
+          const pp = getPeriodStartEnd(g.startDate, g.period, todayIso);
+          return todayIso >= pp.start && todayIso <= pp.end;
+        }).length;
+        return (
+          <>
+            <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="chronos-card p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  <Target className="h-3 w-3" />
+                  <span>Goals</span>
+                </div>
+                <div className="text-lg font-display text-primary">{goalStats.total}</div>
+                <div className="text-[10px] text-muted-foreground">{goalStats.completed} completed this week</div>
+              </div>
+              <div className="chronos-card p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  <BarChart3 className="h-3 w-3" />
+                  <span>Progress</span>
+                </div>
+                <div className="text-lg font-display text-primary">{Math.round(avgProgress * 100)}%</div>
+                <div className="text-[10px] text-muted-foreground">weighted average</div>
+              </div>
+              <div className="chronos-card p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  <Clock className="h-3 w-3" />
+                  <span>Today</span>
+                </div>
+                <div className="text-lg font-display text-primary">{fmtDur(totalSchedMin)}</div>
+                <div className="text-[10px] text-muted-foreground">{goalsToday} active goals</div>
+              </div>
+              <div className="chronos-card p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span>Streak</span>
+                </div>
+                <div className="text-lg font-display text-primary">
+                  {data.goals.reduce((best, g) => Math.max(best, computeStreak(g, todayIso)), 0)}
+                </div>
+                <div className="text-[10px] text-muted-foreground">best goal streak</div>
+              </div>
+            </div>
+            {data.goals.filter((g) => g.kind === "deadline" && g.deadline).length > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <CalendarDays className="h-3 w-3" />
+                  <span>Upcoming deadlines</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.goals
+                    .filter((g): g is Goal & { deadline: string } => g.kind === "deadline" && !!g.deadline)
+                    .sort((a, b) => a.deadline.localeCompare(b.deadline))
+                    .slice(0, 5)
+                    .map((g) => {
+                      const d = daysUntilDeadline(g.deadline);
+                      const overdue = d < 0;
+                      return (
+                        <div key={g.id}
+                          className={`rounded-md border px-2.5 py-1.5 text-xs flex items-center gap-2 ${overdue ? "border-rose-500/30 bg-rose-500/8" : d <= 3 ? "border-amber-500/30 bg-amber-500/8" : "border-border/60"}`}
+                        >
+                          <span className="text-primary font-medium truncate max-w-[120px]">{g.title}</span>
+                          <span className={`num ${overdue ? "text-rose-600" : d <= 3 ? "text-amber-600" : "text-muted-foreground"}`}>
+                            {overdue ? `${Math.abs(d)}d overdue` : `${d}d left`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+        {!monthView && (
         <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {byDay.map(({ di, blocks }) => (
             <div key={di} className="chronos-card p-5">
@@ -146,6 +240,26 @@ export default function Week() {
           ))}
         </div>
       )}
+
+      <div className="mt-10 border-t border-border/30 pt-5">
+        <GoalList
+          goals={data.goals}
+          commitments={data.commitments}
+          routine={data.routine}
+          snapshots={data.progressSnapshots}
+          categories={data.categories}
+          onAddGoal={(fields: GoalFields) => {
+            const id = addGoal({ ...fields, kind: fields.kind, tracking: fields.tracking });
+            if (fields.autoTrackMode === "commitments") generateGoalCommitments(id);
+          }}
+          onUpdateGoal={updateGoal}
+          onRemoveGoal={removeGoal}
+          onToggleBlock={toggleGoalBlock}
+          onToggleSubTask={toggleGoalSubTask}
+          onAddSubTask={addGoalSubTask}
+          onAddBlock={(goalId, duration) => addGoalBlock(goalId, { title: "", duration: duration ?? 60, date: new Date().toISOString().slice(0, 10), done: true, order: 0 })}
+        />
+      </div>
 
       {editItem && (
         <WeekBlockEditDialog

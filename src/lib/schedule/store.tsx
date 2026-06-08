@@ -1,16 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
-import { durationMin, timeToMinutes } from "./types";
+import type { Category, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
+import { durationMin, timeToMinutes, getPeriodStartEnd, computeGoalProgress, isGoalTrackingValid, isGoalPeriodValid, getDefaultGoalTracking, getDefaultGoalPeriod } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { DICTIONARIES } from "@/lib/i18n/dictionaries";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { isDefaultCategoryDescription, isDefaultCategoryLabel } from "@/lib/i18n/scheduleText";
 
-const SCHEMA_VERSION = 4;
-const STORAGE_KEY = "chronos.schedule.v4";
-const LEGACY_STORAGE_KEYS = ["chronos.schedule.v3", "chronos.schedule.v2", "chronos.schedule.v1"];
+const SCHEMA_VERSION = 5;
+const STORAGE_KEY = "chronos.schedule.v5";
+const LEGACY_STORAGE_KEYS = ["chronos.schedule.v4", "chronos.schedule.v3", "chronos.schedule.v2", "chronos.schedule.v1"];
 
 function getSeedForLocale(locale: Locale): ScheduleData {
   return locale === "pt" ? (seedPt as ScheduleData) : (seedEn as ScheduleData);
@@ -44,11 +44,26 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
 
   const sleepSchedule = migrateSleepSchedule(data);
 
+  // v5→v6: "count" merged into "numeric"; enforce kind×tracking×period matrix
+  const goals: Goal[] = (data.goals ?? []).map((g) => {
+    const kind = ((g.kind as string) === "count" ? "numeric" : g.kind) as Goal["kind"];
+    const tracking = isGoalTrackingValid(kind, g.tracking as Goal["tracking"])
+      ? (g.tracking as Goal["tracking"])
+      : getDefaultGoalTracking(kind);
+    const period = isGoalPeriodValid(kind, tracking, g.period as Goal["period"])
+      ? (g.period as Goal["period"])
+      : getDefaultGoalPeriod(kind, tracking);
+    return { ...g, kind, tracking, period };
+  });
+
   return {
     ...data,
     categories,
     routine,
     presets: data.presets ?? [],
+    goals,
+    suggestions: data.suggestions ?? [],
+    progressSnapshots: data.progressSnapshots ?? [],
     meta: {
       ...data.meta,
       version: SCHEMA_VERSION,
@@ -405,10 +420,27 @@ function buildLedger(data: ScheduleData): ScheduleData["ledger"] {
     Math.round(loadScore * 0.45 + consistencyScore * 0.3 + varietyScore * 0.25),
   );
 
+  const focusCatIds = data.meta.focusCategoryIds ?? [];
+  const focusMin = data.categories
+    .filter((c) => focusCatIds.includes(c.id))
+    .flatMap((c) => data.routine.filter((r) => r.kind === c.id))
+    .reduce((s, r) => s + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
+  const recoveryMin = data.routine
+    .filter((r) => r.kind === "recovery")
+    .reduce((s, r) => s + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
+
+  const focusScore = clamp(Math.round(totalRoutineMin > 0 ? (focusMin / totalRoutineMin) * 100 : 0));
+  const recoveryScore = clamp(Math.round(totalRoutineMin > 0 ? (recoveryMin / totalRoutineMin) * 100 : 0));
+
+  const goalProgress = Math.round(recomputeOverallGoalProgress(data) * 100);
+
   const metrics = [
     { label: "Load", value: loadScore },
     { label: "Consistency", value: consistencyScore },
     { label: "Variety", value: varietyScore },
+    { label: "Focus", value: focusScore },
+    { label: "Recovery", value: recoveryScore },
+    { label: "Goals", value: goalProgress },
   ];
 
   const scheduledHours = Array.from({ length: 14 }, (_, i) => {
@@ -420,6 +452,22 @@ function buildLedger(data: ScheduleData): ScheduleData["ledger"] {
   });
 
   return { compositionScore, metrics, scheduledHours };
+}
+
+function recomputeOverallGoalProgress(data: ScheduleData): number {
+  const goals = data.goals;
+  if (goals.length === 0) return 0;
+  const today = new Date().toISOString().slice(0, 10);
+  let totalWeight = 0;
+  let weightedSum = 0;
+  for (const g of goals) {
+    const p = computeGoalProgress(g, today, data.goals, data.routine, data.commitments);
+    if (p.denominator > 0) {
+      totalWeight += g.weight;
+      weightedSum += g.weight * p.ratio;
+    }
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
 }
 
 function sortedDayBlocks(routine: RoutineBlock[], day: number) {
@@ -611,6 +659,22 @@ interface Ctx {
   refreshSuggestions: () => void;
   resetToSeed: () => void;
   replace: (next: ScheduleData) => void;
+  addGoal: (g: Omit<Goal, "id" | "blocks" | "subTasks" | "looseCommitmentIds" | "createdAt">) => string;
+  recordProgressSnapshots: () => void;
+  updateGoal: (id: string, patch: Partial<Goal>) => void;
+  removeGoal: (id: string) => void;
+  addGoalBlock: (goalId: string, b: Omit<GoalBlock, "id">) => string;
+  updateGoalBlock: (goalId: string, blockId: string, patch: Partial<GoalBlock>) => void;
+  removeGoalBlock: (goalId: string, blockId: string) => void;
+  toggleGoalBlock: (goalId: string, blockId: string) => void;
+  addGoalSubTask: (goalId: string, title: string) => void;
+  toggleGoalSubTask: (goalId: string, subTaskId: string) => void;
+  linkLooseCommitment: (goalId: string, commitmentId: string) => void;
+  generateGoalCommitments: (goalId: string) => void;
+  trackBlockForGoal: (goalId: string, blockKey: string) => void;
+  isBlockTrackedForAnyGoal: (blockKey: string) => boolean;
+  getGoalsForDate: (date: string) => Goal[];
+  overallGoalProgress: () => number;
 }
 
 const ScheduleCtx = createContext<Ctx | null>(null);
@@ -749,6 +813,200 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
 
     setData((d) => withDerived({ ...d, commitments: d.commitments.map((c) => (c.id === id ? next : c)) }));
     return null;
+  }, [data]);
+
+  /** ── Goal CRUD ── */
+  const addGoal = useCallback((g: Omit<Goal, "id" | "blocks" | "subTasks" | "looseCommitmentIds" | "createdAt">) => {
+    const id = uid("goal");
+    const tracking = isGoalTrackingValid(g.kind, g.tracking) ? g.tracking : getDefaultGoalTracking(g.kind);
+    const period = isGoalPeriodValid(g.kind, tracking, g.period) ? g.period : getDefaultGoalPeriod(g.kind, tracking);
+    setData((d) => withDerived({
+      ...d,
+      goals: [...d.goals, { ...g, tracking, period, id, blocks: [], subTasks: [], looseCommitmentIds: [], createdAt: new Date().toISOString() }],
+    }));
+    return id;
+  }, []);
+
+  const updateGoal = useCallback((id: string, patch: Partial<Goal>) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) => {
+        if (g.id !== id) return g;
+        const merged = { ...g, ...patch };
+        const kind = merged.kind;
+        const tracking = isGoalTrackingValid(kind, merged.tracking) ? merged.tracking : getDefaultGoalTracking(kind);
+        const period = isGoalPeriodValid(kind, tracking, merged.period) ? merged.period : getDefaultGoalPeriod(kind, tracking);
+        return { ...merged, tracking, period };
+      }),
+    }));
+  }, []);
+
+  const removeGoal = useCallback((id: string) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.filter((g) => g.id !== id),
+    }));
+  }, []);
+
+  const addGoalBlock = useCallback((goalId: string, b: Omit<GoalBlock, "id">) => {
+    const id = uid("gb");
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId ? { ...g, blocks: [...g.blocks, { ...b, id }] } : g
+      ),
+    }));
+    return id;
+  }, []);
+
+  const updateGoalBlock = useCallback((goalId: string, blockId: string, patch: Partial<GoalBlock>) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId
+          ? { ...g, blocks: g.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b)) }
+          : g
+      ),
+    }));
+  }, []);
+
+  const removeGoalBlock = useCallback((goalId: string, blockId: string) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId ? { ...g, blocks: g.blocks.filter((b) => b.id !== blockId) } : g
+      ),
+    }));
+  }, []);
+
+  const toggleGoalBlock = useCallback((goalId: string, blockId: string) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId
+          ? { ...g, blocks: g.blocks.map((b) => (b.id === blockId ? { ...b, done: !b.done } : b)) }
+          : g
+      ),
+    }));
+  }, []);
+
+  const addGoalSubTask = useCallback((goalId: string, title: string) => {
+    const id = uid("gst");
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId ? { ...g, subTasks: [...g.subTasks, { id, title, done: false }] } : g
+      ),
+    }));
+  }, []);
+
+  const toggleGoalSubTask = useCallback((goalId: string, subTaskId: string) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId
+          ? { ...g, subTasks: g.subTasks.map((st) => (st.id === subTaskId ? { ...st, done: !st.done } : st)) }
+          : g
+      ),
+    }));
+  }, []);
+
+  const linkLooseCommitment = useCallback((goalId: string, commitmentId: string) => {
+    setData((d) => withDerived({
+      ...d,
+      goals: d.goals.map((g) =>
+        g.id === goalId
+          ? { ...g, looseCommitmentIds: [...new Set([...g.looseCommitmentIds, commitmentId])] }
+          : g
+      ),
+    }));
+  }, []);
+
+  const generateGoalCommitments = useCallback((goalId: string) => {
+    setData((d) => {
+      const goal = d.goals.find((g) => g.id === goalId);
+      if (!goal || goal.autoTrackMode !== "commitments") return d;
+      const N = goal.target;
+      const newIds: string[] = [];
+      for (let i = 0; i < N; i++) {
+        newIds.push(uid("cmt"));
+      }
+      const now = new Date().toISOString().slice(0, 10);
+      return withDerived({
+        ...d,
+        commitments: [
+          ...d.commitments,
+          ...newIds.map((id, i) => ({
+            id,
+            date: undefined as string | undefined,
+            start: "00:00",
+            end: "01:00",
+            kind: goal.categoryId ?? "custom",
+            title: `${goal.title} ${i + 1}/${N}`,
+          })),
+        ],
+        goals: d.goals.map((g) =>
+          g.id === goalId
+            ? { ...g, looseCommitmentIds: [...g.looseCommitmentIds, ...newIds] }
+            : g
+        ),
+      });
+    });
+  }, []);
+
+  const trackBlockForGoal = useCallback((goalId: string, blockKey: string) => {
+    setData((d) =>
+      withDerived({
+        ...d,
+        goals: d.goals.map((g) =>
+          g.id === goalId
+            ? {
+                ...g,
+                trackedBlockKeys: g.trackedBlockKeys?.includes(blockKey)
+                  ? g.trackedBlockKeys.filter((k) => k !== blockKey)
+                  : [...(g.trackedBlockKeys ?? []), blockKey],
+              }
+            : g
+        ),
+      })
+    );
+  }, []);
+
+  const isBlockTrackedForAnyGoal = useCallback((blockKey: string): boolean => {
+    return data.goals.some((g) => g.trackedBlockKeys?.includes(blockKey));
+  }, [data]);
+
+  const overallGoalProgress = useCallback(() => {
+    return recomputeOverallGoalProgress(data);
+  }, [data]);
+
+  const recordProgressSnapshots = useCallback(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    setData((d) => {
+      const snapshots = d.goals.map((g) => {
+        const p = computeGoalProgress(g, todayIso, d.goals, d.routine, d.commitments);
+        return { date: todayIso, goalId: g.id, numerator: p.numerator, denominator: p.denominator };
+      });
+      const existing = d.progressSnapshots.filter((s) => s.date !== todayIso);
+      return withDerived({ ...d, progressSnapshots: [...existing, ...snapshots] });
+    });
+  }, []);
+
+  const getGoalsForDate = useCallback((date: string) => {
+    return data.goals.filter((g) => {
+      if (g.startDate > date) return false;
+      if (g.deadline && g.deadline < date) return false;
+      const period = getPeriodStartEnd(g.startDate, g.period, date);
+      if (!(date >= period.start && date <= period.end)) return false;
+      if (g.tracking !== "category") return true;
+      const mode = g.autoTrackMode ?? "always";
+      if (mode === "always") return true;
+      if (mode === "selected" && g.trackedBlockKeys?.length) return true;
+      if (mode === "commitments" && g.looseCommitmentIds.length) {
+        if (data.commitments.some((c) => g.looseCommitmentIds.includes(c.id) && c.date === date)) return true;
+      }
+      return false;
+    });
   }, [data]);
 
   const addPreset = useCallback((p: Omit<Preset, "id">) => {
@@ -1265,6 +1523,22 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       refreshSuggestions,
       resetToSeed,
       replace,
+      addGoal,
+      updateGoal,
+      removeGoal,
+      addGoalBlock,
+      updateGoalBlock,
+      removeGoalBlock,
+      toggleGoalBlock,
+      addGoalSubTask,
+      toggleGoalSubTask,
+      linkLooseCommitment,
+      generateGoalCommitments,
+      trackBlockForGoal,
+      isBlockTrackedForAnyGoal,
+      getGoalsForDate,
+      overallGoalProgress,
+      recordProgressSnapshots,
     }),
     [
       data,
@@ -1293,6 +1567,22 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       refreshSuggestions,
       resetToSeed,
       replace,
+      addGoal,
+      updateGoal,
+      removeGoal,
+      addGoalBlock,
+      updateGoalBlock,
+      removeGoalBlock,
+      toggleGoalBlock,
+      addGoalSubTask,
+      toggleGoalSubTask,
+      linkLooseCommitment,
+      generateGoalCommitments,
+      trackBlockForGoal,
+      isBlockTrackedForAnyGoal,
+      getGoalsForDate,
+      overallGoalProgress,
+      recordProgressSnapshots,
     ],
   );
   return <ScheduleCtx.Provider value={value}>{children}</ScheduleCtx.Provider>;

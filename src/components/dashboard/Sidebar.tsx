@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp, Target, BarChart3 } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
@@ -7,13 +7,18 @@ import { useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { useState } from "react";
 import ProfileDialog from "./ProfileDialog";
+import { ProgressDialog } from "./ProgressDialog";
 
 export default function Sidebar() {
-  const { data } = useSchedule();
+  const { data, overallGoalProgress } = useSchedule();
   const { session } = useAuth();
   const t = useT();
   const scheduleText = useScheduleText();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [progressOpen, setProgressOpen] = useState(false);
+
+  const now = new Date();
+  const weekProgress = Math.round(((now.getDay() * 1440 + now.getHours() * 60 + now.getMinutes()) / 10080) * 100);
 
   const main = [
     { to: "/dashboard",          label: t.chronos.nav.today,    icon: LayoutDashboard },
@@ -24,7 +29,6 @@ export default function Sidebar() {
   const meta = [
     { to: "/dashboard/about",    label: t.chronos.nav.about,    icon: CircleHelp },
   ];
-  const cycle = data.meta.cycle;
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();
   return (
     <aside className="hidden lg:flex flex-col w-[260px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
@@ -33,14 +37,29 @@ export default function Sidebar() {
       </div>
 
       <div className="px-4 mt-2">
-        <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-3">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-secondary-soft">{t.chronos.nav.cycle} {cycle.number} · {t.chronos.nav.week_short} {cycle.week}</div>
-          <div className="font-display text-lg text-sidebar-foreground mt-1">{scheduleText.cycleName(cycle.name)}</div>
+        <button onClick={() => setProgressOpen(true)} className="w-full rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-3 text-left hover:bg-sidebar-accent/60 transition-colors">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-secondary-soft">{t.chronos.nav.cycle} {data.meta.cycle.number} · {t.chronos.nav.week_short} {data.meta.cycle.week}</div>
+          <div className="font-display text-lg text-sidebar-foreground mt-1">{scheduleText.cycleName(data.meta.cycle.name)}</div>
           <div className="mt-3 h-1.5 rounded-full bg-sidebar-border overflow-hidden">
-            <div className="h-full bg-bronze" style={{ width: `${Math.round(cycle.progress * 100)}%` }} />
+            <div className="h-full bg-bronze" style={{ width: `${weekProgress}%` }} />
           </div>
-          <div className="text-[11px] text-sidebar-foreground/70 mt-1.5 num">{Math.round(cycle.progress * 100)}% {t.chronos.nav.arcCompleted}</div>
-        </div>
+          <div className="flex items-center justify-between mt-1.5">
+            <span className="text-[11px] text-sidebar-foreground/70 num">{weekProgress}% {t.chronos.nav.arcCompleted}</span>
+          </div>
+          <div className="mt-3 pt-3 border-t border-sidebar-border/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.22em] text-secondary-soft">
+                <Target className="h-3 w-3" />
+                <span>{t.chronos.goals.eyebrow}</span>
+              </div>
+              <span className="text-[11px] text-sidebar-foreground/70 num">{Math.round(overallGoalProgress() * 100)}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 rounded-full bg-sidebar-border overflow-hidden">
+              <div className="h-full bg-bronze transition-all" style={{ width: `${Math.round(overallGoalProgress() * 100)}%` }} />
+            </div>
+          </div>
+        </button>
+        <ProgressDialog open={progressOpen} onOpenChange={setProgressOpen} />
       </div>
 
       <nav className="flex-1 px-3 mt-6">
