@@ -1,70 +1,52 @@
 export type BlockKind = string;
 export const BUILTIN_KINDS = ["deep", "meeting", "ritual", "recovery", "shallow", "sleep"] as const;
 
-export interface Category {
-  id: BlockKind;
-  label: string;
-  labelCustom?: string;
-  tone: string;
-  color?: string; // hex color for dynamic block styling
-  description: string;
-  descriptionCustom?: string;
-  extensionId?: string;
-  extensionConfig?: Record<string, unknown>;
-  customFields?: CustomField[];
-}
+/* ─── Workspace types (Phase 1) ─── */
 
-export interface CustomField {
+export interface FieldDef {
   name: string;
   label: string;
-  type: "text" | "number" | "boolean" | "select" | "checklist";
-  options?: string[];
-  defaultValue?: unknown;
+  type: "text" | "number";
 }
 
-export interface RoutineBlock {
-  id: string;
-  day: number; // 0 Sun ... 6 Sat
-  start: string;
-  end: string;
-  endsNextDay?: boolean;
-  kind: BlockKind;
-  title: string;
-  titleCustom?: string;
-  notes?: string;
-  extensions?: Record<string, unknown>;
+export interface TrackingDef {
+  type: "boolean" | "number";
+  default: boolean | number;
+  label: string;
+  targetField?: string;
 }
 
-export interface Commitment {
-  id: string;
-  date?: string; // YYYY-MM-DD — undefined means "undated" (pool)
-  start: string;
-  end: string;
-  endDate?: string; // optional explicit end date for cross-day commitments
-  endsNextDay?: boolean; // convenience flag when endDate is omitted
-  kind: BlockKind;
-  title: string;
-  titleCustom?: string;
-  notes?: string;
-  priority?: CommitmentPriority;
-  extensions?: Record<string, unknown>;
+export interface LevelDef {
+  key: string;
+  label: string;
+  labelPlural: string;
+  fields: FieldDef[];
+  tracking?: TrackingDef;
 }
 
-export interface CommitmentPriority {
-  urgent: boolean;
-  important: boolean;
+export interface DisplayConfig {
+  summary: string;
+  nextStep?: string;
+  progress: "boolean" | "number";
 }
 
-export interface Preset {
-  id: string;
-  title: string;
-  titleCustom?: string;
-  kind: BlockKind;
-  duration: number; // minutes
-  notes?: string;
-  priority?: CommitmentPriority;
-  extensions?: Record<string, unknown>;
+export interface TreeNode {
+  name: string;
+  children?: TreeNode[];
+  fields?: Record<string, unknown>;
 }
+
+export interface WorkspaceStructure {
+  levels: LevelDef[];
+  display: DisplayConfig;
+  templates: TreeNode[];
+  rotation?: Record<string, string>;
+  preset?: string;
+}
+
+export type WorkspaceRuntime = Record<string, unknown>;
+
+/* ─── Workspace types ─── */
 
 export interface Suggestion {
   id: string;

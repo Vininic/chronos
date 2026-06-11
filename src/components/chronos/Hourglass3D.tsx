@@ -1,7 +1,16 @@
 ﻿import { Canvas, useFrame } from "@react-three/fiber";
 import { Float, Environment, ContactShadows } from "@react-three/drei";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
+
+class ThreeErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) return this.props.fallback ?? null;
+    return this.props.children;
+  }
+}
 
 const TOP_Y = 1.05;
 const BOT_Y = -1.05;
@@ -384,25 +393,27 @@ export default function Hourglass3D({ className, compact = false }: Props) {
           </div>
         </div>
       )}
-      <Canvas
-        shadows
-        dpr={[1, 1.75]}
-        camera={{ position: [0, 0, 5.8], fov: 30 }}
-        gl={{ antialias: true, alpha: true }}
-        onCreated={() => setReady(true)}
-      >
-        <Suspense fallback={null}>
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[3, 5, 3]} intensity={1.25} castShadow />
-          <directionalLight position={[-3, 2, -2]} intensity={0.36} color="#D8B06A" />
-          <pointLight position={[0, 0, 2.5]} intensity={0.28} color="#E6C87C" />
-          <Sand />
-          {!compact && (
-            <ContactShadows position={[0, BOT_Y - 0.22, 0]} opacity={0.24} scale={5} blur={2.2} far={2} />
-          )}
-          <Environment preset="studio" />
-        </Suspense>
-      </Canvas>
+      <ThreeErrorBoundary>
+        <Canvas
+          shadows
+          dpr={[1, 1.75]}
+          camera={{ position: [0, 0, 5.8], fov: 30 }}
+          gl={{ antialias: true, alpha: true }}
+          onCreated={() => setReady(true)}
+        >
+          <Suspense fallback={null}>
+            <ambientLight intensity={0.5} />
+            <directionalLight position={[3, 5, 3]} intensity={1.25} castShadow />
+            <directionalLight position={[-3, 2, -2]} intensity={0.36} color="#D8B06A" />
+            <pointLight position={[0, 0, 2.5]} intensity={0.28} color="#E6C87C" />
+            <Sand />
+            {!compact && (
+              <ContactShadows position={[0, BOT_Y - 0.22, 0]} opacity={0.24} scale={5} blur={2.2} far={2} />
+            )}
+            <Environment preset="studio" />
+          </Suspense>
+        </Canvas>
+      </ThreeErrorBoundary>
     </div>
   );
 }

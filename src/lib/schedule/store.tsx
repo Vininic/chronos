@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry, CustomField } from "./types";
-import type { ExtensionContext } from "@/lib/extensions/types";
+import type { Category, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
+import type { TreeNode, WorkspaceStructure, WorkspaceRuntime } from "@/lib/schedule/types";
 import { durationMin, timeToMinutes, getPeriodStartEnd, computeGoalProgress, isGoalTrackingValid, isGoalPeriodValid, getDefaultGoalTracking, getDefaultGoalPeriod } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { DICTIONARIES } from "@/lib/i18n/dictionaries";
@@ -28,22 +28,67 @@ function load(locale: Locale = "en"): ScheduleData {
 }
 
 
+/* ─── Workspace migration helpers ─── */
+
+function migrateWorkspaceCategory(c: any): any {
+  if (c.workspace) return c;
+  if (c.extensionId === "gym" && c.extensionConfig) {
+    const cfg = c.extensionConfig as any;
+    const templates: TreeNode[] = (cfg.templates ?? []).map((tpl: any) => ({
+      name: tpl.name,
+      children: (tpl.groups ?? []).map((group: any) => ({
+        name: group.name,
+        children: (group.exercises ?? []).map((ex: any) => ({
+          name: ex.name,
+          children: (ex.series ?? []).map((s: any, si: number) => ({
+            name: `Set ${si + 1}`,
+            fields: { instruction: s.instruction, restMin: s.restMin },
+          })),
+        })),
+      })),
+    }));
+    return {
+      ...c,
+      workspace: {
+        levels: [
+          { key: "group", label: "Muscle Group", labelPlural: "Muscle Groups", fields: [{ name: "name", label: "Name", type: "text" as const }] },
+          { key: "exercise", label: "Exercise", labelPlural: "Exercises", fields: [{ name: "name", label: "Name", type: "text" as const }] },
+          { key: "set", label: "Set", labelPlural: "Sets", fields: [{ name: "instruction", label: "Instruction", type: "text" as const }, { name: "restMin", label: "Rest (min)", type: "number" as const }], tracking: { type: "boolean" as const, default: false, label: "Done" } },
+        ],
+        display: { summary: "{active} · {done}/{total}", nextStep: "{instruction} · {restMin}min rest", progress: "boolean" as const },
+        templates,
+        rotation: cfg.rotation ?? {},
+      } as WorkspaceStructure,
+    };
+  }
+  return c;
+}
+
+function migrateWorkspaceBlockRuntime(b: any): any {
+  if (b.workspace) return b;
+  if (b.extensions) {
+    const ext = b.extensions as any;
+    const runtime = ext["gym"] ?? ext;
+    if (runtime && (runtime.templateName || runtime.completedSets)) {
+      return { ...b, workspace: { templateName: runtime.templateName ?? "", completedSets: runtime.completedSets ?? {} } as WorkspaceRuntime };
+    }
+  }
+  return b;
+}
+
+/* ─── Main normalization ─── */
+
 function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
-  // Migrate blockSchemaId → customFields (removed in v6)
-  const schemaMap = new Map((data.blockSchemas ?? []).map((s: any) => [s.id, s.fields]));
   const categories = data.categories.map((c: any) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
-    const customFields = c.blockSchemaId && schemaMap.has(c.blockSchemaId)
-      ? schemaMap.get(c.blockSchemaId)
-      : c.customFields ?? undefined;
-    return { id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone, color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, customFields };
+    return migrateWorkspaceCategory({ id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone, color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, workspace: c.workspace });
   });
 
   const routine = data.routine
     // Strip legacy boundary sleep blocks — sleep is now a schedule concept, not routine blocks
     .filter((r) => r.kind !== "sleep" || r.id.startsWith("r-custom-sleep"))
-    .map((r) => ({
+    .map((r) => migrateWorkspaceBlockRuntime({
       ...r,
       endsNextDay: r.endsNextDay ?? r.end <= r.start,
     }));
@@ -66,7 +111,8 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
     ...data,
     categories,
     routine,
-    presets: data.presets ?? [],
+    commitments: (data.commitments ?? []).map((c) => migrateWorkspaceBlockRuntime(c)),
+    presets: (data.presets ?? []).map((p) => migrateWorkspaceBlockRuntime(p)),
     goals,
     suggestions: data.suggestions ?? [],
     progressSnapshots: data.progressSnapshots ?? [],
@@ -656,7 +702,7 @@ interface Ctx {
   updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
   removeSleepCut: (target: { date: string; start?: string; end?: string }) => void;
-  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "extensionId" | "extensionConfig" | "customFields">>) => void;
+  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "workspace">>) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
   addCategory: (category: Omit<Category, never>) => void;
   removeCategory: (id: Category["id"]) => void;
@@ -1436,7 +1482,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "extensionId" | "extensionConfig" | "customFields">>) => {
+  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "workspace">>) => {
     setData((d) => withDerived({
       ...d,
       categories: d.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
@@ -1633,7 +1679,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
       kind: c.kind,
       source: "commitment" as const,
       notes: c.notes,
-      extensions: c.extensions,
+      workspace: c.workspace,
     }];
   });
 
@@ -1660,7 +1706,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
         kind: r.kind,
         source: "routine" as const,
         notes: r.notes,
-        extensions: r.extensions,
+        workspace: r.workspace,
       }));
     });
 
@@ -1674,23 +1720,4 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
   return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
 }
 
-export function makeExtensionContext(
-  data: ScheduleData,
-  categoryId: string,
-  selectedDate: string,
-  addRoutine: (b: Omit<RoutineBlock, "id">) => string | null,
-  addCommitment: (c: Omit<Commitment, "id">) => string | null,
-  updateCategoryConfig: (config: unknown) => void,
-): ExtensionContext {
-  const cat = data.categories.find((c) => c.id === categoryId);
-  return {
-    categoryId,
-    categoryConfig: cat?.extensionConfig,
-    selectedDate,
-    routines: data.routine,
-    commitments: data.commitments,
-    addRoutine,
-    addCommitment,
-    updateCategoryConfig,
-  };
-}
+

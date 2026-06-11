@@ -183,34 +183,11 @@ Each block instance should contribute to long-term progression.
 
 ---
 
-# Final Interface Refinements
+# Category Workspaces (Structured Context)
 
-## Category Management
-- [x] Color picker redesign — 10 families × 5 shades, grid layout, custom hex input with live preview
-- [x] Inline label/description editing with save/cancel, restore defaults
-- [x] Category CRUD with delete warning dialog
+Workspace support is driven by Workspace Definitions (presets) that the planner reads as data, not code.
 
-## Goal UI
-- [x] Kind×Tracking×Period matrix enforcement (load, save, dialog)
-- [x] Period options filtered in GoalDialog based on matrix
-- [x] Inline subtask creation on GoalCard
-- [x] Deadline DayPlanner banner (interactive chips with day count)
-- [x] Milestone tracking mode (auto-completes on deadline date)
-- [x] Real minutes for duration+category tracking (not flat 60min)
-- [x] Total period capped at today/deadline (no infinite counting)
-
-## DayPlanner
-- [x] Smarter time-search combobox
-- [x] Timeline-block info cards
-- [x] BlockDetailsDialog with tracked-goals section
-- [x] Assign mode overlay + tracked block indicators
-- [x] ProgressChart fix (snapshot.ratio → inline computation)
-
-## Store & Persistence
-- [x] Schema migration v4→v5 (goal progress snapshots, count→numeric migration)
-- [x] Matrix-normalization on load (catches legacy invalid combos)
-- [x] Ledger metrics: Focus, Recovery, Goals progress
-- [x] `computeGoalProgress` deduplicated between ledger and GoalCard
+The project should avoid hardcoded feature-specific implementations.
 
 ---
 
@@ -417,7 +394,7 @@ Future versions may introduce optional cloud synchronization while preserving lo
 - [x] Rearrange/Repurpose page section structuring, reduce unecessary pages, rearrange content (List content to make cohesive changes)
 - [x] Integrate Atlas (commitments) into Today page: commitment card with add button, highlighted commitments, next commitment, and loose (undated) commitment blocks draggable into DayPlanner timeline
 - [x] Profile button repurposement — sidebar profile now opens full settings dropdown (language/theme/import/export/reset/signout); topbar simplified to search+compose only
-- [ ] File selector with small preview horizontal slider (akin to save files)
+- [x] File selector with small preview horizontal slider (akin to save files)
 - [x] Integrate block category creation section (from settings) into main page
 - [x] Refine category creation section — inline label/description editing with save/cancel, mini block preview pills, restore defaults, create/delete categories with warning dialog, color picker palette
 
@@ -485,26 +462,482 @@ Future versions may introduce optional cloud synchronization while preserving lo
 
 ---
 
-# Modular Block Extensions
+# Workspace Architecture
 
-## Extension Architecture
-- [x] Generic extension system (registry, BlockExtension interface, types)
-- [x] Structured block metadata (extensions field on RoutineBlock, Commitment, Preset)
-- [x] Extension renderer pipeline (renderBadge on DayPlanner, renderDetails on BlockDetailsDialog, renderEditor on ComposeBlockDialog + BlockEditDialog)
-- [x] Reusable block modules (extensions register themselves, zero core changes)
-- [x] Category-to-extension binding (category.extensionId + category.extensionConfig)
-- [x] Category config editor (renderCategoryConfig on BlockExtension)
-- [x] Full sheet view dialog (ExtensionSheetDialog, renderSheet on BlockExtension)
-- [x] Extension actions (renderActions → "Generate Week" for workout)
-- [x] Block generation hooks (generateBlockData for auto-creating blocks)
-- [x] Per-block metadata + category-level config coexist
-- [x] Example: Checklist Extension (per-block checklist)
-- [x] Example: Workout Extension (templates, rotation, per-block data, sheet, generate-week)
-- [x] Custom Fields per category (UI-defined, inline editor in category cards, Notion-style — replaces Block Schemas)
-- [ ] Example: Study extension
-- [ ] Review systems
-- [ ] Execution logs
-- [ ] Progress logging
+## Goal
+
+Replace the current Extension/Plugin architecture with a category-owned structured context system.
+
+Chronos is a planner.
+
+It is **not** a plugin platform.
+
+It is **not** a collection of mini-applications.
+
+The objective is to enrich scheduled blocks with structured execution context while keeping Categories, Blocks, and Goals as the only first-class planning concepts.
+
+---
+
+# Target Architecture
+
+```txt
+ScheduleData
+├── Categories
+│   └── Structure
+│       ├── Levels
+│       ├── Templates
+│       ├── Rotation
+│       └── Display Rules
+│
+├── Blocks
+│   └── Runtime Data
+│
+└── Goals
+```
+
+The category owns the structure.
+
+The block owns the runtime state.
+
+The renderer is generic.
+
+No extension system exists.
+
+---
+
+# Phase 1 — Remove Extension Architecture — DONE
+
+## Registry Removal
+
+* [x] Remove ExtensionDefinition
+* [x] Remove registerExtension()
+* [x] Remove getExtension()
+* [x] Remove getRegisteredExtensions()
+* [x] Remove extension registries
+
+## Storage Cleanup
+
+* [x] Remove Category.extensionId
+* [x] Remove Category.extensionConfig
+* [x] Remove Block.extensions
+* [x] Replace with:
+
+  * [x] Category.workspace
+  * [x] Block.workspace
+
+## Delete Legacy Extension System
+
+* [x] Remove entire `src/lib/extensions/` directory
+* [x] registry.ts
+* [x] types.ts
+* [x] runtime.ts
+* [x] migration.ts
+* [x] schema.ts
+* [x] gym/*
+* [x] any extension-specific rendering logic (BlockSchemaUI rewritten, ActivityStructureView deleted)
+
+Success criteria:
+
+* No extension-related types remain in the codebase.
+* No runtime extension lookups remain.
+* `src/test/extensions.test.ts` deleted — 110 remaining tests pass.
+
+---
+
+# Phase 2 — Category-Owned Structure
+
+## New Category Structure
+
+Introduce:
+
+```ts
+interface CategoryStructure {
+  levels: LevelDef[];
+  display: DisplayConfig;
+  templates: TreeNode[];
+  rotation?: Record<string, string>;
+}
+```
+
+Category becomes:
+
+```ts
+interface Category {
+  ...
+  structure?: CategoryStructure;
+}
+```
+
+## Runtime Storage
+
+Introduce:
+
+```ts
+interface Block {
+  ...
+  runtime?: RuntimeData;
+}
+```
+
+Runtime data stores execution state only.
+
+Examples:
+
+Workout:
+
+```json
+{
+  "completed": [true, false, true]
+}
+```
+
+Reading:
+
+```json
+{
+  "pagesRead": 15
+}
+```
+
+Study:
+
+```json
+{
+  "completedActivities": [...]
+}
+```
+
+Success criteria:
+
+* Categories contain complete structure definitions.
+* Blocks contain only execution state.
+
+---
+
+# Phase 3 — Generic Structure Engine
+
+## Level Definition
+
+Create generic level schema:
+
+```ts
+interface LevelDef {
+  key: string;
+  label: string;
+  fields: FieldDef[];
+  tracking?: TrackingDef;
+}
+```
+
+Support:
+
+* [x] Text fields
+* [x] Number fields
+* [x] Boolean tracking
+* [x] Numeric tracking
+
+No domain-specific fields.
+
+No workout-specific concepts.
+
+Runtime engine implemented in `src/lib/schedule/workspace-engine.ts`:
+
+- `selectTemplate(structure, name?)` — resolves active template by name, falls back to first
+- `initRuntime(structure, templateName?)` — creates blank `WorkspaceRuntime` with default tracking values
+- `calcProgress(runtime, structure)` — returns `{done, total}` for progress display
+- `toggleTracking(runtime, key)` — toggles a boolean tracking value immutably
+- `setTracking(runtime, key, value)` — sets a tracking value immutably
+- `getTrackingLeaves(structure, runtime)` — returns all tracking leaf nodes with paths, labels, and values
+- `resolveActiveTemplateName(runtime)` — returns the active template name string
+
+---
+
+# Phase 4 — Generic Renderers
+
+## Template Editor (replaces WorkspaceTreeEditor)
+
+Form-based list editor. No tree navigation, no levels, no hierarchy.
+
+Capabilities:
+
+* [x] Add item with name, group, sets count, field values
+* [x] Rename item inline
+* [x] Remove item or group
+* [x] Groups auto-created from item group field
+* [x] Existing groups suggested via datalist
+* [x] Works with any depth (template list → items grouped by first-level child)
+
+No breadcrumbs. No drill-down. No level concepts exposed.
+
+---
+
+## Summary Renderer
+
+Generate:
+
+```txt
+Upper A · 12/18
+Reading · 15/30
+Calculus · 4/6
+```
+
+using display rules only.
+
+No custom renderer per preset.
+
+---
+
+## Session View Renderer (replaces Quick Access + Full Workspace)
+
+Provide:
+
+* [x] Three-state surface: Preview / Active / Completed
+* [x] Preview: full plan view with groups and item details
+* [x] Active: current step dominates, collapsible groups, one-tap completion
+* [x] Completed: recap with completion statistics
+* [x] Boolean tracking (checkboxes)
+* [x] Numeric tracking (number input)
+* [x] Group-level progress rollups
+* [x] No expandable hierarchy (flat list with group labels)
+* [x] No level navigation controls
+
+No preset-specific UI.
+
+---
+
+# Phase 5 — Preset System
+
+Presets become initialization data only.
+
+Location:
+
+```txt
+src/workspaces/presets.ts
+```
+
+No React.
+
+No rendering code.
+
+Only data.
+
+---
+
+## Workout Preset
+
+* [x] Group level
+* [x] Exercise level
+* [x] Set level
+* [x] Rotation support
+
+---
+
+## Reading Preset
+
+* [x] Book level
+* [x] Session level
+* [x] Page tracking
+
+---
+
+## Study Preset
+
+* [x] Subject level
+* [x] Activity level
+* [x] Completion tracking
+
+---
+
+Success criteria:
+
+Deleting every preset must not break the system.
+
+The planner must continue functioning.
+
+---
+
+# Phase 6 — Category Settings UI
+
+## Category Card
+
+* [x] Workspace type selection built into category creation dialog
+* [x] Template count shown on category card (e.g., "3 programs")
+* [x] TemplateEditor opens on config click (form-based list, no tree)
+* [x] "Remove" detaches workspace from category
+
+Implemented in `src/pages/dashboard/Today.tsx` — the category creation dialog includes a type picker (Workout/Reading/Study/None) that calls `preset.create()` to initialize `category.workspace`. The config dialog uses `TemplateEditor` for list-based editing — add items with name, group, sets, and field values. No tree navigation, no breadcrumbs, no level concepts exposed.
+
+---
+
+# Phase 7 — Planner Integration
+
+## Timeline Blocks
+
+Display:
+
+```txt
+Gym  Upper A  ▶ 2/5  → Bench Press · Set 2/3
+```
+
+Requirements:
+
+* [x] Structure presence visible without clicking
+* [x] Progress visible without opening dialogs
+* [x] Session state indicator (not started ▶ in progress ✓ completed)
+* [x] Next action in natural language
+
+---
+
+## Block Details / Session View
+
+* [x] Single Session View replaces Quick Access + Full Workspace
+* [x] Three states: Preview (not started), Active (in progress), Completed (recap)
+* [x] Current step dominates active state
+* [x] No separate Full Workspace View
+
+---
+
+## Compose Block
+
+Requirements:
+
+* [x] Template/program picker when category has multiple templates
+* [x] Runtime generated automatically from selected template
+* [x] No manual attachment step
+* [x] No extension toggles
+* [x] No tool selectors
+
+Block creation shows a program dropdown for workspace-enabled categories (ComposeBlockDialog generates `initRuntime(cat.workspace, selectedTemplate)` on submit).
+
+---
+
+# Phase 7 — Migration
+
+Provide migration path:
+
+Old:
+
+```txt
+extensionId
+extensionConfig
+extensions
+```
+
+New:
+
+```txt
+structure
+runtime
+```
+
+Requirements:
+
+* [x] Existing schedules continue working
+* [x] Existing workout data migrates automatically
+* [x] No manual user intervention
+
+Migration is implemented in `normalizeNamingModel()` in `src/lib/schedule/store.tsx` — converts old `extensionId="gym"` + `extensionConfig` to `Category.workspace`, and old `block.extensions` to `Block.workspace`.
+
+---
+
+# Phase 8 — UX Reset & Validation
+
+## Workspace UI Redesign (Jun 2026)
+
+The entire workspace UI was redesigned from first principles. The following concepts were removed from the user-facing UI:
+
+* [x] "Workspace" terminology (replaced by domain language: programs, exercises, sets, books, sessions)
+* [x] Tree editor (replaced by flat list editor with group labels)
+* [x] Breadcrumb drill-down navigation (replaced by inline editing)
+* [x] Quick Access panel (replaced by Session View)
+* [x] Full Workspace View (replaced by Session View with 3 states)
+* [x] SchemaSummary/SchemaQuickAccess/SchemaWorkspace adapter layer
+* [x] "Template" / "Level" / "Node" / "Hierarchy" in user-facing text
+
+New surface: **Session View** — a single adaptive dialog with three states:
+- **Preview** — plan view before starting ("Start Session" button)
+- **Active** — execution view with current step, progress, and controls
+- **Completed** — recap with completion statistics
+
+New surface: **Template Editor** — replaces WorkspaceTreeEditor with a form-based list where users add items with name, group, sets, and field values. No tree navigation.
+
+New surface: **Block Session Badge** — replaces SchemaSummary with compact status indicator (○/▶/✓), template name, progress fraction, and next action.
+
+Block interaction: tapping a block opens Session View directly, not separate Quick Access + Full Workspace.
+
+## Validated Workflow
+
+```txt
+Create Category
+      ↓
+Pick Session Type (Workout/Reading/Study/None) — built into creation dialog
+      ↓
+Add Programs (optional, can do later)
+      ↓
+Schedule Block → Pick Program (dropdown in ComposeBlockDialog)
+      ↓
+See Progress On Timeline (badge shows ○ name done/total → next)
+      ↓
+Tap Block → Session View (preview → execute → recap)
+```
+
+1. **Create Category** — `Today.tsx` "New Category" button with workspace type picker
+2. **Pick Session Type** — Type selection built into creation; preset.create() called automatically
+3. **Add Programs** — `TemplateEditor` provides form-based CRUD (no tree navigation)
+4. **Schedule Block** — `ComposeBlockDialog` shows program picker, generates `initRuntime(cat.workspace, templateName)`
+5. **See Progress On Timeline** — `BlockSessionBadge` shows ○/▶/✓ + template name + `done/total` + next step
+6. **Tap Block → Session View** — `SessionView` in Dialog, unified 3-state surface (preview → active → completed)
+
+Replaced files:
+* `BlockSchemaUI.tsx` — deleted
+* `WorkspaceSummary.tsx` — replaced by `BlockSessionBadge` in `SessionView.tsx`
+* `WorkspaceQuickAccess.tsx` — deleted (replaced by `SessionView.tsx`)
+* `WorkspaceView.tsx` — deleted (replaced by `SessionView.tsx`)
+* `WorkspaceTreeEditor.tsx` — deleted (replaced by `TemplateEditor.tsx`)
+* `SessionView.tsx` — NEW: unified preview/active/completed surface
+* `TemplateEditor.tsx` — NEW: form-based list editor
+
+without:
+
+* [x] Extensions
+* [x] Tools
+* [x] Registries
+* [x] Domain-specific code
+* [x] Tree navigation
+* [x] Workspace terminology in UI
+
+---
+
+# Final Success Criteria
+
+The architecture is complete when:
+
+* [x] No extension system exists
+* [x] No plugin system exists
+* [x] Categories fully own structure
+* [x] Blocks fully own runtime state
+* [x] Renderers are entirely generic
+* [x] Presets are optional
+* [x] Deleting all presets does not break functionality
+* [x] Workout is no longer a special architectural case
+* [x] Chronos remains a planner first, with structured session context layered on top
+
+---
+
+## Final Refinements (UI)
+- [ ] Remake timer section; Make pop-up card above profile card; Display relevant blocks; Focus sections accurate hourglass UI;
+- [ ] Rethink "System" section; Rethink readding settings tab; Check relevancy; Check possible new settings to add (e.g. Keybinds, Shortcuts;)
+- [ ] Complete "Week" page redesign
+- [ ] Rethink "Week" page functionality; ponder whether to integrate drag system or not;
+- [ ] Move "Weekly" stats from today page into week; create new ones for today and week;
+- [ ] Improve Week display/Month display
+- [ ] Improve "Focus" concept; Highlight "Focus" blocks in category creator;
+- [ ] Better time search UI on create/edit blocks; Fix weird spacing on boxes when searching; Add smarter searching (ex: typing "4" will result in 4AM and 4PM as topmost options)
+- [ ] Improve top-left card; Fix spacing/Out of bounds issue
+- [ ] Created categories have innacurate color display across all instances
+- [ ] No way to rearrange created categories
+- [ ] Remove any trace of system-baked instances (Categories, Goals, Extensions, Blocks, anything.) System should be fully modular.
+- [ ] "New block" button tries creating a 1h block in now bar instead of 09:00 default
 
 ---
 

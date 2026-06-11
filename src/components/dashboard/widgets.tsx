@@ -64,7 +64,7 @@ export function DailyAgenda() {
           <div className="absolute left-[68px] top-1 bottom-1 w-px bg-border" />
           <ul className="space-y-3">
             {agenda.map((a) => {
-              const s = kindStyle[a.kind];
+              const s = safeKindStyle(a.kind);
               const Icon = s.icon;
               const live = a.id === liveId;
               return (
@@ -336,7 +336,7 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
               const eh = timeToMinutes(b.end) / 60;
               const top = ((sh - startHour) / totalHours) * gridHeight;
               const height = Math.max(18, ((eh - sh) / totalHours) * gridHeight - 2);
-              const s = kindStyle[b.kind];
+              const s = safeKindStyle(b.kind as BlockKind);
               return (
                 <div key={b.id} className={`group absolute left-1 right-1 rounded-md text-[10px] font-medium px-1.5 py-1 ${s.chip} border border-current/10 overflow-hidden`} style={{ top, height }} title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.start}–${b.end}`}>
                   <div className="truncate">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>

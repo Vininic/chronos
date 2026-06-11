@@ -131,8 +131,15 @@ describe("daysUntilDeadline", () => {
   });
 
   it("should return exact difference", () => {
-    expect(daysUntilDeadline("2026-06-20")).toBe(12);
-    expect(daysUntilDeadline("2026-05-30")).toBe(-9);
+    const today = new Date();
+    const future = new Date(today);
+    future.setDate(future.getDate() + 12);
+    const futureStr = future.toISOString().slice(0, 10);
+    expect(daysUntilDeadline(futureStr)).toBe(12);
+    const past = new Date(today);
+    past.setDate(past.getDate() - 9);
+    const pastStr = past.toISOString().slice(0, 10);
+    expect(daysUntilDeadline(pastStr)).toBe(-9);
   });
 });
 

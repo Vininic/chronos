@@ -28,22 +28,20 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Data types: `src/lib/schedule/types.ts` (`ScheduleData` v3)
 - Planner UI hotspot: `src/components/dashboard/DayPlanner.tsx`
 - Profile dialog hotspot: `src/components/dashboard/ProfileDialog.tsx` (carousel with multi-profile state `extraProfiles: (ScheduleData | null)[]`)
-- Block extension system: `src/lib/extensions/` — generic `BlockExtension` interface, registry (`registerExtension`/`getExtension`), init in `App.tsx`
-  - Extensions add `extensions?: Record<string, unknown>` to RoutineBlock/Commitment/Preset
-  - Integrated into ComposeBlockDialog, BlockEditDialog, BlockDetailsDialog, DayPlanner rendering
-  - Category binding: `Category.extensionId` + `Category.extensionConfig`
-  - Category config editor via `renderCategoryConfig` in category edit view
-  - Sheet dialog via `ExtensionSheetDialog` (opens from extension badge click on blocks)
-  - Actions via `renderActions` → returns `ActionDef[]` with `run(ctx)`
-  - Block generation via `generateBlockData(categoryConfig, day, date)`
-  - Example: `src/lib/extensions/checklist.tsx` (per-block checklist with add/toggle/remove)
-  - Example: `src/lib/extensions/workout.tsx` (templates, rotation, generate-week, full sheet view)
-- Custom Fields system (user-facing, no code required):
-  - `CustomField` type in `src/lib/schedule/types.ts` — fields live directly on `Category.customFields`
-  - Category editor in Today page has an inline field editor (Notion-style)
-  - Rendering: `src/components/dashboard/BlockSchemaUI.tsx` — `SchemaBadge`, `SchemaDetails`, `SchemaEditor`, `SchemaSheetDialog`
-  - Data stored per-block in `extensions["structured-notes"]` = `{ values: { fieldName: value } }`
-  - Badge appears in DayPlanner, editor in BlockEditDialog, details in BlockDetailsDialog, sheet on badge click
+- Schema-driven block data engine: `src/lib/extensions/` — generic `SchemaField` system, no per-use-case extensions
+  - Core files:
+    - `src/lib/extensions/schema.ts`: `SchemaField` types, defaults, progress, summary, type cycling, label→name
+    - `src/lib/extensions/runtime.ts`: execution state helpers (getValues, setValues, updateValue, getCheckedItems)
+    - `src/lib/extensions/migration.ts`: auto-migrate old `structured-notes` → `schema-data`, legacy `CustomField[]` → `SchemaField[]`
+    - `src/lib/extensions/registry.ts`: simplified `ExtensionIdentity` (id, label, icon — no renderers since all rendering comes from schema)
+    - `src/lib/extensions/types.ts`: `SchemaField`, `SchemaFieldType`, `CategoryTemplate`, `CategoryRule`, `ExecutionState`
+  - Category owns structure (schema, templates, rules on `Category`), block owns execution state (`extensions["schema-data"]`)
+  - No per-use-case Extension files (workout.tsx, checklist.tsx removed)
+  - Three-layer display (Summary→QuickAccess→Workspace) in `src/components/dashboard/BlockSchemaUI.tsx`
+  - Layer 1: `SchemaSummary` — compact badge in DayPlanner blocks
+  - Layer 2: `SchemaQuickAccess` — editable form on block click
+  - Layer 3: `SchemaWorkspace` — full sheet view (pending wire-up)
+  - Legacy `CustomField` type deprecated, old `structured-notes` format migrated automatically
 
 ## Project conventions
 - Time math is string-based (`HH:mm`) with explicit `24:00` boundary handling in agenda generation

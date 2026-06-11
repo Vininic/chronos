@@ -8,11 +8,6 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import DashboardLayout from "./components/dashboard/Layout";
-import { initChecklistExtension } from "./lib/extensions/checklist";
-import { initWorkoutExtension } from "./lib/extensions/workout";
-
-initChecklistExtension();
-initWorkoutExtension();
 import Today from "./pages/dashboard/Today";
 import Week from "./pages/dashboard/Week";
 import Focus from "./pages/dashboard/Focus";

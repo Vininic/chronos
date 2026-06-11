@@ -121,7 +121,7 @@ export function getDefaultCategoryDescription(kind: BlockKind, locale: Locale) {
 }
 
 export function isDefaultCategoryLabel(kind: BlockKind, label: string) {
-  return categoryLabelAliases[kind].has(label);
+  return categoryLabelAliases[kind]?.has(label) ?? false;
 }
 
 export function isDefaultCategoryDescription(description: string) {
@@ -130,13 +130,13 @@ export function isDefaultCategoryDescription(description: string) {
 
 export function localizeCategoryLabel(kind: BlockKind, label: string, locale: Locale, customLabel?: string) {
   if (customLabel?.trim()) return customLabel;
-  if (isDefaultCategoryLabel(kind, label)) return pickLocale(categoryLabels[kind], locale);
+  if (categoryLabels[kind] && isDefaultCategoryLabel(kind, label)) return pickLocale(categoryLabels[kind], locale);
   return label;
 }
 
 export function localizeCategoryDescription(kind: BlockKind, description: string, locale: Locale, customDescription?: string) {
   if (customDescription?.trim()) return customDescription;
-  if (isDefaultCategoryDescription(description)) return pickLocale(categoryDescriptions[kind], locale);
+  if (categoryDescriptions[kind] && isDefaultCategoryDescription(description)) return pickLocale(categoryDescriptions[kind], locale);
   return description;
 }
 
