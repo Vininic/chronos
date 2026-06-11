@@ -101,7 +101,7 @@ function PreviewView({
   runtime: WorkspaceRuntime;
   onStart: () => void;
 }) {
-  const tplName = resolveActiveTemplateName(runtime);
+  const tplName = resolveActiveTemplateName(runtime) ?? structure.templates[0]?.name;
   const tpl = selectTemplate(structure, tplName);
   const { total } = calcProgress(runtime, structure);
   const displayItems = buildDisplayItems(structure, runtime);
@@ -450,8 +450,10 @@ export function SessionView({
   const state = detectState(structure, runtime);
 
   function handleStart() {
+    const tplName = resolveActiveTemplateName(runtime) ?? structure.templates[0]?.name ?? "";
     onChange({
       ...(runtime as Record<string, unknown>),
+      templateName: tplName,
       _sessionStarted: true,
       _sessionStartedAt: Date.now(),
     } as WorkspaceRuntime);
@@ -482,10 +484,12 @@ export function BlockSessionBadge({
   structure: WorkspaceStructure;
   runtime: WorkspaceRuntime;
 }) {
-  const tplName = resolveActiveTemplateName(runtime);
+  const tplName = resolveActiveTemplateName(runtime) ?? structure.templates[0]?.name;
   if (!tplName) return null;
 
   const { done, total } = calcProgress(runtime, structure);
+  if (!tplName && total === 0) return null;
+
   const nextPath = getNextUndonePath(structure, runtime);
   const state = detectState(structure, runtime);
 
