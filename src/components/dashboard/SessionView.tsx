@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import type { WorkspaceStructure, WorkspaceRuntime, TreeNode, LevelDef } from "@/lib/schedule/types";
-import { selectTemplate, calcProgress, getTrackingLeaves, toggleTracking, setTracking, resolveActiveTemplateName, getNextUndonePath } from "@/lib/schedule/workspace-engine";
+import { selectTemplate, calcProgress, getTrackingLeaves, toggleTracking, setTracking, resolveActiveTemplateName, getNextUndonePath, initRuntime } from "@/lib/schedule/workspace-engine";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,14 @@ import { Clock, Trophy, ChevronDown, ChevronRight, Play, CheckCircle2 } from "lu
 type SessionState = "preview" | "active" | "completed";
 
 function detectState(structure: WorkspaceStructure, runtime: WorkspaceRuntime): SessionState {
+  const r = runtime as Record<string, unknown>;
   const { done, total } = calcProgress(runtime, structure);
+  if (r._sessionStarted) {
+    if (total > 0 && done >= total) return "completed";
+    return "active";
+  }
   if (total === 0) return "preview";
   if (done >= total) return "completed";
-  const r = runtime as Record<string, unknown>;
-  if (r._sessionStarted) return "active";
   if (done > 0) return "active";
   return "preview";
 }
@@ -451,8 +454,11 @@ export function SessionView({
 
   function handleStart() {
     const tplName = resolveActiveTemplateName(runtime) ?? structure.templates[0]?.name ?? "";
+    const r = runtime as Record<string, unknown>;
+    const hasTracking = r.tracking && Object.keys(r.tracking as Record<string, unknown>).length > 0;
+    const base = hasTracking ? runtime : initRuntime(structure, tplName);
     onChange({
-      ...(runtime as Record<string, unknown>),
+      ...(base as Record<string, unknown>),
       templateName: tplName,
       _sessionStarted: true,
       _sessionStartedAt: Date.now(),
@@ -493,37 +499,14 @@ export function BlockSessionBadge({
   const nextPath = getNextUndonePath(structure, runtime);
   const state = detectState(structure, runtime);
 
-  const progress = total > 0 ? (done / total) * 100 : 0;
-
-  const nextLabel = nextPath && state !== "completed"
-    ? nextPath.slice(-2).join(" · ")
-    : null;
+  const dotColor = state === "completed" ? "bg-green-500" : state === "active" ? "bg-secondary" : "bg-muted-foreground/30";
 
   return (
-    <span className="inline-flex flex-col gap-0.5 rounded bg-secondary/10 px-1.5 py-0.5 leading-none min-w-0 max-w-[260px] text-[11px]">
-      <span className="flex items-center gap-1 min-w-0">
-        <span className={`shrink-0 text-[10px] ${state === "completed" ? "text-green-500" : "text-muted-foreground/60"}`}>
-          {state === "completed" ? "✓" : state === "active" ? "▶" : "○"}
-        </span>
-        <span className="truncate font-medium text-secondary/90">{tplName}</span>
-        {total > 0 && (
-          <span className="shrink-0 text-[10px] text-muted-foreground/70 num ml-auto">
-            {done}/{total}
-          </span>
-        )}
-      </span>
+    <span className="inline-flex items-center gap-1.5 rounded bg-secondary/10 px-1.5 py-0.5 leading-none min-w-0 max-w-[200px] text-[11px]">
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+      <span className="truncate font-medium text-secondary/90">{tplName}</span>
       {total > 0 && (
-        <span className="h-0.5 rounded-full bg-muted-foreground/15 overflow-hidden block">
-          <span
-            className={`block h-full rounded-full transition-all duration-300 ${state === "completed" ? "bg-green-500" : "bg-secondary/60"}`}
-            style={{ width: `${progress}%` }}
-          />
-        </span>
-      )}
-      {nextLabel && (
-        <span className="truncate text-[9px] text-muted-foreground/50 leading-tight block">
-          → {nextLabel}
-        </span>
+        <span className="shrink-0 text-[10px] text-muted-foreground/60 num">{done}/{total}</span>
       )}
     </span>
   );

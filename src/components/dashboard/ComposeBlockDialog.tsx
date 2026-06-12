@@ -262,7 +262,7 @@ export function ComposeBlockDialog({
           </Button>
         )}
       </DialogTrigger>
-        <DialogContent className="sm:max-w-lg max-h-[calc(100dvh-4rem)] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-primary">{t.chronos.dialog.title}</DialogTitle>
           <DialogDescription>{t.chronos.dialog.desc}</DialogDescription>

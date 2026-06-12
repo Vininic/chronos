@@ -1787,7 +1787,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
         if (!structure) return null;
         return (
           <Dialog open onOpenChange={(o) => { if (!o) setQuickAccessItem(null); }}>
-            <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-w-md w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-base">
                   {cat?.label ?? quickAccessItem.kind}

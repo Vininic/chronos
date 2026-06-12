@@ -1042,33 +1042,31 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
             </div>
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{isPt ? "Que tipo de sessões?" : "What kind of sessions?"}</Label>
-              <div className="grid grid-cols-2 gap-2 mt-1">
+              <div className="flex flex-wrap gap-1.5 mt-1">
                 {WORKSPACE_PRESETS.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => setCreateWSType(createWSType === p.id ? null : p.id)}
-                    className={`text-left border rounded-lg px-3 py-2 transition-colors ${
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                       createWSType === p.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border/50 hover:bg-muted/30"
+                        ? "border-primary bg-primary/10 text-primary font-medium"
+                        : "border-border/50 text-muted-foreground/70 hover:border-secondary/40 hover:text-secondary"
                     }`}
                   >
-                    <div className="text-xs font-medium text-primary">{p.label}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">{p.description}</div>
+                    {p.label}
                   </button>
                 ))}
                 <button
                   type="button"
                   onClick={() => setCreateWSType(null)}
-                  className={`text-left border rounded-lg px-3 py-2 transition-colors ${
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                     createWSType === null
-                      ? "border-primary bg-primary/5"
-                      : "border-border/50 hover:bg-muted/30"
+                      ? "border-primary bg-primary/10 text-primary font-medium"
+                      : "border-border/50 text-muted-foreground/70 hover:border-secondary/40 hover:text-secondary"
                   }`}
                 >
-                  <div className="text-xs font-medium text-primary">{isPt ? "Nenhum" : "None"}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{isPt ? "Blocos simples, sem estrutura" : "Plain blocks, no structure"}</div>
+                  {isPt ? "Nenhum" : "None"}
                 </button>
               </div>
             </div>
@@ -1115,7 +1113,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
         if (!cat) return null;
         return (
           <Dialog open onOpenChange={(o) => { if (!o) setConfigExtCategoryId(null); }}>
-            <DialogContent className="max-w-lg max-h-[80vh]">
+            <DialogContent className="max-w-lg w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-x-hidden">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-base">
                   {cat.label ?? cat.id}
@@ -1138,19 +1136,32 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                   <p className="text-sm text-muted-foreground">
                     {isPt ? "Escolha um tipo de sessão:" : "Choose a session type:"}
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {WORKSPACE_PRESETS.map((p) => (
                       <button
                         key={p.id}
                         onClick={() => {
                           onUpdate(cat.id, { workspace: p.create() });
                         }}
-                        className="w-full text-left border border-border/50 rounded-lg px-4 py-3 hover:bg-muted/30 transition-colors space-y-1"
+                        className="rounded-full border px-3 py-1 text-xs text-muted-foreground/70 border-border/50 hover:border-secondary/40 hover:text-secondary transition-colors"
                       >
-                        <div className="text-sm font-medium text-primary">{p.label}</div>
-                        <div className="text-xs text-muted-foreground">{p.description}</div>
+                        {p.label}
                       </button>
                     ))}
+                    <button
+                      onClick={() => {
+                        onUpdate(cat.id, {
+                          workspace: {
+                            levels: [{ key: "item", label: "Item", labelPlural: "Items", fields: [], tracking: { type: "boolean", default: false, label: "Done" } }],
+                            display: { summary: "", nextStep: "", progress: "boolean" },
+                            templates: [{ name: "Default", children: [] }],
+                          },
+                        });
+                      }}
+                      className="rounded-full border px-3 py-1 text-xs text-muted-foreground/70 border-dashed border-border/50 hover:border-secondary/40 hover:text-secondary transition-colors"
+                    >
+                      {isPt ? "Personalizado" : "Custom"}
+                    </button>
                   </div>
                 </div>
               )}

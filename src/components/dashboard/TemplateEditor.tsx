@@ -2,7 +2,10 @@ import { useState } from "react";
 import type { TreeNode, WorkspaceStructure } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, Copy, Pencil } from "lucide-react";
+
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function deepClone<T>(x: T): T {
   return structuredClone(x);
@@ -29,6 +32,7 @@ export function TemplateEditor({
 
   const [renamingTemplate, setRenamingTemplate] = useState<number | null>(null);
   const [renameTemplateValue, setRenameTemplateValue] = useState("");
+  const [listTab, setListTab] = useState("programs");
 
   const [addFormGroup, setAddFormGroup] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState("");
@@ -63,94 +67,143 @@ export function TemplateEditor({
   }
 
   if (!editingTemplate) {
-    const heading = levels[0]?.labelPlural ?? "Programs";
     return (
-      <div className="space-y-3">
-        <p className="text-sm font-medium text-secondary">{heading}</p>
-        {structure.templates.length === 0 && (
-          <p className="text-sm text-muted-foreground/60 py-4 text-center">
-            No programs yet. Create your first one.
-          </p>
-        )}
-        <div className="space-y-1">
-          {structure.templates.map((tpl, i) => {
-            const exerciseCount = tpl.children?.reduce((s, g) => s + (g.children?.length || 0), 0) ?? 0;
-            const displayCount = exerciseCount > 0 ? `${exerciseCount} ${itemLabelPlural.toLowerCase()}` : "empty";
-            return (
-              <div
-                key={i}
-                className="flex items-center gap-2 rounded-lg border border-border/30 px-4 py-3 hover:bg-muted/20 group"
-              >
-                {renamingTemplate === i ? (
-                  <input
-                    autoFocus
-                    value={renameTemplateValue}
-                    onChange={(e) => setRenameTemplateValue(e.target.value)}
-                    onBlur={() => {
-                      if (renameTemplateValue.trim()) {
-                        const copy = deepClone(structure);
-                        copy.templates[i].name = renameTemplateValue.trim();
-                        onChange(copy);
-                      }
-                      setRenamingTemplate(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        if (renameTemplateValue.trim()) {
-                          const copy = deepClone(structure);
-                          copy.templates[i].name = renameTemplateValue.trim();
-                          onChange(copy);
-                        }
-                        setRenamingTemplate(null);
-                      }
-                      if (e.key === "Escape") setRenamingTemplate(null);
-                    }}
-                    className="flex-1 min-w-0 h-7 rounded border border-primary/30 bg-transparent px-2 text-sm outline-none"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span
-                    className="flex-1 text-sm font-medium text-primary min-w-0 truncate cursor-text"
-                    title="Click to rename"
-                    onClick={() => { setRenamingTemplate(i); setRenameTemplateValue(tpl.name); }}
+      <div className="space-y-3 min-w-0">
+        <Tabs value={listTab} onValueChange={setListTab}>
+          <TabsList>
+            <TabsTrigger value="programs">{levels[0]?.labelPlural ?? "Programs"}</TabsTrigger>
+            <TabsTrigger value="rotation">Rotation</TabsTrigger>
+          </TabsList>
+          <TabsContent value="programs" className="space-y-3 mt-3">
+            {structure.templates.length === 0 && (
+              <p className="text-sm text-muted-foreground/60 py-4 text-center">
+                No programs yet. Create your first one.
+              </p>
+            )}
+            <div className="space-y-1">
+              {structure.templates.map((tpl, i) => {
+                const exerciseCount = tpl.children?.reduce((s, g) => s + (g.children?.length || 0), 0) ?? 0;
+                const displayCount = exerciseCount > 0 ? `${exerciseCount} ${itemLabelPlural.toLowerCase()}` : "empty";
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 rounded-lg border border-border/30 px-4 py-3 hover:bg-muted/20 group"
                   >
-                    {tpl.name || "Untitled"}
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground/60 shrink-0">{displayCount}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setEditingTemplate(tpl.name); }}
-                  className="h-7 w-7 rounded grid place-items-center text-muted-foreground/40 hover:text-secondary/80 hover:bg-muted/40 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title={`Edit ${tpl.name}`}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); duplicateTemplate(i); }}
-                  className="h-7 w-7 rounded grid place-items-center text-muted-foreground/40 hover:text-secondary/80 hover:bg-muted/40 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title={`Duplicate ${tpl.name}`}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); removeTemplate(i); }}
-                  className="h-7 w-7 rounded grid place-items-center opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive/70 hover:bg-destructive/10 transition-opacity"
-                  title={`Delete ${tpl.name}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                    {renamingTemplate === i ? (
+                      <input
+                        autoFocus
+                        value={renameTemplateValue}
+                        onChange={(e) => setRenameTemplateValue(e.target.value)}
+                        onBlur={() => {
+                          if (renameTemplateValue.trim()) {
+                            const copy = deepClone(structure);
+                            copy.templates[i].name = renameTemplateValue.trim();
+                            onChange(copy);
+                          }
+                          setRenamingTemplate(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            if (renameTemplateValue.trim()) {
+                              const copy = deepClone(structure);
+                              copy.templates[i].name = renameTemplateValue.trim();
+                              onChange(copy);
+                            }
+                            setRenamingTemplate(null);
+                          }
+                          if (e.key === "Escape") setRenamingTemplate(null);
+                        }}
+                        className="flex-1 min-w-0 h-7 rounded border border-primary/30 bg-transparent px-2 text-sm outline-none"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 text-sm font-medium text-primary min-w-0 truncate cursor-text"
+                        title="Click to rename"
+                        onClick={() => { setRenamingTemplate(i); setRenameTemplateValue(tpl.name); }}
+                      >
+                        {tpl.name || "Untitled"}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground/60 shrink-0">{displayCount}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingTemplate(tpl.name); }}
+                      className="h-7 w-7 rounded grid place-items-center text-muted-foreground/40 hover:text-secondary/80 hover:bg-muted/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={`Edit ${tpl.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); duplicateTemplate(i); }}
+                      className="h-7 w-7 rounded grid place-items-center text-muted-foreground/40 hover:text-secondary/80 hover:bg-muted/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={`Duplicate ${tpl.name}`}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeTemplate(i); }}
+                      className="h-7 w-7 rounded grid place-items-center opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive/70 hover:bg-destructive/10 transition-opacity"
+                      title={`Delete ${tpl.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => addTemplate()}
+              className="h-8 text-xs gap-1 w-full"
+            >
+              <Plus className="h-3.5 w-3.5" /> New Program
+            </Button>
+          </TabsContent>
+          <TabsContent value="rotation" className="mt-3">
+            {structure.templates.length === 0 ? (
+              <p className="text-sm text-muted-foreground/60 py-4 text-center">
+                Create programs first to set up rotation.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {DAY_SHORT.map((day, i) => {
+                  const assigned = structure.rotation?.[String(i)];
+                  return (
+                    <div key={i} className="flex items-center gap-2 rounded-lg border border-border/30 px-3 py-2">
+                      <span className="w-8 text-xs font-medium text-muted-foreground uppercase">{day}</span>
+                      <div className="flex-1 flex flex-wrap gap-1">
+                        {structure.templates.map((tpl) => (
+                          <button
+                            key={tpl.name}
+                            type="button"
+                            onClick={() => {
+                              const copy = deepClone(structure);
+                              if (!copy.rotation) copy.rotation = {};
+                              if (copy.rotation[String(i)] === tpl.name) {
+                                delete copy.rotation[String(i)];
+                              } else {
+                                copy.rotation[String(i)] = tpl.name;
+                              }
+                              onChange(copy);
+                            }}
+                            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                              assigned === tpl.name
+                                ? "border-primary bg-primary/10 text-primary font-medium"
+                                : "border-border/50 text-muted-foreground/70 hover:border-secondary/40 hover:text-secondary"
+                            }`}
+                          >
+                            {tpl.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => addTemplate()}
-          className="h-8 text-xs gap-1 w-full"
-        >
-          <Plus className="h-3.5 w-3.5" /> New Program
-        </Button>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     );
   }
@@ -260,19 +313,19 @@ export function TemplateEditor({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 border-b border-border/20 pb-2">
+    <div className="space-y-4 min-w-0">
+      <div className="flex items-center gap-2 border-b border-border/20 pb-2 overflow-x-hidden">
         <button
           onClick={() => setEditingTemplate(null)}
-          className="text-xs text-muted-foreground hover:text-primary transition-colors"
+          className="text-xs text-muted-foreground hover:text-primary transition-colors shrink-0"
         >
           {levels[0]?.labelPlural ?? "Programs"}
         </button>
-        <span className="text-xs text-muted-foreground/30">/</span>
-        <span className="text-xs font-medium text-primary">{template.name}</span>
+        <span className="text-xs text-muted-foreground/30 shrink-0">/</span>
+        <span className="text-xs font-medium text-primary truncate min-w-0">{template.name}</span>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-4 min-w-0">
         {groups.map((group, gi) => (
           <div key={gi}>
             {renamingGroup === gi ? (
@@ -339,7 +392,7 @@ export function TemplateEditor({
                         {label}
                       </span>
                     )}
-                    {meta && <span className="text-xs text-muted-foreground/60 shrink-0">{meta}</span>}
+                    {meta && <span className="text-xs text-muted-foreground/60 min-w-0 truncate max-w-[120px]">{meta}</span>}
                     <button
                       onClick={(e) => { e.stopPropagation(); removeItem(gi, ii); }}
                       className="h-6 w-6 rounded grid place-items-center opacity-0 group-hover:opacity-100 text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/10 transition-opacity"
@@ -366,14 +419,14 @@ export function TemplateEditor({
                   autoFocus
                   onKeyDown={(e) => { if (e.key === "Enter" && newItemName.trim()) addItem(); if (e.key === "Escape") setAddFormGroup(null); }}
                 />
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
                   {existingGroups.length > 1 && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 min-w-0">
                       <span className="text-[9px] text-muted-foreground shrink-0">{groupLabel}:</span>
                       <select
                         value={addFormGroup}
                         onChange={(e) => setAddFormGroup(e.target.value)}
-                        className="h-6 rounded border border-input bg-card text-[10px] px-1 outline-none"
+                        className="h-6 max-w-[100px] rounded border border-input bg-card text-[10px] px-1 outline-none truncate"
                       >
                         {existingGroups.map((g) => (
                           <option key={g} value={g}>{g}</option>
@@ -389,19 +442,19 @@ export function TemplateEditor({
                         min={1}
                         value={newSetCount}
                         onChange={(e) => setNewSetCount(e.target.value)}
-                        className="w-12 h-6 rounded border border-input bg-card text-[10px] text-center px-1 outline-none"
+                        className="w-10 h-6 rounded border border-input bg-card text-[10px] text-center px-1 outline-none"
                       />
                     </div>
                   )}
                   {levels[2]?.fields.map((fd) => (
-                    <div key={fd.name} className="flex items-center gap-1">
+                    <div key={fd.name} className="flex items-center gap-1 min-w-0">
                       <span className="text-[9px] text-muted-foreground shrink-0">{fd.label}:</span>
                       <input
                         type={fd.type === "number" ? "number" : "text"}
                         value={newItemFields[fd.name] ?? ""}
                         onChange={(e) => setNewItemFields({ ...newItemFields, [fd.name]: e.target.value })}
                         placeholder={fd.type === "number" ? "0" : "e.g. 8 reps"}
-                        className="w-24 h-6 rounded border border-input bg-card text-[10px] px-1.5 outline-none"
+                        className="w-16 h-6 rounded border border-input bg-card text-[10px] px-1 outline-none"
                       />
                     </div>
                   ))}
