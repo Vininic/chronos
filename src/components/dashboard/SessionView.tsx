@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useT, useI18n } from "@/lib/i18n/I18nProvider";
+import { useTimer } from "@/lib/timer/TimerContext";
 import { Clock, Trophy, ChevronDown, ChevronRight, Play, CheckCircle2 } from "lucide-react";
 
 type SessionState = "preview" | "active" | "completed";
@@ -118,7 +119,7 @@ function PreviewView({
   if (!tpl) return <p className="text-sm text-muted-foreground py-4 text-center">No session template</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       <div className="text-center space-y-1">
         <p className="text-base font-medium text-primary">{tpl.name}</p>
         {tpl.children && (
@@ -127,14 +128,14 @@ function PreviewView({
           </p>
         )}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1 min-w-0">
         {Array.from(groups.entries()).map(([groupName, items]) => (
           <div key={groupName}>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1 py-0.5">{groupName}</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5 py-0.5">{groupName}</p>
             {items.map((item) => (
-              <div key={item.exerciseName} className="flex items-center justify-between px-3 py-1 text-sm">
-                <span className="text-secondary">{item.exerciseName}</span>
-                <span className="text-xs text-muted-foreground/60">
+              <div key={item.exerciseName} className="flex items-center gap-1.5 px-1 py-0.5 min-w-0">
+                <span className="text-[11px] text-secondary truncate min-w-0 flex-1">{item.exerciseName}</span>
+                <span className="text-[10px] text-muted-foreground/60 shrink-0">
                   {item.totalCount > 0 && `${item.totalCount} ${structure.levels[2]?.labelPlural?.toLowerCase() ?? "sets"}`}
                   {item.sets[0]?.fields?.instruction && ` · ${item.sets[0].fields.instruction}`}
                 </span>
@@ -186,8 +187,18 @@ function ActiveView({
     : null;
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedExercises, setExpandedExercises] = useState<Set<string>>(new Set());
   const [justCompleted, setJustCompleted] = useState(false);
   const justCompletedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleExercise = (name: string) => {
+    setExpandedExercises((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
 
   const toggleGroup = (name: string) => {
     setCollapsedGroups((prev) => {
@@ -223,7 +234,7 @@ function ActiveView({
   ) : "";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       <div className="flex items-center justify-between border-b border-border/10 pb-2">
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-sm font-medium text-primary min-w-0 truncate">{tplName}</p>
@@ -326,7 +337,7 @@ function ActiveView({
         )}
       </div>
 
-      <div className="space-y-0.5 max-h-[280px] overflow-y-auto border-t border-border/10 pt-2">
+      <div className="space-y-0.5 max-h-[280px] overflow-y-auto border-t border-border/10 pt-2 min-w-0">
         {Array.from(groups.entries()).map(([groupName, items]) => {
           const groupDone = items.every((i) => i.doneCount === i.totalCount);
           const groupTotal = items.reduce((s, i) => s + i.totalCount, 0);
@@ -336,26 +347,58 @@ function ActiveView({
             <div key={groupName} className="space-y-0.5">
               <button
                 onClick={() => toggleGroup(groupName)}
-                className="flex items-center gap-2 w-full text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-2 py-1 hover:bg-muted/10 rounded transition-colors"
+                className="flex items-center gap-2 w-full text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1 py-1 hover:bg-muted/10 rounded transition-colors"
               >
                 {collapsed ? <ChevronRight className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
                 <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${groupDone ? "bg-green-500" : "bg-muted-foreground/30"}`} />
-                <span>{groupName}</span>
-                <span className="ml-auto text-[10px] text-muted-foreground/60 num">{groupDoneTotal}/{groupTotal}</span>
+                <span className="truncate">{groupName}</span>
+                <span className="ml-auto text-[10px] text-muted-foreground/60 num shrink-0">{groupDoneTotal}/{groupTotal}</span>
               </button>
               {!collapsed && items.map((item) => {
                 const isCurrentExercise = currentExercise?.exerciseName === item.exerciseName;
+                const isExpanded = expandedExercises.has(item.exerciseName);
                 return (
-                  <div key={item.exerciseName} className="pl-5 space-y-0.5">
-                    <div className={`flex items-center gap-2 px-2 py-0.5 text-xs rounded ${isCurrentExercise ? "bg-primary/5 text-primary font-medium" : "text-secondary/80"}`}>
-                      {item.doneCount === item.totalCount ? (
+                  <div key={item.exerciseName} className="pl-4 space-y-0 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleExercise(item.exerciseName)}
+                      className={`flex items-center gap-2 w-full px-2 py-1 text-[10px] rounded text-left transition-colors hover:bg-muted/10 ${
+                        isCurrentExercise ? "bg-primary/5 text-primary font-medium" : "text-secondary/80"
+                      }`}
+                    >
+                      {item.doneCount === item.totalCount && item.totalCount > 0 ? (
                         <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
                       ) : (
                         <span className="h-3 w-3 rounded-full border border-muted-foreground/30 shrink-0" />
                       )}
-                      <span className="truncate">{item.exerciseName}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground/60 num">{item.doneCount}/{item.totalCount}</span>
-                    </div>
+                      <span className="truncate flex-1 min-w-0">{item.exerciseName}</span>
+                      <span className="text-[10px] text-muted-foreground/60 num shrink-0">{item.doneCount}/{item.totalCount}</span>
+                      {item.totalCount > 0 && (
+                        isExpanded
+                          ? <ChevronDown className="h-2.5 w-2.5 text-muted-foreground/40 shrink-0" />
+                          : <ChevronRight className="h-2.5 w-2.5 text-muted-foreground/40 shrink-0" />
+                      )}
+                    </button>
+
+                    {isExpanded && item.sets.map((set) => {
+                      const isDone = set.value === true || (typeof set.value === "number" && set.value > 0);
+                      const isCurrent = set.key === currentSet?.key;
+                      return (
+                        <button
+                          key={set.key}
+                          type="button"
+                          onClick={() => handleToggle(set.key)}
+                          className={`flex items-center gap-2 w-full px-3 py-0.5 text-[10px] rounded text-left transition-colors hover:bg-muted/10 ${
+                            isCurrent ? "text-secondary font-medium" : isDone ? "text-muted-foreground/50 line-through" : "text-muted-foreground/70"
+                          }`}
+                        >
+                          <span className={`h-2 w-2 rounded-full shrink-0 border transition-colors ${
+                            isDone ? "bg-green-500 border-green-500" : isCurrent ? "border-secondary" : "border-muted-foreground/30"
+                          }`} />
+                          <span className="truncate">{set.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -394,7 +437,7 @@ function CompletedView({
   const itemLabelPlural = structure.levels[1]?.labelPlural?.toLowerCase() ?? "items";
 
   return (
-    <div className="space-y-5 text-center">
+    <div className="space-y-5 text-center min-w-0">
       <div className="space-y-2 pt-2">
         <div className="inline-flex h-14 w-14 rounded-full bg-green-500/15 items-center justify-center mx-auto">
           <Trophy className="h-7 w-7 text-green-500" />
@@ -450,19 +493,34 @@ export function SessionView({
   onChange: (runtime: WorkspaceRuntime) => void;
   onClose: () => void;
 }) {
+  const [starting, setStarting] = useState(false);
   const state = detectState(structure, runtime);
+  let timer: { running?: boolean; start?: (min: number) => void } = {};
+  try { timer = useTimer(); } catch {} // timer context may not be available
+
+  useEffect(() => {
+    if (starting && state === "active") setStarting(false);
+  }, [state, starting]);
 
   function handleStart() {
+    setStarting(true);
     const tplName = resolveActiveTemplateName(runtime) ?? structure.templates[0]?.name ?? "";
     const r = runtime as Record<string, unknown>;
     const hasTracking = r.tracking && Object.keys(r.tracking as Record<string, unknown>).length > 0;
     const base = hasTracking ? runtime : initRuntime(structure, tplName);
-    onChange({
+    const newRuntime = {
       ...(base as Record<string, unknown>),
       templateName: tplName,
       _sessionStarted: true,
       _sessionStartedAt: Date.now(),
-    } as WorkspaceRuntime);
+    } as WorkspaceRuntime;
+    onChange(newRuntime);
+
+    if (timer?.start && !timer?.running) {
+      const { total } = calcProgress(newRuntime, structure);
+      const estimatedMin = Math.max(15, total * 2);
+      timer.start(estimatedMin);
+    }
   }
 
   function handleEnd() {
@@ -472,7 +530,7 @@ export function SessionView({
     } as WorkspaceRuntime);
   }
 
-  if (state === "active") {
+  if (starting || state === "active") {
     return <ActiveView structure={structure} runtime={runtime} onChange={onChange} onEnd={handleEnd} />;
   }
 
@@ -486,27 +544,52 @@ export function SessionView({
 export function BlockSessionBadge({
   structure,
   runtime,
+  tier = "full",
 }: {
   structure: WorkspaceStructure;
   runtime: WorkspaceRuntime;
+  tier?: "micro" | "compact" | "hour" | "full";
 }) {
   const tplName = resolveActiveTemplateName(runtime) ?? structure.templates[0]?.name;
   if (!tplName) return null;
 
   const { done, total } = calcProgress(runtime, structure);
-  if (!tplName && total === 0) return null;
-
-  const nextPath = getNextUndonePath(structure, runtime);
   const state = detectState(structure, runtime);
 
-  const dotColor = state === "completed" ? "bg-green-500" : state === "active" ? "bg-secondary" : "bg-muted-foreground/30";
+  const dotColor =
+    state === "completed" ? "bg-green-500" :
+    state === "active"    ? "bg-secondary" :
+                            "bg-muted-foreground/25";
+
+  if (tier === "micro") {
+    return (
+      <span className="inline-flex items-center gap-1 leading-none">
+        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+        <span className="text-[9px] font-medium text-primary/70 truncate max-w-[4rem]">{tplName}</span>
+      </span>
+    );
+  }
+
+  if (tier === "compact") {
+    return (
+      <span className="inline-flex items-center gap-1 leading-none">
+        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+        <span className="text-[9px] font-medium text-primary/70 truncate max-w-[5rem]">{tplName}</span>
+        {total > 0 && (
+          <span className="text-[9px] text-muted-foreground/50 num">{done}/{total}</span>
+        )}
+      </span>
+    );
+  }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded bg-secondary/10 px-1.5 py-0.5 leading-none min-w-0 max-w-[200px] text-[11px]">
+    <span className="inline-flex items-center gap-1.5 rounded bg-muted/30 px-1.5 py-0.5 leading-none min-w-0">
       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
-      <span className="truncate font-medium text-secondary/90">{tplName}</span>
+      <span className="text-[10px] font-medium text-primary/80 truncate max-w-[6rem]">{tplName}</span>
       {total > 0 && (
-        <span className="shrink-0 text-[10px] text-muted-foreground/60 num">{done}/{total}</span>
+        <span className="text-[10px] text-muted-foreground/50 num ml-auto shrink-0">
+          {state === "completed" ? "✓" : `${done}/${total}`}
+        </span>
       )}
     </span>
   );

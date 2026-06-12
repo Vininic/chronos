@@ -495,16 +495,17 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
   const [inspectItem, setInspectItem] = useState<AgendaItem | null>(null);
   const [quickAccessItem, setQuickAccessItem] = useState<AgendaItem | null>(null);
 
-  function BlockBadges({ a }: { a: AgendaItem }) {
+  function BlockBadges({ a, tier }: { a: AgendaItem; tier: "micro" | "compact" | "hour" | "full" }) {
     const cat = data.categories.find((c) => c.id === a.kind);
     if (!cat?.workspace) return null;
     return (
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setQuickAccessItem(a); }}
-        className="shrink-0 rounded p-0.5 text-muted-foreground/50 hover:text-secondary hover:bg-muted/40 transition-colors"
+        className="shrink-0 rounded transition-colors hover:bg-black/8 dark:hover:bg-white/8"
+        style={{ padding: tier === "micro" ? "1px 3px" : "2px 4px" }}
       >
-        <BlockSessionBadge structure={cat.workspace} runtime={a.workspace ?? {}} />
+        <BlockSessionBadge structure={cat.workspace} runtime={a.workspace ?? {}} tier={tier} />
       </button>
     );
   }
@@ -1543,7 +1544,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                               <StickyNote className="h-2 w-2" />
                             </span>
                           )}
-                          <BlockBadges a={a} />
+                          <BlockBadges a={a} tier="micro" />
                         </div>
                       )}
 
@@ -1571,7 +1572,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                                 <StickyNote className="h-2.5 w-2.5" />
                               </span>
                             )}
-                            <BlockBadges a={a} />
+                            <BlockBadges a={a} tier="compact" />
                           </div>
                         </div>
                       )}
@@ -1612,7 +1613,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                                 <StickyNote className="h-2.5 w-2.5" />
                               </span>
                             )}
-                            <BlockBadges a={a} />
+                            <BlockBadges a={a} tier="hour" />
                           </div>
                         </div>
                       )}
@@ -1639,7 +1640,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                                 <StickyNote className="h-2.5 w-2.5" />
                               </span>
                             )}
-                            <BlockBadges a={a} />
+                            <BlockBadges a={a} tier="full" />
                           </div>
                           {showNotesBelow && (
                             noteLines.length === 1 ? (
@@ -1793,18 +1794,20 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                   {cat?.label ?? quickAccessItem.kind}
                 </DialogTitle>
               </DialogHeader>
-              <SessionView
-                structure={structure}
-                runtime={quickAccessItem.workspace ?? {}}
-                onChange={(newExt) => {
-                  if (quickAccessItem.source === "commitment") {
-                    updateCommitment(quickAccessItem.id, { workspace: newExt });
-                  } else {
-                    updateRoutine(quickAccessItem.id, { workspace: newExt });
-                  }
-                }}
-                onClose={() => setQuickAccessItem(null)}
-              />
+              <div className="overflow-x-auto min-w-0">
+                <SessionView
+                  structure={structure}
+                  runtime={quickAccessItem.workspace ?? {}}
+                  onChange={(newExt) => {
+                    if (quickAccessItem.source === "commitment") {
+                      updateCommitment(quickAccessItem.id, { workspace: newExt });
+                    } else {
+                      updateRoutine(quickAccessItem.id, { workspace: newExt });
+                    }
+                  }}
+                  onClose={() => setQuickAccessItem(null)}
+                />
+              </div>
             </DialogContent>
           </Dialog>
         );
@@ -1836,7 +1839,7 @@ function BlockDetailsDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl text-primary">
             {scheduleText.blockTitle(item.title, item.titleCustom)}
@@ -1845,7 +1848,7 @@ function BlockDetailsDialog({
             {bcp47.toLowerCase().startsWith("pt") ? "Detalhes rapidos do bloco selecionado." : "Quick details for the selected block."}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-1">
+        <div className="space-y-4 py-1 min-w-0">
           <div className="text-xs text-muted-foreground num">
             {formatClock(item.start, bcp47)}–{formatClock(item.end, bcp47)} · {fmtDur(durationMin(item.start, item.end))}
           </div>
@@ -1869,7 +1872,7 @@ function BlockDetailsDialog({
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
                   {cat?.label ?? item.kind}
                 </div>
-                <div className="rounded-lg border border-border/40 bg-muted/10 p-3">
+                <div className="rounded-lg border border-border/40 bg-muted/10 p-3 overflow-x-auto min-w-0">
                   <SessionView
                     structure={structure}
                     runtime={item.workspace ?? {}}
@@ -2034,11 +2037,11 @@ function BlockEditDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl text-primary">{scheduleText.blockTitle(item.title, item.titleCustom)}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-1">
+        <div className="space-y-4 py-1 min-w-0">
           <div className="space-y-1.5">
             <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.title_field}</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-9" />
@@ -2097,23 +2100,23 @@ function BlockEditDialog({
                   return (
                     <div key={`edit-note-${index}`} className={`relative rounded-md border p-2 pl-3 ${tone.border} ${tone.bg}`}>
                       <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-md ${tone.solid}`} />
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Input
                           value={line.text}
                           onChange={(e) => updateNoteText(index, e.target.value)}
                           placeholder={t.chronos.dialog.notesPlaceholder}
-                          className="h-8"
+                          className="h-8 min-w-[100px] flex-1"
                         />
                         <Select value={line.tone} onValueChange={(v) => updateNoteTone(index, v as NoteTone)}>
-                          <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-8 w-16 text-[10px]"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {toneOptions.map((opt) => (
                               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => removeNoteLine(index)} className="h-8 w-8 px-0 text-muted-foreground">
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeNoteLine(index)} className="h-8 w-7 px-0 text-muted-foreground shrink-0">
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
                     </div>
@@ -2138,12 +2141,14 @@ function BlockEditDialog({
                   <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     {cat?.label ?? item.kind}
                   </Label>
-                  <SessionView
+                  <div className="overflow-x-auto min-w-0">
+                    <SessionView
                     structure={structure}
                     runtime={editWorkspace}
                     onChange={(newExt) => setEditWorkspace(newExt)}
                     onClose={() => {}}
                   />
+                </div>
                 </div>
               );
             })()}

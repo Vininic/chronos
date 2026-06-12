@@ -4,6 +4,7 @@ export interface WorkspacePreset {
   id: string;
   label: string;
   description: string;
+  icon: string;
   create: () => WorkspaceStructure;
 }
 
@@ -494,12 +495,12 @@ function createChecklist(): WorkspaceStructure {
 /* ─── Registry ─── */
 
 export const WORKSPACE_PRESETS: WorkspacePreset[] = [
-  { id: "workout", label: "Workout", description: "Multi-template workout tracking with muscle groups, exercises, and sets", create: createWorkout },
-  { id: "reading", label: "Reading", description: "Book reading tracker with per-session page counts", create: createReading },
-  { id: "study", label: "Study", description: "Subject and activity tracking with completion checkboxes", create: createStudy },
-  { id: "project", label: "Project", description: "Phase and task tracking for project management", create: createProject },
-  { id: "deep-work", label: "Deep Work", description: "Focused deep work sessions with domain and block tracking", create: createDeepWork },
-  { id: "checklist", label: "Checklist", description: "Reusable checklists for daily, weekly, and monthly routines", create: createChecklist },
+  { id: "workout", label: "Workout", description: "Multi-template workout tracking with muscle groups, exercises, and sets", icon: "💪", create: createWorkout },
+  { id: "reading", label: "Reading", description: "Book reading tracker with per-session page counts", icon: "📖", create: createReading },
+  { id: "study", label: "Study", description: "Subject and activity tracking with completion checkboxes", icon: "🎓", create: createStudy },
+  { id: "project", label: "Project", description: "Phase and task tracking for project management", icon: "📋", create: createProject },
+  { id: "deep-work", label: "Deep Work", description: "Focused deep work sessions with domain and block tracking", icon: "🧠", create: createDeepWork },
+  { id: "checklist", label: "Checklist", description: "Reusable checklists for daily, weekly, and monthly routines", icon: "✅", create: createChecklist },
 ];
 
 export function getPreset(id: string): WorkspacePreset | undefined {

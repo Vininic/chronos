@@ -1,13 +1,17 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp, Target, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp, Target, BarChart3, Play } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import ProfileDialog from "./ProfileDialog";
 import { ProgressDialog } from "./ProgressDialog";
+import { BlockSessionBadge, SessionView } from "./SessionView";
+import { buildAgendaForDate } from "@/lib/schedule/store";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { WorkspaceRuntime } from "@/lib/schedule/types";
 
 export default function Sidebar() {
   const { data, overallGoalProgress } = useSchedule();
@@ -19,6 +23,22 @@ export default function Sidebar() {
 
   const now = new Date();
   const weekProgress = Math.round(((now.getDay() * 1440 + now.getHours() * 60 + now.getMinutes()) / 10080) * 100);
+
+  const [sessionOpen, setSessionOpen] = useState(false);
+  const [sessionRuntime, setSessionRuntime] = useState<WorkspaceRuntime | null>(null);
+
+  const activeSession = useMemo(() => {
+    const agenda = buildAgendaForDate(data, now);
+    const item = agenda.find((a) => {
+      const cat = data.categories.find((c) => c.id === a.kind);
+      return cat?.workspace && a.workspace?._sessionStarted && !a.workspace?._sessionEnded;
+    });
+    if (item) {
+      const cat = data.categories.find((c) => c.id === item.kind);
+      return cat?.workspace ? { item, cat } : null;
+    }
+    return null;
+  }, [data, now]);
 
   const main = [
     { to: "/dashboard",          label: t.chronos.nav.today,    icon: LayoutDashboard },
@@ -105,6 +125,39 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {activeSession && (
+        <div className="px-4 mb-2">
+          <button
+            onClick={() => {
+              setSessionRuntime(activeSession.item.workspace ?? {});
+              setSessionOpen(true);
+            }}
+            className="w-full rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 px-3 py-2 flex items-center gap-2.5 hover:bg-sidebar-accent/60 transition-colors text-left"
+          >
+            <Play className="h-3 w-3 text-secondary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-secondary-soft mb-0.5">{activeSession.cat.name}</div>
+              <BlockSessionBadge structure={activeSession.cat.workspace!} runtime={activeSession.item.workspace ?? {}} tier="micro" />
+            </div>
+          </button>
+          <Dialog open={sessionOpen} onOpenChange={setSessionOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{activeSession.cat.name}</DialogTitle>
+              </DialogHeader>
+              {sessionRuntime && activeSession.cat.workspace && (
+                <SessionView
+                  structure={activeSession.cat.workspace}
+                  runtime={sessionRuntime}
+                  onChange={(r) => setSessionRuntime(r)}
+                  onClose={() => setSessionOpen(false)}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
 
       <div className="p-4">
         <button

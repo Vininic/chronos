@@ -262,7 +262,7 @@ export function ComposeBlockDialog({
           </Button>
         )}
       </DialogTrigger>
-        <DialogContent className="sm:max-w-lg w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto overflow-x-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-primary">{t.chronos.dialog.title}</DialogTitle>
           <DialogDescription>{t.chronos.dialog.desc}</DialogDescription>
@@ -515,23 +515,23 @@ export function ComposeBlockDialog({
                   {noteLines.map((line, index) => (
                     <div key={`compose-note-${index}`} className="relative rounded-md border border-border/60 bg-muted/20 p-2 pl-3">
                       <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-md ${noteToneAccent[line.tone]}`} />
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Input
                           value={line.text}
                           onChange={(e) => updateNoteText(index, e.target.value)}
                           placeholder={t.chronos.dialog.notesPlaceholder}
-                          className="h-8"
+                          className="h-8 min-w-[100px] flex-1"
                         />
                         <Select value={line.tone} onValueChange={(v) => updateNoteTone(index, v as NoteTone)}>
-                          <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-8 w-16 text-[10px]"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {toneOptions.map((opt) => (
                               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => removeNoteLine(index)} className="h-8 w-8 px-0 text-muted-foreground">
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeNoteLine(index)} className="h-8 w-7 px-0 text-muted-foreground shrink-0">
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                   </div>
                     <p className="text-[10px] text-muted-foreground/60 num mt-1">

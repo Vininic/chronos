@@ -11,7 +11,7 @@ import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -976,19 +976,12 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                         <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">{c.id}</div>
                         <button
                           onClick={() => setConfigExtCategoryId(c.id)}
-                          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none transition-colors hover:bg-muted/40"
+                          className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium leading-none transition-colors hover:bg-muted/40 ${
+                            c.workspace ? "text-secondary" : "text-muted-foreground/40 hover:text-secondary/70"
+                          }`}
+                          title={c.workspace ? (isPt ? "Gerenciar sessões" : "Manage sessions") : (isPt ? "Adicionar sessões" : "Add sessions")}
                         >
-                          {c.workspace ? (
-                            <span className="text-secondary/80">
-                              {c.workspace.templates.length > 0
-                                ? `${c.workspace.templates.length} program${c.workspace.templates.length !== 1 ? "s" : ""}`
-                                : "Empty"}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/50 hover:text-secondary/80">
-                              {isPt ? "Adicionar" : "Add program"}
-                            </span>
-                          )}
+                          <LayoutGrid className={`h-3.5 w-3.5 ${c.workspace ? "drop-shadow-[0_0_3px_rgba(168,85,247,0.4)]" : ""}`} />
                         </button>
                         <button
                           onClick={() => startEdit(c)}
@@ -1042,31 +1035,39 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
             </div>
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{isPt ? "Que tipo de sessões?" : "What kind of sessions?"}</Label>
-              <div className="flex flex-wrap gap-1.5 mt-1">
+              <div className="grid grid-cols-2 gap-2 mt-2">
                 {WORKSPACE_PRESETS.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => setCreateWSType(createWSType === p.id ? null : p.id)}
-                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors ${
                       createWSType === p.id
-                        ? "border-primary bg-primary/10 text-primary font-medium"
-                        : "border-border/50 text-muted-foreground/70 hover:border-secondary/40 hover:text-secondary"
+                        ? "border-primary bg-primary/5"
+                        : "border-border/50 hover:border-muted-foreground/30 hover:bg-muted/20"
                     }`}
                   >
-                    {p.label}
+                    <span className="text-base leading-none shrink-0 mt-0.5">{p.icon}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-primary">{p.label}</div>
+                      <div className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-2">{p.description}</div>
+                    </div>
                   </button>
                 ))}
                 <button
                   type="button"
                   onClick={() => setCreateWSType(null)}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors ${
                     createWSType === null
-                      ? "border-primary bg-primary/10 text-primary font-medium"
-                      : "border-border/50 text-muted-foreground/70 hover:border-secondary/40 hover:text-secondary"
+                      ? "border-primary bg-primary/5"
+                      : "border-dashed border-border/50 hover:border-muted-foreground/30 hover:bg-muted/20"
                   }`}
                 >
-                  {isPt ? "Nenhum" : "None"}
+                  <span className="text-base leading-none shrink-0 mt-0.5">🚫</span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-primary">{isPt ? "Nenhum" : "None"}</div>
+                    <div className="text-[10px] text-muted-foreground/60 leading-snug">{isPt ? "Sem sessões" : "No sessions"}</div>
+                  </div>
                 </button>
               </div>
             </div>
@@ -1113,7 +1114,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
         if (!cat) return null;
         return (
           <Dialog open onOpenChange={(o) => { if (!o) setConfigExtCategoryId(null); }}>
-            <DialogContent className="max-w-lg w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-x-hidden">
+            <DialogContent className="max-w-lg w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-x-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-base">
                   {cat.label ?? cat.id}
@@ -1127,7 +1128,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                   />
                   <div className="flex items-center justify-between gap-2 pt-2">
                     <Button variant="destructive" size="sm" onClick={() => { onUpdate(cat.id, { workspace: undefined }); setConfigExtCategoryId(null); }}>
-                      {isPt ? "Remover programas" : "Remove programs"}
+                      {isPt ? "Remover" : "Remove"}
                     </Button>
                   </div>
                 </div>
@@ -1136,31 +1137,29 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                   <p className="text-sm text-muted-foreground">
                     {isPt ? "Escolha um tipo de sessão:" : "Choose a session type:"}
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="grid grid-cols-2 gap-2">
                     {WORKSPACE_PRESETS.map((p) => (
                       <button
                         key={p.id}
-                        onClick={() => {
-                          onUpdate(cat.id, { workspace: p.create() });
-                        }}
-                        className="rounded-full border px-3 py-1 text-xs text-muted-foreground/70 border-border/50 hover:border-secondary/40 hover:text-secondary transition-colors"
+                        onClick={() => { onUpdate(cat.id, { workspace: p.create() }); }}
+                        className="flex items-start gap-2.5 rounded-lg border border-border/50 p-2.5 text-left hover:border-secondary/40 hover:bg-muted/20 transition-colors"
                       >
-                        {p.label}
+                        <span className="text-base leading-none shrink-0 mt-0.5">{p.icon}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-primary">{p.label}</div>
+                          <div className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-2">{p.description}</div>
+                        </div>
                       </button>
                     ))}
                     <button
-                      onClick={() => {
-                        onUpdate(cat.id, {
-                          workspace: {
-                            levels: [{ key: "item", label: "Item", labelPlural: "Items", fields: [], tracking: { type: "boolean", default: false, label: "Done" } }],
-                            display: { summary: "", nextStep: "", progress: "boolean" },
-                            templates: [{ name: "Default", children: [] }],
-                          },
-                        });
-                      }}
-                      className="rounded-full border px-3 py-1 text-xs text-muted-foreground/70 border-dashed border-border/50 hover:border-secondary/40 hover:text-secondary transition-colors"
+                      onClick={() => { onUpdate(cat.id, { workspace: { levels: [{ key: "item", label: "Item", labelPlural: "Items", fields: [], tracking: { type: "boolean", default: false, label: "Done" } }], display: { summary: "", nextStep: "", progress: "boolean" }, templates: [{ name: "Default", children: [] }] } }); }}
+                      className="flex items-center justify-center gap-2.5 rounded-lg border border-dashed border-border/50 p-2.5 hover:border-secondary/40 hover:bg-muted/20 transition-colors col-span-2"
                     >
-                      {isPt ? "Personalizado" : "Custom"}
+                      <span className="text-base leading-none shrink-0 mt-0.5">🛠️</span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-primary">{isPt ? "Personalizado" : "Custom"}</div>
+                        <div className="text-[10px] text-muted-foreground/60 leading-snug">{isPt ? "Crie seu próprio" : "Create your own"}</div>
+                      </div>
                     </button>
                   </div>
                 </div>
