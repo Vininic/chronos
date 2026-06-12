@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { SessionView, BlockSessionBadge } from "@/components/dashboard/SessionView";
 import { initRuntime } from "@/lib/schedule/workspace-engine";
 import type { WorkspaceStructure } from "@/lib/schedule/types";
+import { I18nProvider } from "@/lib/i18n/I18nProvider";
+import { TimerProvider } from "@/lib/timer/TimerContext";
 
 const structure: WorkspaceStructure = {
   levels: [
@@ -34,11 +36,18 @@ const structure: WorkspaceStructure = {
 };
 
 describe("BlockSessionBadge", () => {
-  it("renders template name and progress", () => {
-    const rt = initRuntime(structure, "Upper A");
+  it("renders template name and progress when active", () => {
+    const rt = { ...initRuntime(structure, "Upper A"), _sessionStarted: true };
     render(<BlockSessionBadge structure={structure} runtime={rt} />);
     expect(screen.getByText("Upper A")).toBeDefined();
     expect(screen.getByText(/0\/2/)).toBeDefined();
+  });
+
+  it("hides progress count before session starts", () => {
+    const rt = initRuntime(structure, "Upper A");
+    const { container } = render(<BlockSessionBadge structure={structure} runtime={rt} />);
+    expect(screen.getByText("Upper A")).toBeDefined();
+    expect(container.querySelector(".num")).toBeNull();
   });
 
   it("renders nothing for empty template", () => {
@@ -48,10 +57,14 @@ describe("BlockSessionBadge", () => {
   });
 });
 
+function withProviders(node: ReactNode) {
+  return <I18nProvider><TimerProvider>{node}</TimerProvider></I18nProvider>;
+}
+
 describe("SessionView", () => {
   it("renders preview state with all groups and exercises", () => {
     const rt = initRuntime(structure, "Upper A");
-    render(<SessionView structure={structure} runtime={rt} onChange={() => {}} onClose={() => {}} />);
+    render(withProviders(<SessionView structure={structure} runtime={rt} onChange={() => {}} onClose={() => {}} />));
     expect(screen.getByText("Upper A")).toBeDefined();
     expect(screen.getByText("Chest")).toBeDefined();
     expect(screen.getByText("Bench Press")).toBeDefined();
@@ -63,7 +76,7 @@ describe("SessionView", () => {
     let currentRuntime = { ...initialRt };
     function Wrapper() {
       const [rt, setRt] = useState(currentRuntime);
-      return (
+      return withProviders(
         <SessionView
           structure={structure}
           runtime={rt}
@@ -88,7 +101,7 @@ describe("SessionView", () => {
       }
     }
     const rt = { templateName: "Upper A", tracking, _sessionStarted: true };
-    render(<SessionView structure={structure} runtime={rt} onChange={() => {}} onClose={() => {}} />);
+    render(withProviders(<SessionView structure={structure} runtime={rt} onChange={() => {}} onClose={() => {}} />));
     expect(screen.getByText("Session complete")).toBeDefined();
   });
 });

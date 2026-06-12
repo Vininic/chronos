@@ -495,8 +495,7 @@ export function SessionView({
 }) {
   const [starting, setStarting] = useState(false);
   const state = detectState(structure, runtime);
-  let timer: { running?: boolean; start?: (min: number) => void } = {};
-  try { timer = useTimer(); } catch {} // timer context may not be available
+  const timer = useTimer();
 
   useEffect(() => {
     if (starting && state === "active") setStarting(false);
@@ -561,6 +560,8 @@ export function BlockSessionBadge({
     state === "active"    ? "bg-secondary" :
                             "bg-muted-foreground/25";
 
+  const showCount = total > 0 && (state === "active" || state === "completed");
+
   if (tier === "micro") {
     return (
       <span className="inline-flex items-center gap-1 leading-none">
@@ -575,7 +576,7 @@ export function BlockSessionBadge({
       <span className="inline-flex items-center gap-1 leading-none">
         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
         <span className="text-[9px] font-medium text-primary/70 truncate max-w-[5rem]">{tplName}</span>
-        {total > 0 && (
+        {showCount && (
           <span className="text-[9px] text-muted-foreground/50 num">{done}/{total}</span>
         )}
       </span>
@@ -586,7 +587,7 @@ export function BlockSessionBadge({
     <span className="inline-flex items-center gap-1.5 rounded bg-muted/30 px-1.5 py-0.5 leading-none min-w-0">
       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
       <span className="text-[10px] font-medium text-primary/80 truncate max-w-[6rem]">{tplName}</span>
-      {total > 0 && (
+      {showCount && (
         <span className="text-[10px] text-muted-foreground/50 num ml-auto shrink-0">
           {state === "completed" ? "✓" : `${done}/${total}`}
         </span>
