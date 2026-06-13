@@ -11,7 +11,56 @@ import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { useTimer } from "@/lib/timer/TimerContext";
 import { BlockSessionBadge, SessionView } from "@/components/dashboard/SessionView";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { calcProgress } from "@/lib/schedule/workspace-engine";
+
+function HourglassSVG({ ratio }: { ratio: number }) {
+  const r = Math.max(0, Math.min(1, ratio));
+  const W = 120, H = 180;
+  const neckY = H / 2;
+  const neckW = 6;
+  const upperPath = `M20,20 L${W - 20},20 L${W / 2 + neckW / 2},${neckY} L${W / 2 - neckW / 2},${neckY} Z`;
+  const lowerPath = `M${W / 2 - neckW / 2},${neckY} L${W / 2 + neckW / 2},${neckY} L${W - 20},${H - 20} L20,${H - 20} Z`;
+  const upperSandH = (neckY - 20) * r;
+  const lowerSandH = (H - 20 - neckY) * (1 - r);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={100} height={150} className="drop-shadow-sm">
+      <defs>
+        <clipPath id="upperClip">
+          <path d={upperPath} />
+        </clipPath>
+        <clipPath id="lowerClip">
+          <path d={lowerPath} />
+        </clipPath>
+        <linearGradient id="sandGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="hsl(var(--secondary))" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="hsl(var(--secondary))" stopOpacity="0.5" />
+        </linearGradient>
+        <linearGradient id="glassGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.15" />
+          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
+
+      <path d={upperPath} fill="url(#glassGrad)" />
+      <path d={lowerPath} fill="url(#glassGrad)" />
+
+      <rect x={0} y={20} width={W} height={upperSandH} fill="url(#sandGrad)" clipPath="url(#upperClip)" />
+      <rect x={0} y={neckY} width={W} height={lowerSandH} fill="url(#sandGrad)" clipPath="url(#lowerClip)" opacity={0.7} />
+
+      {r > 0.02 && r < 0.98 && (
+        <rect x={W / 2 - 1.5} y={neckY - 4} width={3} height={8} fill="hsl(var(--secondary))" opacity={0.5} rx={1} />
+      )}
+
+      <path d={upperPath} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinejoin="round" opacity={0.4} />
+      <path d={lowerPath} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinejoin="round" opacity={0.4} />
+
+      <rect x={16} y={14} width={W - 32} height={8} rx={3} fill="hsl(var(--primary))" opacity={0.5} />
+      <rect x={16} y={H - 22} width={W - 32} height={8} rx={3} fill="hsl(var(--primary))" opacity={0.5} />
+    </svg>
+  );
+}
 
 export default function Focus() {
   const { data, updateRoutine, updateCommitment } = useSchedule();
@@ -74,75 +123,85 @@ export default function Focus() {
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         <div className="w-full lg:flex-1 min-w-0 space-y-6">
-          <div className="chronos-card-elevated p-6 flex flex-col items-center gap-5">
-            <div className="text-center flex flex-col items-center gap-4">
-              {/* Hourglass SVG */}
-              <svg viewBox="0 0 80 100" className="w-20 h-24 text-secondary">
-                <defs>
-                  <clipPath id="upperClip">
-                    <path d="M16 10 L64 10 L48 38 Q40 44 40 44 Q40 44 32 38 Z" />
-                  </clipPath>
-                  <clipPath id="lowerClip">
-                    <path d="M32 50 Q40 44 40 44 Q40 44 48 50 L64 90 L16 90 Z" />
-                  </clipPath>
-                </defs>
-                {(() => {
-                  const ratio = timer.target > 0 ? timer.seconds / timer.target : 1;
-                  const upperH = 34;
-                  const lowerH = 40;
-                  return (
-                    <>
-                      {/* Upper bulb outline */}
-                      <path d="M16 10 L64 10 L48 38 Q40 44 40 44 Q40 44 32 38 Z" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.2" />
-                      {/* Lower bulb outline */}
-                      <path d="M32 50 Q40 44 40 44 Q40 44 48 50 L64 90 L16 90 Z" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.2" />
-                      {/* Neck */}
-                      <rect x="38" y="42" width="4" height="8" rx="1" fill="currentColor" opacity="0.12" />
-                      {/* Upper sand (remaining time) */}
-                      <rect x="10" y="10" width="60" height={upperH * ratio} fill="currentColor" opacity="0.4" clipPath="url(#upperClip)" />
-                      {/* Lower sand (elapsed time) */}
-                      <rect x="10" y={90 - lowerH * (1 - ratio)} width="60" height={lowerH * (1 - ratio)} fill="currentColor" opacity="0.7" clipPath="url(#lowerClip)" />
-                    </>
-                  );
-                })()}
-              </svg>
-              <div className="font-display text-2xl leading-none text-primary num">{timer.mm}<span className="text-secondary">:</span>{timer.ss}</div>
-              <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground -mt-1">{t.chronos.focus.sealed}</div>
-            </div>
-
-            {previewBlock ? (
-              <div className="w-full max-w-xs flex items-center gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3">
-                <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: previewColor }} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-primary font-medium truncate">{previewBlock.title}</div>
-                  <div className="text-[11px] text-muted-foreground num">{previewBlock.start}–{previewBlock.end}</div>
-                </div>
-                <span className="text-[10px] uppercase tracking-wider text-secondary shrink-0">{t.chronos.focus.inProgress}</span>
+          {/* ─── Timer card ─── */}
+          <div className="chronos-card-elevated overflow-hidden">
+            {/* Top band — active block info */}
+            {(previewBlock || activeScheduled) && (
+              <div className="flex items-center gap-3 border-b border-border/30 px-6 py-3 bg-muted/20">
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: previewColor }}
+                />
+                <span className="text-sm text-primary font-medium truncate flex-1">
+                  {previewBlock?.title ?? scheduleText.blockTitle(activeScheduled!.title, activeScheduled!.titleCustom)}
+                </span>
+                <span className="text-xs text-muted-foreground num shrink-0">
+                  {(previewBlock ?? activeScheduled)!.start}–{(previewBlock ?? activeScheduled)!.end}
+                </span>
+                {previewBlock && (
+                  <span className="text-[10px] uppercase tracking-wider text-secondary shrink-0">
+                    {t.chronos.focus.inProgress}
+                  </span>
+                )}
+                {!previewBlock && activeScheduled && (
+                  <Button size="sm" className="h-7 shrink-0" onClick={() => {
+                    const mins = Math.max(15, durationMin(activeScheduled.start, activeScheduled.end));
+                    timer.startScheduled(mins, { title: activeScheduled.title, start: activeScheduled.start, end: activeScheduled.end, kind: activeScheduled.kind });
+                    setPreviewBlock({ title: activeScheduled.title, start: activeScheduled.start, end: activeScheduled.end, kind: activeScheduled.kind });
+                    toast({ title: t.chronos.focus.focusBlockStarted, description: `${scheduleText.blockTitle(activeScheduled.title)} · ${activeScheduled.start}–${activeScheduled.end}` });
+                  }}>
+                    {t.chronos.focus.startWhenBegins}
+                  </Button>
+                )}
               </div>
-            ) : activeScheduled ? (
-              <div className="w-full max-w-xs flex items-center gap-3 rounded-lg border border-dashed border-secondary/40 px-4 py-3">
-                <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: TAILWIND_TO_HEX[kindStyle[activeScheduled.kind as BlockKind]?.dot ?? "bg-primary"] ?? "hsl(var(--primary))" }} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-primary truncate">{scheduleText.blockTitle(activeScheduled.title, activeScheduled.titleCustom)}</div>
-                  <div className="text-[11px] text-muted-foreground num">{activeScheduled.start}–{activeScheduled.end}</div>
-                </div>
-                <Button size="sm" className="h-8 shrink-0" onClick={() => {
-                  const mins = Math.max(15, durationMin(activeScheduled.start, activeScheduled.end));
-                  timer.startScheduled(mins, { title: activeScheduled.title, start: activeScheduled.start, end: activeScheduled.end, kind: activeScheduled.kind });
-                  setPreviewBlock({ title: activeScheduled.title, start: activeScheduled.start, end: activeScheduled.end, kind: activeScheduled.kind });
-                  toast({ title: t.chronos.focus.focusBlockStarted, description: `${scheduleText.blockTitle(activeScheduled.title)} · ${activeScheduled.start}–${activeScheduled.end}` });
-                }}>
-                  {t.chronos.focus.startWhenBegins}
-                </Button>
-              </div>
-            ) : null}
+            )}
 
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              {[25, 45, 60, 90].map((m) => (
-                <Button key={m} variant={timer.target === m * 60 ? "default" : "outline"} onClick={() => { timer.start(m); setPreviewBlock(null); }} className={timer.target === m * 60 ? "bg-primary text-primary-foreground" : ""}>{m}m</Button>
-              ))}
-              <Button onClick={timer.togglePause} className="bg-bronze text-primary-deep hover:opacity-90">{timer.running ? <><Pause className="h-4 w-4 mr-1" /> {t.chronos.focus.pause}</> : <><Play className="h-4 w-4 mr-1" /> {t.chronos.focus.begin}</>}</Button>
-              <Button variant="outline" onClick={() => { timer.reset(); setPreviewBlock(null); }}><RotateCcw className="h-4 w-4 mr-1" /> {t.chronos.focus.reset}</Button>
+            {/* Main timer area — hourglass + controls */}
+            <div className="px-8 py-8 flex flex-col items-center gap-6">
+              <HourglassSVG ratio={timer.target > 0 ? timer.seconds / timer.target : 1} />
+
+              <div className="text-center">
+                <div className="font-display text-5xl leading-none text-primary num tracking-tight">
+                  {timer.mm}<span className="text-secondary opacity-70">:</span>{timer.ss}
+                </div>
+                <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground mt-2">
+                  {t.chronos.focus.sealed}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                {[25, 45, 60, 90].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => { timer.start(m); setPreviewBlock(null); }}
+                    className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-all border ${
+                      timer.target === m * 60
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "border-border/50 text-muted-foreground hover:border-border hover:text-primary"
+                    }`}
+                  >
+                    {m}m
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => { timer.reset(); setPreviewBlock(null); }}
+                  className="h-10 w-10 rounded-full border border-border/50 grid place-items-center text-muted-foreground hover:text-primary hover:border-border transition-colors"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={timer.togglePause}
+                  className="h-14 w-14 rounded-full bg-secondary text-primary-deep grid place-items-center shadow-md hover:opacity-90 transition-opacity"
+                >
+                  {timer.running
+                    ? <Pause className="h-6 w-6" />
+                    : <Play className="h-6 w-6 ml-0.5" />}
+                </button>
+                <div className="h-10 w-10" />
+              </div>
             </div>
           </div>
 
@@ -171,31 +230,77 @@ export default function Focus() {
             </table>
           </div>
         </div>
-        <div className="w-full lg:w-80 shrink-0 flex flex-col gap-4">
+
+        <div className="w-full lg:w-72 shrink-0 flex flex-col gap-4">
           {activeSession && (
             <>
               <button
                 onClick={() => setSessionOpen(true)}
-                className="chronos-card p-4 w-full text-left hover:bg-sidebar-accent/30 transition-colors"
+                className="chronos-card w-full text-left hover:bg-muted/30 transition-colors group"
               >
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">{t.chronos.focus.activeSession}</div>
-                <div className="flex items-center gap-2.5">
-                  <span className="relative h-2.5 w-2.5 shrink-0">
-                    <span className="absolute inset-0 rounded-full bg-green-500 animate-pulse" />
-                    <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75" />
-                  </span>
-                  <span className="text-sm font-medium text-primary truncate">{activeSession.cat.label}</span>
+                <div className="p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      Active Session
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-pulse" />
+                      <span className="text-[10px] text-secondary uppercase tracking-wider">Live</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-full bg-secondary/10 grid place-items-center shrink-0">
+                      <span className="text-base">⚡</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-primary truncate">{activeSession.cat.label}</div>
+                      <BlockSessionBadge
+                        structure={activeSession.cat.workspace!}
+                        runtime={activeSession.item.workspace ?? {}}
+                        tier="compact"
+                      />
+                    </div>
+                  </div>
+                  {(() => {
+                    const { done, total } = calcProgress(activeSession.item.workspace ?? {}, activeSession.cat.workspace!);
+                    if (total === 0) return null;
+                    return (
+                      <div className="space-y-1">
+                        <div className="h-1 rounded-full bg-muted/40 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-secondary transition-all duration-300"
+                            style={{ width: `${Math.round((done / total) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[9px] text-muted-foreground/50 num">
+                          <span>{done} done</span>
+                          <span>{total - done} remaining</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
-                <BlockSessionBadge structure={activeSession.cat.workspace!} runtime={activeSession.item.workspace ?? {}} tier="compact" />
               </button>
               <Dialog open={sessionOpen} onOpenChange={setSessionOpen}>
-                <DialogContent className="max-w-lg overflow-y-auto max-h-[80vh]">
-                  <DialogHeader>
-                    <DialogTitle>{activeSession.cat.label}</DialogTitle>
-                  </DialogHeader>
-                  {activeSession.cat.workspace && (
+                <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-lg max-h-[min(85vh,calc(100dvh-2rem))] overflow-y-auto p-0">
+                  <div className="sr-only">
+                    <h2 id="session-dialog-title">Session — {activeSession.cat.label}</h2>
+                  </div>
+                  <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b border-border/30 bg-card">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Session</div>
+                      <div className="text-base font-medium text-primary">{activeSession.cat.label}</div>
+                    </div>
+                    {timer.running && (
+                      <div className="flex items-center gap-1.5 text-sm text-secondary num font-medium">
+                        <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-pulse" />
+                        {timer.mm}:{timer.ss}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-5">
                     <SessionView
-                      structure={activeSession.cat.workspace}
+                      structure={activeSession.cat.workspace!}
                       runtime={activeSession.item.workspace ?? {}}
                       onChange={(r) => {
                         const id = activeSession.item.sourceId ?? activeSession.item.id;
@@ -207,7 +312,7 @@ export default function Focus() {
                       }}
                       onClose={() => setSessionOpen(false)}
                     />
-                  )}
+                  </div>
                 </DialogContent>
               </Dialog>
             </>

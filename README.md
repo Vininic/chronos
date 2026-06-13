@@ -925,7 +925,9 @@ The architecture is complete when:
 ---
 
 ## Final Refinements (UI)
-- [ ] Remake timer section; Make pop-up card above profile card; Display relevant blocks; Focus sections accurate hourglass UI;
+- [x] Remake timer section (Focus page hourglass redesign, session card + timer card)
+- [ ] Make pop-up card above profile card; Display relevant blocks;
+- [x] Focus sections accurate hourglass UI
 - [ ] Rethink "System" section; Rethink readding settings tab; Check relevancy; Check possible new settings to add (e.g. Keybinds, Shortcuts;)
 - [ ] Complete "Week" page redesign
 - [ ] Rethink "Week" page functionality; ponder whether to integrate drag system or not;

@@ -816,7 +816,6 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   const [createLabel, setCreateLabel] = useState("");
   const [createDesc, setCreateDesc] = useState("");
   const [createColor, setCreateColor] = useState(COLOR_PALETTE[0]);
-  const [createWSType, setCreateWSType] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   function startEdit(c: any) {
     setEditingId(c.id);
@@ -843,14 +842,11 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
     const id = createLabel.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     if (!id) { toast({ title: "Invalid name" }); return; }
     if (data.categories.find((c: any) => c.id === id)) { toast({ title: "Category already exists" }); return; }
-    const preset = createWSType ? WORKSPACE_PRESETS.find((p) => p.id === createWSType) : null;
-    const workspace = preset ? preset.create() : undefined;
-    onAdd({ id, label: createLabel, description: createDesc, tone: "custom", color: createColor, workspace });
+    onAdd({ id, label: createLabel, description: createDesc, tone: "custom", color: createColor, workspace: undefined });
     setShowCreate(false);
     setCreateLabel("");
     setCreateDesc("");
     setCreateColor(COLOR_PALETTE[0]);
-    setCreateWSType(null);
     toast({ title: t.chronos.settings.categorySaved(id) });
   }
 
@@ -979,7 +975,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                           className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium leading-none transition-colors hover:bg-muted/40 ${
                             c.workspace ? "text-secondary" : "text-muted-foreground/40 hover:text-secondary/70"
                           }`}
-                          title={c.workspace ? (isPt ? "Gerenciar sessões" : "Manage sessions") : (isPt ? "Adicionar sessões" : "Add sessions")}
+                          title={c.workspace ? (isPt ? "Gerenciar programas" : "Manage programs") : (isPt ? "Adicionar programas" : "Add programs")}
                         >
                           <LayoutGrid className={`h-3.5 w-3.5 ${c.workspace ? "drop-shadow-[0_0_3px_rgba(168,85,247,0.4)]" : ""}`} />
                         </button>
@@ -1032,44 +1028,6 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                 placeholder={isPt ? "Descrição opcional" : "Optional description"}
                 className="w-full bg-muted/60 text-sm text-primary rounded px-3 py-2 mt-1 outline-none border border-border"
               />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{isPt ? "Que tipo de sessões?" : "What kind of sessions?"}</Label>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {WORKSPACE_PRESETS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setCreateWSType(createWSType === p.id ? null : p.id)}
-                    className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors ${
-                      createWSType === p.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border/50 hover:border-muted-foreground/30 hover:bg-muted/20"
-                    }`}
-                  >
-                    <span className="text-base leading-none shrink-0 mt-0.5">{p.icon}</span>
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium text-primary">{p.label}</div>
-                      <div className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-2">{p.description}</div>
-                    </div>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setCreateWSType(null)}
-                  className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors ${
-                    createWSType === null
-                      ? "border-primary bg-primary/5"
-                      : "border-dashed border-border/50 hover:border-muted-foreground/30 hover:bg-muted/20"
-                  }`}
-                >
-                  <span className="text-base leading-none shrink-0 mt-0.5">🚫</span>
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-primary">{isPt ? "Nenhum" : "None"}</div>
-                    <div className="text-[10px] text-muted-foreground/60 leading-snug">{isPt ? "Sem sessões" : "No sessions"}</div>
-                  </div>
-                </button>
-              </div>
             </div>
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.settings.categoryTone}</Label>
@@ -1135,7 +1093,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
               ) : (
                 <div className="space-y-4 py-4">
                   <p className="text-sm text-muted-foreground">
-                    {isPt ? "Escolha um tipo de sessão:" : "Choose a session type:"}
+                    {isPt ? "Escolha um tipo:" : "Choose a type:"}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {WORKSPACE_PRESETS.map((p) => (

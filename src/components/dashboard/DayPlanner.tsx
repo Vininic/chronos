@@ -17,6 +17,7 @@ import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { TimeSelect } from "@/components/ui/time-select";
 import { setDragCommitmentInfo, getDragCommitmentInfo } from "@/lib/dragStore";
 import { SessionView, BlockSessionBadge } from "./SessionView";
+import { calcProgress } from "@/lib/schedule/workspace-engine";
 import type { WorkspaceStructure } from "@/lib/schedule/types";
 
 const HOUR_PX = 64;
@@ -502,8 +503,12 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setQuickAccessItem(a); }}
-        className="shrink-0 rounded transition-colors hover:bg-black/8 dark:hover:bg-white/8"
-        style={{ padding: tier === "micro" ? "1px 3px" : "2px 4px" }}
+        className={`shrink-0 rounded-md transition-all border ${
+          tier === "micro"
+            ? "border-transparent hover:border-border/40 hover:bg-muted/20"
+            : "border-border/30 bg-muted/20 hover:bg-muted/40 hover:border-border/60"
+        }`}
+        style={{ padding: tier === "micro" ? "1px 3px" : "2px 5px" }}
       >
         <BlockSessionBadge structure={cat.workspace} runtime={a.workspace ?? {}} tier={tier} />
       </button>
@@ -1790,14 +1795,45 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
           <Dialog open onOpenChange={(o) => { if (!o) setQuickAccessItem(null); }}>
             <DialogContent className="max-w-md w-[calc(100vw-2rem)] max-h-[min(80vh,calc(100dvh-3rem))] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  {cat?.label ?? quickAccessItem.kind}
+                <DialogTitle className="flex items-center gap-3 text-base">
+                  <span>{cat?.label ?? quickAccessItem.kind}</span>
+                  {cat?.workspace && (() => {
+                    const liveRuntime =
+                      quickAccessItem.source === "commitment"
+                        ? (data.commitments.find((c) => c.id === quickAccessItem.id)?.workspace ?? {})
+                        : (data.routine.find((r) => r.id === (quickAccessItem.sourceId ?? quickAccessItem.id))?.workspace ?? {});
+                    const { done, total } = calcProgress(liveRuntime, cat.workspace);
+                    if (total === 0) return null;
+                    const pct = Math.round((done / total) * 100);
+                    return (
+                      <span className="ml-auto flex items-center gap-2 shrink-0">
+                        <svg viewBox="0 0 32 32" className="w-7 h-7 -rotate-90">
+                          <circle cx="16" cy="16" r="13" fill="none" stroke="hsl(var(--muted))" strokeWidth="3" />
+                          <circle
+                            cx="16" cy="16" r="13"
+                            fill="none"
+                            stroke="hsl(var(--secondary))"
+                            strokeWidth="3"
+                            strokeDasharray={`${2 * Math.PI * 13}`}
+                            strokeDashoffset={`${2 * Math.PI * 13 * (1 - pct / 100)}`}
+                            strokeLinecap="round"
+                            className="transition-all duration-300"
+                          />
+                        </svg>
+                        <span className="text-xs text-muted-foreground num">{done}/{total}</span>
+                      </span>
+                    );
+                  })()}
                 </DialogTitle>
               </DialogHeader>
               <div className="overflow-x-auto min-w-0">
                 <SessionView
                   structure={structure}
-                  runtime={quickAccessItem.workspace ?? {}}
+                  runtime={
+                    quickAccessItem.source === "commitment"
+                      ? (data.commitments.find((c) => c.id === quickAccessItem.id)?.workspace ?? {})
+                      : (data.routine.find((r) => r.id === (quickAccessItem.sourceId ?? quickAccessItem.id))?.workspace ?? {})
+                  }
                   onChange={(newExt) => {
                     if (quickAccessItem.source === "commitment") {
                       updateCommitment(quickAccessItem.id, { workspace: newExt });
@@ -1875,7 +1911,11 @@ function BlockDetailsDialog({
                 <div className="rounded-lg border border-border/40 bg-muted/10 p-3 overflow-x-auto min-w-0">
                   <SessionView
                     structure={structure}
-                    runtime={item.workspace ?? {}}
+                    runtime={
+                      item.source === "commitment"
+                        ? (data.commitments.find((c) => c.id === item.id)?.workspace ?? {})
+                        : (data.routine.find((r) => r.id === (item.sourceId ?? item.id))?.workspace ?? {})
+                    }
                     onChange={(newExt) => {
                       if (item.source === "commitment") {
                         updateCommitment(item.id, { workspace: newExt });

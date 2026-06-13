@@ -162,6 +162,7 @@ function ActiveView({
   onChange: (runtime: WorkspaceRuntime) => void;
   onEnd: () => void;
 }) {
+  const focusTimer = useTimer();
   const tplName = resolveActiveTemplateName(runtime);
   const nextPath = getNextUndonePath(structure, runtime);
   const { done, total } = calcProgress(runtime, structure);
@@ -242,6 +243,12 @@ function ActiveView({
             <span className="flex items-center gap-1 text-xs text-muted-foreground/70 num shrink-0">
               <Clock className="h-3 w-3" />
               {fmtElapsed(elapsed)}
+            </span>
+          )}
+          {focusTimer.running && (
+            <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-secondary/70 shrink-0 ml-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-pulse" />
+              {focusTimer.mm}:{focusTimer.ss}
             </span>
           )}
         </div>
