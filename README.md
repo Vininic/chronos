@@ -1368,7 +1368,7 @@ Implementation: `OnboardingWizard` modal in `src/components/onboarding/Onboardin
 * [x] Choice screen (scratch / template / explore)
 * [x] True empty-schedule "from scratch" mode
 * [x] Template gallery
-* [ ] Guided planner creation
+* [x] Guided planner creation
 
 Implemented in `OnboardingWizard.tsx` ready screen — three paths: "Start from scratch" (calls `createEmptySchedule()`), template gallery (5 archetypes from `SCHEDULE_TEMPLATES`), and "Just explore" (goes straight to dashboard). Templates defined in `src/lib/schedule/templates.ts` (Productivity, Balanced, Student, Deep Work, Recovery).
 
@@ -1390,7 +1390,7 @@ Implemented in `OnboardingWizard.tsx` ready screen — three paths: "Start from 
 * [x] Weekly preview visualization
 * [x] Workload visualization
 * [x] Recovery visualization
-* [ ] Goal alignment visualization
+* [x] Goal alignment visualization
 
 Examples:
 
@@ -1404,28 +1404,28 @@ Examples:
 
 ## Planner Merge System
 
-* [ ] Merge planner proposals
-* [ ] Mix sections from multiple plans
-* [ ] Side-by-side comparison
+* [x] Merge planner proposals
+* [x] Mix sections from multiple plans
+* [x] Side-by-side comparison
 
 ---
 
 ## Planner Builder
 
-* [ ] Create from scratch
-* [ ] Create from templates
-* [ ] Create from AI proposal
-* [ ] Create from merged proposal
-* [ ] Iterative refinement
+* [x] Create from scratch
+* [x] Create from templates
+* [x] Create from AI proposal
+* [x] Create from merged proposal
+* [x] Iterative refinement
 
 ---
 
 ## Planner Explanation
 
-* [ ] Explain decisions
-* [ ] Explain workload distribution
-* [ ] Explain recovery allocation
-* [ ] Explain goal alignment
+* [x] Explain decisions
+* [x] Explain workload distribution
+* [x] Explain recovery allocation
+* [x] Explain goal alignment
 
 The planner lives at `/dashboard/planner`. Users fill a lifestyle form (work mode, hours, focus style, recovery priority, categories, sleep), then receive 3–5 rule-generated proposals with preview cards showing weekly rhythm, workload, and category distribution. Selecting a plan applies it via `useSchedule().replace()`. Generator in `src/lib/ai/planner/generator.ts`, components in `src/components/planner/`.
 
@@ -1446,9 +1446,9 @@ The planner lives at `/dashboard/planner`. Users fill a lifestyle form (work mod
 ## Personalization
 
 * [x] Personalized suggestions
-* [ ] Personalized planner generation
-* [ ] Personalized recovery recommendations
-* [ ] Personalized weekly restructuring
+* [x] Personalized planner generation
+* [x] Personalized recovery recommendations
+* [x] Personalized weekly restructuring
 
 ---
 
