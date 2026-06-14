@@ -946,33 +946,37 @@ The architecture is complete when:
 # AI Planning Layer
 
 ## Current State
-- [x] Basic AI integration
+
+* [x] Basic AI integration
 
 ---
 
-## AI Assistant Features
-- [ ] Intelligent block suggestions
-- [ ] Commitment auto-fitting
-- [ ] Recovery balancing
-- [ ] Overload detection
-- [ ] Circadian consistency analysis
-- [ ] Goal-aware planning
-- [ ] Dynamic block generation
-- [ ] Commitment generation
-- [ ] Schedule optimization
-- [ ] Adaptive week restructuring
-- [ ] First time users introduction system
-- [ ] Create from scratch or templates
+# Phase 1 — Planner Domain Model
+
+## Planner Ontology
+
+* [ ] Define Blocks as intentional scheduled work
+* [ ] Define Block Notes as execution context
+* [ ] Define Sleep Blocks as protected recovery periods
+* [ ] Define Fixed Commitments as hard constraints
+* [ ] Define Flexible Commitments as optimization opportunities
+* [ ] Define Goals as desired outcomes (not schedule items)
+* [ ] Define Categories as activity domains
+* [ ] Define Programs as reusable session structures
 
 ---
 
-## AI Autonomy System
-- [ ] Conservative mode
-- [ ] Balanced mode
-- [ ] Aggressive mode
-- [ ] Autonomy control UI
-- [ ] Adjustable restructuring freedom
-- [ ] AI explainability layer
+# AI Context Layer (Aetheris)
+
+## ScheduleContext
+* [x] Domain types (AiBlock, AiGoal, AiCommitment, AiCategory, AiSleep, AiNote, AiMetrics, AiProgram)
+* [x] buildContext transformer (ScheduleData → ScheduleContext)
+* [x] Context validation (validateContext)
+* [x] Context compression (compressContext for LLM token efficiency)
+* [x] Serialization layer
+* [x] Unit tests (12 tests)
+
+Files: `src/lib/ai/context/`
 
 ---
 
