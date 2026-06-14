@@ -3,6 +3,12 @@ import { clockTimeFromMin, snapTime } from "@/lib/schedule/types";
 import { buildAgendaForDate } from "@/lib/schedule/store";
 import type { ScheduleData } from "@/lib/schedule/types";
 
+interface AgendaEntryShape {
+  type?: string;
+  end: string;
+  continuesFromPrevDay?: boolean;
+}
+
 describe("snapTime / clockTimeFromMin", () => {
   it("returns 24:00 at midnight boundary", () => {
     expect(clockTimeFromMin(24 * 60)).toBe("24:00");
@@ -78,7 +84,7 @@ describe("buildAgendaForDate — end-of-day boundaries", () => {
       ],
     });
     const agenda = buildAgendaForDate(data, new Date("2026-06-01T12:00:00"));
-    const freeSlots = agenda.filter((a) => (a as any).type === "free");
+    const freeSlots = agenda.filter((a) => (a as AgendaEntryShape).type === "free");
     const lastFree = freeSlots[freeSlots.length - 1];
     if (lastFree) {
       expect(lastFree.end).toBe("24:00");
@@ -191,6 +197,6 @@ describe("pushMoveDayChain — cross-day boundary constraints", () => {
     expect(block).toBeDefined();
     expect(block!.start).toBe("00:00");
     expect(block!.end).toBe("01:00");
-    expect((block! as any).continuesFromPrevDay).toBe(true);
+    expect((block! as AgendaEntryShape).continuesFromPrevDay).toBe(true);
   });
 });

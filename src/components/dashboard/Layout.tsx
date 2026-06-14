@@ -6,6 +6,7 @@ import { kindStyle, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
 import { BlockKind } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Pause, Play, RotateCcw, X, ExternalLink } from "lucide-react";
+import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
 
 function TimerPopup() {
   const { running, activeBlock, mm, ss, togglePause, reset, dismiss } = useTimer();
@@ -63,6 +64,7 @@ export default function DashboardLayout() {
         </main>
       </div>
       <TimerPopup />
+      <OnboardingWizard />
     </div>
   );
 }

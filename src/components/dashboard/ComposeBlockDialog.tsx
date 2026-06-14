@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { WorkspaceStructure } from "@/lib/schedule/types";
+import type { Category, TreeNode, WorkspaceStructure } from "@/lib/schedule/types";
 import { Switch } from "@/components/ui/switch";
 import { TimeSelect } from "@/components/ui/time-select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -205,7 +205,7 @@ export function ComposeBlockDialog({
   }, [mode, commitmentEndsNextDay, date, endDate]);
 
   useEffect(() => {
-    const cat = data.categories.find((c: any) => c.id === kind);
+    const cat = data.categories.find((c: Category) => c.id === kind);
     if (cat?.workspace && cat.workspace.templates.length > 0) {
       const current = cat.workspace.templates.find((t) => t.name === selectedTemplate);
       if (!current) {
@@ -220,7 +220,7 @@ export function ComposeBlockDialog({
     e.preventDefault();
     if (!title.trim()) { toast({ title: t.chronos.dialog.needsTitle }); return; }
     const isPt = bcp47.toLowerCase().startsWith("pt");
-    const cat = data.categories.find((c: any) => c.id === kind);
+    const cat = data.categories.find((c: Category) => c.id === kind);
     const wsData = cat?.workspace ? initRuntime(cat.workspace, selectedTemplate ?? undefined) : undefined;
     if (mode === "routine") {
       const endsNextDay = routineEndsNextDay || end <= start;
@@ -267,7 +267,7 @@ export function ComposeBlockDialog({
           <DialogTitle className="font-display text-2xl text-primary">{t.chronos.dialog.title}</DialogTitle>
           <DialogDescription>{t.chronos.dialog.desc}</DialogDescription>
           {(() => {
-            const cat = data.categories.find((c: any) => c.id === kind);
+            const cat = data.categories.find((c: Category) => c.id === kind);
             if (!cat?.workspace || cat.workspace.templates.length === 0) return null;
             const localePt = bcp47.toLowerCase().startsWith("pt");
             return (
@@ -278,7 +278,7 @@ export function ComposeBlockDialog({
                     <SelectValue placeholder={localePt ? "Selecionar programa" : "Select program"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {cat.workspace.templates.map((tpl: any) => (
+                    {cat.workspace.templates.map((tpl: TreeNode) => (
                       <SelectItem key={tpl.name} value={tpl.name}>{tpl.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -287,7 +287,7 @@ export function ComposeBlockDialog({
             );
           })()}
         </DialogHeader>
-        <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="mt-2">
+        <Tabs value={mode} onValueChange={(v) => setMode(v as "routine" | "commitment")} className="mt-2">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="routine">{t.chronos.dialog.tabRoutine}</TabsTrigger>
             <TabsTrigger value="commitment">{t.chronos.dialog.tabCommitment}</TabsTrigger>

@@ -3,7 +3,7 @@ import { WeeklyRoutine, kindStyle, safeKindStyle } from "@/components/dashboard/
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { GoalList } from "@/components/dashboard/GoalList";
 import { useSchedule } from "@/lib/schedule/store";
-import type { Goal } from "@/lib/schedule/types";
+import type { Commitment, Goal } from "@/lib/schedule/types";
 import { BlockKind, RoutineBlock, durationMin, computeGoalProgress, computeStreak, getPeriodStartEnd, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,7 @@ export default function Week() {
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const daysInMonth = monthEnd.getDate();
   const startDow = monthStart.getDay();
-  const commitmentsByDate: Record<string, any[]> = {};
+  const commitmentsByDate: Record<string, Commitment[]> = {};
   data.commitments.forEach((c) => {
     if (!commitmentsByDate[c.date]) commitmentsByDate[c.date] = [];
     commitmentsByDate[c.date].push(c);
@@ -107,7 +107,7 @@ export default function Week() {
                   <div className={`text-xs font-medium mb-1 ${isToday ? "text-secondary" : "text-muted-foreground"}`}>{day}</div>
                   {dayCommitments.length > 0 && (
                     <div className="space-y-0.5">
-                      {dayCommitments.map((c: any) => (
+                      {dayCommitments.map((c) => (
                         <div key={c.id} className="rounded-sm bg-secondary/15 px-1 py-0.5 text-[10px] text-primary truncate" title={`${c.title} · ${c.start}–${c.end}`}>
                           {c.start} {c.title}
                         </div>

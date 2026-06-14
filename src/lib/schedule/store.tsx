@@ -23,32 +23,44 @@ function load(locale: Locale = "en"): ScheduleData {
       ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean)
       ?? null;
     if (raw) return normalizeNamingModel(JSON.parse(raw) as ScheduleData, locale);
-  } catch {}
+  } catch { /* ignore parse errors */ }
   return normalizeNamingModel(getSeedForLocale(locale), locale);
 }
 
 
 /* ─── Workspace migration helpers ─── */
 
-function migrateWorkspaceCategory(c: any): any {
-  if (c.workspace) return c;
-  if (c.extensionId === "gym" && c.extensionConfig) {
-    const cfg = c.extensionConfig as any;
-    const templates: TreeNode[] = (cfg.templates ?? []).map((tpl: any) => ({
-      name: tpl.name,
-      children: (tpl.groups ?? []).map((group: any) => ({
-        name: group.name,
-        children: (group.exercises ?? []).map((ex: any) => ({
-          name: ex.name,
-          children: (ex.series ?? []).map((s: any, si: number) => ({
-            name: `Set ${si + 1}`,
-            fields: { instruction: s.instruction, restMin: s.restMin },
-          })),
-        })),
-      })),
-    }));
+function migrateWorkspaceCategory(c: unknown) {
+  if ((c as Record<string, unknown>).workspace) return c;
+  if ((c as Record<string, unknown>).extensionId === "gym" && (c as Record<string, unknown>).extensionConfig) {
+    const cfg = (c as Record<string, unknown>).extensionConfig as { templates?: unknown[]; rotation?: unknown };
+    const templates: TreeNode[] = (cfg.templates ?? []).map((tpl: unknown) => {
+      const t = tpl as { name?: string; groups?: unknown[] };
+      return {
+        name: t.name,
+        children: (t.groups ?? []).map((group: unknown) => {
+          const g = group as { name?: string; exercises?: unknown[] };
+          return {
+            name: g.name,
+            children: (g.exercises ?? []).map((ex: unknown) => {
+              const e = ex as { name?: string; series?: unknown[] };
+              return {
+                name: e.name,
+                children: (e.series ?? []).map((s: unknown, si: number) => {
+                  const series = s as { instruction?: string; restMin?: number };
+                  return {
+                    name: `Set ${si + 1}`,
+                    fields: { instruction: series.instruction, restMin: series.restMin },
+                  };
+                }),
+              };
+            }),
+          };
+        }),
+      };
+    });
     return {
-      ...c,
+      ...(c as Record<string, unknown>),
       workspace: {
         levels: [
           { key: "group", label: "Muscle Group", labelPlural: "Muscle Groups", fields: [{ name: "name", label: "Name", type: "text" as const }] },
@@ -64,13 +76,15 @@ function migrateWorkspaceCategory(c: any): any {
   return c;
 }
 
-function migrateWorkspaceBlockRuntime(b: any): any {
-  if (b.workspace) return b;
-  if (b.extensions) {
-    const ext = b.extensions as any;
+function migrateWorkspaceBlockRuntime(b: unknown) {
+  const block = b as Record<string, unknown>;
+  if (block.workspace) return b;
+  if (block.extensions) {
+    const ext = block.extensions as Record<string, unknown>;
     const runtime = ext["gym"] ?? ext;
-    if (runtime && (runtime.templateName || runtime.completedSets)) {
-      return { ...b, workspace: { templateName: runtime.templateName ?? "", completedSets: runtime.completedSets ?? {} } as WorkspaceRuntime };
+    const rt = runtime as Record<string, unknown>;
+    if (runtime && (rt.templateName || rt.completedSets)) {
+      return { ...block, workspace: { templateName: rt.templateName ?? "", completedSets: rt.completedSets ?? {} } as WorkspaceRuntime };
     }
   }
   return b;
@@ -79,7 +93,7 @@ function migrateWorkspaceBlockRuntime(b: any): any {
 /* ─── Main normalization ─── */
 
 function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
-  const categories = data.categories.map((c: any) => {
+  const categories = data.categories.map((c) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
     return migrateWorkspaceCategory({ id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone, color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, workspace: c.workspace });
@@ -742,7 +756,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   const withDerivedLocale = useCallback((d: ScheduleData, regen = false) => withDerived(d, regen, locale), [locale]);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* noop */ }
   }, [data]);
 
   // When locale changes, if user hasn't customized their schedule, reinitialize with new seed

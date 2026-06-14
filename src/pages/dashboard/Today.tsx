@@ -6,7 +6,7 @@ import { GoalSection } from "@/components/dashboard/GoalSection";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd, DAY_LABELS } from "@/lib/schedule/types";
-import type { Goal } from "@/lib/schedule/types";
+import type { Goal, ScheduleData } from "@/lib/schedule/types";
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
@@ -116,7 +116,7 @@ export default function Today() {
       return;
     }
     // Preset drop — create new commitment
-    const preset = data.presets.find((p: any) => p.id === commitmentId);
+    const preset = data.presets.find((p) => p.id === commitmentId);
     if (!preset) return;
     const startMin = timeToMinutes(start);
     const end = snapTime(startMin + preset.duration);
@@ -265,7 +265,22 @@ export default function Today() {
 function NowNextCards({
   t, displayCurrentBlock, displayNextBlock, currentBlock, nextBlock, jumpToBlock,
   nextLabel, emptyNowLabel, emptyNextLabel, fmtFriendlyDuration, isPt, scheduleText, bcp47, isNextFromTomorrow,
-}: any) {
+}: {
+  t: ReturnType<typeof useT>;
+  displayCurrentBlock: Record<string, unknown> | null;
+  displayNextBlock: Record<string, unknown> | null;
+  currentBlock: Record<string, unknown> | null;
+  nextBlock: Record<string, unknown> | null;
+  jumpToBlock: (id: string, source: "routine" | "commitment", kind?: string) => void;
+  nextLabel: string;
+  emptyNowLabel: string;
+  emptyNextLabel: string;
+  fmtFriendlyDuration: (totalMin: number, isPt: boolean) => string;
+  isPt: boolean;
+  scheduleText: ReturnType<typeof useScheduleText>;
+  bcp47: string;
+  isNextFromTomorrow: boolean;
+}) {
   function cardStyle(kind: string) {
     if (kind === "sleep") return "border-primary/35 bg-muted/45";
     const s = kindStyle[kind as keyof typeof kindStyle];
@@ -330,7 +345,7 @@ function parseNotes(notes?: string): NoteLine[] {
   return (notes ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => parseNoteLine(l));
 }
 
-function CommitmentDetailDialog({ c, open, onClose, onRemove, onUpdate }: { c: any; open: boolean; onClose: () => void; onRemove: (id: string) => void; onUpdate: (id: string, patch: any) => void }) {
+function CommitmentDetailDialog({ c, open, onClose, onRemove, onUpdate }: { c: ScheduleData["commitments"][number]; open: boolean; onClose: () => void; onRemove: (id: string) => void; onUpdate: (id: string, patch: Partial<ScheduleData["commitments"][number]>) => void }) {
   const t = useT();
   const { bcp47 } = useI18n();
   const isPt = bcp47.toLowerCase().startsWith("pt");
@@ -424,7 +439,7 @@ function CommitmentDetailDialog({ c, open, onClose, onRemove, onUpdate }: { c: a
   );
 }
 
-function CommitmentListPopup({ sections, initialSection, open, onClose }: { sections: { key: string; label: string; items: any[] }[]; initialSection: string; open: boolean; onClose: () => void }) {
+function CommitmentListPopup({ sections, initialSection, open, onClose }: { sections: { key: string; label: string; items: (ScheduleData["commitments"][number] | ScheduleData["presets"][number])[] }[]; initialSection: string; open: boolean; onClose: () => void }) {
   const [tab, setTab] = useState(initialSection);
   const { bcp47 } = useI18n();
   const isPt = bcp47.toLowerCase().startsWith("pt");
@@ -456,7 +471,7 @@ function CommitmentListPopup({ sections, initialSection, open, onClose }: { sect
           ))}
         </div>
         <div className="space-y-1.5">
-          {active.items.map((c: any, idx: number) => {
+          {active.items.map((c, idx: number) => {
             const s = kindStyle[c.kind as BlockKind];
             return (
               <div key={c.id}>
@@ -487,12 +502,22 @@ function CommitmentListPopup({ sections, initialSection, open, onClose }: { sect
 
 const MAX_VISIBLE = 4;
 
-function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitment, removePreset, t, bcp47, isPt, scheduleText }: any) {
-  const [detailCommitment, setDetailCommitment] = useState<any>(null);
+function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitment, removePreset, t, bcp47, isPt, scheduleText }: {
+  data: ScheduleData;
+  addCommitment: (c: Parameters<ReturnType<typeof useSchedule>["addCommitment"]>[0]) => ReturnType<ReturnType<typeof useSchedule>["addCommitment"]>;
+  removeCommitment: (id: string) => void;
+  updateCommitment: (id: string, patch: Parameters<ReturnType<typeof useSchedule>["updateCommitment"]>[1]) => ReturnType<ReturnType<typeof useSchedule>["updateCommitment"]>;
+  removePreset: (id: string) => void;
+  t: ReturnType<typeof useT>;
+  bcp47: string;
+  isPt: boolean;
+  scheduleText: ReturnType<typeof useScheduleText>;
+}) {
+  const [detailCommitment, setDetailCommitment] = useState<ScheduleData["commitments"][number] | null>(null);
   const [listPopupSection, setListPopupSection] = useState<string | null>(null);
 
   function handleDragStart(e: React.DragEvent, commitmentId: string) {
-    const c = data.commitments.find((x: any) => x.id === commitmentId);
+    const c = data.commitments.find((x) => x.id === commitmentId);
     if (!c) return;
     const dur = durationMin(c.start, c.end);
     e.dataTransfer.setData("application/x-chronos-commitment", JSON.stringify({ commitmentId, dur }));
@@ -507,12 +532,12 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
     removeCommitment(id);
     toast({ title: t.chronos.atlas.removed });
   }
-  function clearAll(items: any[]) {
-    items.forEach((c: any) => removeCommitment(c.id));
+  function clearAll(items: ScheduleData["commitments"]) {
+    items.forEach((c) => removeCommitment(c.id));
     toast({ title: isPt ? "Compromissos removidos" : "Commitments removed" });
   }
 
-  function sortByPriority(a: any, b: any) {
+  function sortByPriority(a: ScheduleData["commitments"][number], b: ScheduleData["commitments"][number]) {
     const qa = quadrantOrder(eisenhowerQuadrant(a.priority));
     const qb = quadrantOrder(eisenhowerQuadrant(b.priority));
     if (qa !== qb) return qa - qb;
@@ -520,13 +545,13 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
   }
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const undated = data.commitments.filter((c: any) => !c.date).sort(sortByPriority);
-  const todayCommits = data.commitments.filter((c: any) => c.date === todayIso).sort(sortByPriority);
-  const upcomingCommits = data.commitments.filter((c: any) => c.date && c.date > todayIso).sort((a: any, b: any) => a.date.localeCompare(b.date) || sortByPriority(a, b));
-  const pastCommits = data.commitments.filter((c: any) => c.date && c.date < todayIso).sort((a: any, b: any) => b.date.localeCompare(a.date) || sortByPriority(a, b));
+  const undated = data.commitments.filter((c) => !c.date).sort(sortByPriority);
+  const todayCommits = data.commitments.filter((c) => c.date === todayIso).sort(sortByPriority);
+  const upcomingCommits = data.commitments.filter((c) => c.date && c.date > todayIso).sort((a, b) => a.date.localeCompare(b.date) || sortByPriority(a, b));
+  const pastCommits = data.commitments.filter((c) => c.date && c.date < todayIso).sort((a, b) => b.date.localeCompare(a.date) || sortByPriority(a, b));
   const presets = data.presets ?? [];
 
-  const sections: { key: string; label: string; items: any[] }[] = [
+  const sections: { key: string; label: string; items: ScheduleData["commitments"] }[] = [
     { key: "loose", label: isPt ? "Compromissos soltos" : "Loose commitments", items: undated },
     { key: "today", label: t.chronos.today.eyebrow, items: todayCommits },
     { key: "upcoming", label: isPt ? "Próximos" : "Upcoming", items: upcomingCommits },
@@ -538,7 +563,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
 
 
 
-  function card(c: any) {
+  function card(c: ScheduleData["commitments"][number]) {
     const s = kindStyle[c.kind as BlockKind];
     const dur = durationMin(c.start, c.end);
     const isUndated = !c.date;
@@ -593,7 +618,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
     );
   }
 
-  function presetCard(p: any) {
+  function presetCard(p: ScheduleData["presets"][number]) {
     return (
       <div
         key={p.id}
@@ -675,7 +700,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
               <span>{isPt ? "Modelos" : "Presets"}</span>
               <span className="text-xs text-muted-foreground/50 num">{presets.length}</span>
             </div>
-            <div className="space-y-1.5">{presets.map((p: any) => presetCard(p))}</div>
+            <div className="space-y-1.5">{presets.map((p) => presetCard(p))}</div>
           </div>
         )}
 
@@ -685,11 +710,11 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
           <div className="mt-4 space-y-3">
             {sections.map((sec) => {
               if (sec.items.length === 0) return null;
-              let visible: any[];
+              let visible: ScheduleData["commitments"];
               let hiddenCount = 0;
               if (sec.items.length > MAX_VISIBLE) {
-                const doFirst = sec.items.filter((i: any) => quadrantOrder(eisenhowerQuadrant(i.priority)) === 0);
-                const others = sec.items.filter((i: any) => quadrantOrder(eisenhowerQuadrant(i.priority)) !== 0);
+                const doFirst = sec.items.filter((i) => quadrantOrder(eisenhowerQuadrant(i.priority)) === 0);
+                const others = sec.items.filter((i) => quadrantOrder(eisenhowerQuadrant(i.priority)) !== 0);
                 if (doFirst.length >= MAX_VISIBLE) {
                   visible = doFirst;
                   hiddenCount = others.length;
@@ -716,7 +741,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    {visible.map((c: any) => card(c))}
+                    {visible.map((c) => card(c))}
                     {hiddenCount > 0 && (
                       <button
                         onClick={() => setListPopupSection(sec.key)}
@@ -753,7 +778,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
   );
 }
 
-function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; todayIso: string; t: any; data: any }) {
+function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; todayIso: string; t: ReturnType<typeof useT>; data: ScheduleData }) {
   const activeGoals = goals.filter((g) => {
     const pp = getPeriodStartEnd(g.startDate, g.period, todayIso);
     return todayIso >= pp.start && todayIso <= pp.end;
@@ -806,7 +831,19 @@ function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; 
   );
 }
 
-function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: any) {
+function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: {
+  data: ScheduleData;
+  t: ReturnType<typeof useT>;
+  isPt: boolean;
+  scheduleText: ReturnType<typeof useScheduleText>;
+  onUpdate: ReturnType<typeof useSchedule>["updateCategory"];
+  onReset: ReturnType<typeof useSchedule>["resetCategoryNaming"];
+  onAdd: ReturnType<typeof useSchedule>["addCategory"];
+  onRemove: ReturnType<typeof useSchedule>["removeCategory"];
+  addRoutine: ReturnType<typeof useSchedule>["addRoutine"];
+  addCommitment: ReturnType<typeof useSchedule>["addCommitment"];
+  todayIso: string;
+}) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [configExtCategoryId, setConfigExtCategoryId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState("");
@@ -817,14 +854,14 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   const [createDesc, setCreateDesc] = useState("");
   const [createColor, setCreateColor] = useState(COLOR_PALETTE[0]);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  function startEdit(c: any) {
+  function startEdit(c: ScheduleData["categories"][number]) {
     setEditingId(c.id);
     setDraftLabel(scheduleText.categoryLabel(c.id, c.label, c.labelCustom));
     setDraftDesc(scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom));
     setDraftColor(c.color ?? TAILWIND_TO_HEX[kindStyle[c.id]?.dot] ?? "#f59e0b");
   }
 
-  function saveEdit(c: any) {
+  function saveEdit(c: ScheduleData["categories"][number]) {
     const labelCustom = draftLabel !== scheduleText.categoryLabel(c.id, c.label, undefined) ? draftLabel : undefined;
     const descriptionCustom = draftDesc !== scheduleText.categoryDescription(c.id, c.description, undefined) ? draftDesc : undefined;
     onUpdate(c.id, {
@@ -841,7 +878,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   function handleCreate() {
     const id = createLabel.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     if (!id) { toast({ title: "Invalid name" }); return; }
-    if (data.categories.find((c: any) => c.id === id)) { toast({ title: "Category already exists" }); return; }
+    if (data.categories.find((c) => c.id === id)) { toast({ title: "Category already exists" }); return; }
     onAdd({ id, label: createLabel, description: createDesc, tone: "custom", color: createColor, workspace: undefined });
     setShowCreate(false);
     setCreateLabel("");
@@ -853,7 +890,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   function confirmDelete() {
     if (!deleteTarget) return;
     const kind = deleteTarget;
-    const blockCount = data.routine.filter((r: any) => r.kind === kind).length + data.commitments.filter((c: any) => c.kind === kind).length;
+    const blockCount = data.routine.filter((r) => r.kind === kind).length + data.commitments.filter((c) => c.kind === kind).length;
     onRemove(kind);
     setDeleteTarget(null);
     toast({ title: `"${kind}" removed` + (blockCount > 0 ? ` · ${blockCount} blocks deleted` : "") });
@@ -900,7 +937,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
         </div>
 
         <div className="space-y-px">
-          {data.categories.map((c: any) => {
+          {data.categories.map((c) => {
             const blockStyle = safeKindStyle(c.id);
             const dotKey = blockStyle.dot;
             const dotHex = c.color ?? TAILWIND_TO_HEX[dotKey] ?? "#f59e0b";
@@ -1053,7 +1090,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
             <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-rose-500" /> {isPt ? "Remover categoria" : "Remove category"}</DialogTitle>
             <DialogDescription>
               {deleteTarget && (() => {
-                const blockCount = data.routine.filter((r: any) => r.kind === deleteTarget).length + data.commitments.filter((c: any) => c.kind === deleteTarget).length;
+                const blockCount = data.routine.filter((r) => r.kind === deleteTarget).length + data.commitments.filter((c) => c.kind === deleteTarget).length;
                 return isPt
                   ? `Isso removerá "${deleteTarget}" e ${blockCount} bloco(s) que usam esta categoria. Esta ação não pode ser desfeita.`
                   : `This will remove "${deleteTarget}" and ${blockCount} block(s) using this category. This action cannot be undone.`;
@@ -1068,7 +1105,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
       </Dialog>
 
       {configExtCategoryId && (() => {
-        const cat = data.categories.find((c: any) => c.id === configExtCategoryId);
+        const cat = data.categories.find((c) => c.id === configExtCategoryId);
         if (!cat) return null;
         return (
           <Dialog open onOpenChange={(o) => { if (!o) setConfigExtCategoryId(null); }}>

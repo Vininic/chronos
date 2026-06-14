@@ -429,7 +429,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
     }
     return buildTimeline(nonSleepAgenda, startMin, endMin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(nonSleepAgenda as any[]).map((a: any) => `${a.id}|${a.start}|${a.end}|${a.kind}|${a.source}|${a.sourceId ?? ""}`).join(","), startMin, endMin, selectedDateIso, sleepSplits]);
+  }, [(nonSleepAgenda as AgendaItem[]).map((a: AgendaItem) => `${a.id}|${a.start}|${a.end}|${a.kind}|${a.source}|${a.sourceId ?? ""}`).join(","), startMin, endMin, selectedDateIso, sleepSplits]);
 
   const totalHiddenSleepMinutes = sleepSplits.reduce((sum, cut) => sum + (cut.durMin - cut.laneMin), 0);
   const totalHeight = ((endMin - startMin - totalHiddenSleepMinutes) / 60) * HOUR_PX;
@@ -559,6 +559,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
       const offset = block === "center" ? -100 : block === "end" ? 0 : -200;
       scrollRef.current.scrollTo({ top: Math.max(0, top + offset), behavior: "smooth" });
     },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [startMin, topBadgeLane]);
 
   function clearDragState() {
@@ -961,7 +962,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
     const targetId = editItem.sourceId ?? editItem.id;
     const err = editItem.source === "routine"
       ? updateRoutine(targetId, patch)
-      : updateCommitment(targetId, patch as any);
+      : updateCommitment(targetId, patch);
     if (err) {
       toast({ title: "Conflict", description: err });
       return;

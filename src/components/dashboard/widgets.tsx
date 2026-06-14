@@ -18,7 +18,7 @@ function categoryLabel(
   return category ? localizeCategoryLabel(kind, category.label, category.labelCustom) : fallback.common.kinds[kind];
 }
 
-export const kindStyle: Record<string, { dot: string; chip: string; icon: any; blockBg: string; blockBorder: string }> = {
+export const kindStyle: Record<string, { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string }> = {
   deep:     { dot: "bg-amber-500",   chip: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",     icon: Brain,   blockBg: "bg-amber-500/10 dark:bg-amber-400/15",    blockBorder: "border-amber-500/35 dark:border-amber-400/30" },
   meeting:  { dot: "bg-blue-500",    chip: "bg-blue-500/15  text-blue-700  dark:bg-blue-400/20  dark:text-blue-300",      icon: CalIcon, blockBg: "bg-blue-500/10  dark:bg-blue-400/15",     blockBorder: "border-blue-500/30  dark:border-blue-400/25" },
   ritual:   { dot: "bg-violet-500",  chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300", icon: Zap,     blockBg: "bg-violet-500/10 dark:bg-violet-400/15", blockBorder: "border-violet-500/30 dark:border-violet-400/25" },
@@ -27,7 +27,7 @@ export const kindStyle: Record<string, { dot: string; chip: string; icon: any; b
   sleep:    { dot: "bg-indigo-400",  chip: "bg-indigo-400/15  text-indigo-700 dark:bg-indigo-400/20  dark:text-indigo-300",  icon: Moon,    blockBg: "bg-indigo-400/10  dark:bg-indigo-400/12",  blockBorder: "border-indigo-400/30 dark:border-indigo-400/20" },
 };
 
-export function safeKindStyle(kind: string): { dot: string; chip: string; icon: any; blockBg: string; blockBorder: string } {
+export function safeKindStyle(kind: string): { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string } {
   return kindStyle[kind] ?? { dot: "bg-muted-foreground", chip: "bg-muted/50 text-muted-foreground", icon: Clock, blockBg: "bg-muted/30", blockBorder: "border-border/50" };
 }
 

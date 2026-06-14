@@ -167,7 +167,7 @@ function ProfileSlide({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {p.topCategories.map(([kind, count]) => {
-              const s = kindStyle[kind];
+              const s = kindStyle[kind] ?? kindStyle.deep;
               const hex = DOT_HEX_BY_KIND[s.dot] ?? "#f59e0b";
               return (
                 <div

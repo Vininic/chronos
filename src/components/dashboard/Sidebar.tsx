@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, CircleHelp, Target, BarChart3, Play } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, BrainCircuit, CircleHelp, Target, BarChart3, Play } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
@@ -43,6 +43,8 @@ export default function Sidebar() {
     { to: "/dashboard/week",     label: t.chronos.nav.week,     icon: Calendar },
     { to: "/dashboard/focus",    label: t.chronos.nav.focus,    icon: Brain },
     { to: "/dashboard/aetheris", label: t.chronos.nav.aetheris, icon: Sparkles },
+    { to: "/dashboard/planner",  label: t.chronos.nav.planner,  icon: Wand2 },
+    { to: "/dashboard/learning", label: t.chronos.nav.learning, icon: BrainCircuit },
   ];
   const meta = [
     { to: "/dashboard/about",    label: t.chronos.nav.about,    icon: CircleHelp },

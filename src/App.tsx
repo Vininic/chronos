@@ -12,6 +12,8 @@ import Today from "./pages/dashboard/Today";
 import Week from "./pages/dashboard/Week";
 import Focus from "./pages/dashboard/Focus";
 import Aetheris from "./pages/dashboard/Aetheris";
+import Planner from "./pages/dashboard/Planner";
+import Learning from "./pages/dashboard/Learning";
 import About from "./pages/dashboard/About";
 
 import { ScheduleProvider } from "@/lib/schedule/store";
@@ -58,6 +60,8 @@ const App = () => (
                 <Route path="week" element={<Week />} />
                 <Route path="focus" element={<Focus />} />
                 <Route path="aetheris" element={<Aetheris />} />
+                <Route path="planner" element={<Planner />} />
+                <Route path="learning" element={<Learning />} />
                 <Route path="about" element={<About />} />
                 <Route path="ledger" element={<Navigate to="/dashboard" replace />} />
                 <Route path="atlas" element={<Navigate to="/dashboard" replace />} />

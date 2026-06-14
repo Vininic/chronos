@@ -252,7 +252,7 @@ export default function Focus() {
     ? calcProgress(
         // live runtime from store
         activeSession.item.source === "routine"
-          ? (data.routine.find(r => r.id === ((activeSession.item as any).sourceId ?? activeSession.item.id))?.workspace ?? {})
+          ? (data.routine.find(r => r.id === ((activeSession.item as { sourceId: string }).sourceId ?? activeSession.item.id))?.workspace ?? {})
           : (data.commitments.find(c => c.id === activeSession.item.id)?.workspace ?? {}),
         activeSession.cat.workspace!
       )
@@ -522,11 +522,11 @@ export default function Focus() {
                 structure={activeSession.cat.workspace!}
                 runtime={
                   activeSession.item.source === "routine"
-                    ? (data.routine.find(r => r.id === ((activeSession.item as any).sourceId ?? activeSession.item.id))?.workspace ?? {})
+                    ? (data.routine.find(r => r.id === ((activeSession.item as { sourceId: string }).sourceId ?? activeSession.item.id))?.workspace ?? {})
                     : (data.commitments.find(c => c.id === activeSession.item.id)?.workspace ?? {})
                 }
                 onChange={(r) => {
-                  const id = (activeSession.item as any).sourceId ?? activeSession.item.id;
+                  const id = (activeSession.item as { sourceId: string }).sourceId ?? activeSession.item.id;
                   if (activeSession.item.source === "routine") {
                     updateRoutine(id, { workspace: r });
                   } else {

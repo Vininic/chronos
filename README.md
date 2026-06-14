@@ -924,10 +924,9 @@ The architecture is complete when:
 
 ---
 
-## Final Refinements (UI)
-- [x] Remake timer section (Focus page hourglass redesign, session card + timer card)
-- [ ] Make pop-up card above profile card; Display relevant blocks;
-- [x] Focus sections accurate hourglass UI
+## Final Refinements
+- [ ] Continue to work on programs (High Priority)
+- [ ] Remake timer section; Make pop-up card above profile card; Display relevant blocks; Focus sections accurate hourglass UI; Integrate timers with "start section;"
 - [ ] Rethink "System" section; Rethink readding settings tab; Check relevancy; Check possible new settings to add (e.g. Keybinds, Shortcuts;)
 - [ ] Complete "Week" page redesign
 - [ ] Rethink "Week" page functionality; ponder whether to integrate drag system or not;
@@ -940,6 +939,7 @@ The architecture is complete when:
 - [ ] No way to rearrange created categories
 - [ ] Remove any trace of system-baked instances (Categories, Goals, Extensions, Blocks, anything.) System should be fully modular.
 - [ ] "New block" button tries creating a 1h block in now bar instead of 09:00 default
+- [ ] Move system to clean-architecture (Is it already?)
 
 ---
 
@@ -955,31 +955,514 @@ The architecture is complete when:
 
 ## Planner Ontology
 
-* [ ] Define Blocks as intentional scheduled work
-* [ ] Define Block Notes as execution context
-* [ ] Define Sleep Blocks as protected recovery periods
-* [ ] Define Fixed Commitments as hard constraints
-* [ ] Define Flexible Commitments as optimization opportunities
-* [ ] Define Goals as desired outcomes (not schedule items)
-* [ ] Define Categories as activity domains
-* [ ] Define Programs as reusable session structures
+* [x] Define Blocks as intentional scheduled work (`AiBlock`)
+* [x] Define Block Notes as execution context (`AiNote`)
+* [x] Define Sleep Blocks as protected recovery periods (`AiSleepBlock`, `AiSleepMetrics`)
+* [x] Define Fixed Commitments as hard constraints (`AiCommitment.commitmentType = "fixed"`)
+* [x] Define Flexible Commitments as optimization opportunities (`AiCommitment.commitmentType = "flexible"`)
+* [x] Define Goals as desired outcomes (`AiGoal`)
+* [x] Define Categories as activity domains (`AiCategory`)
+* [x] Define Programs as reusable session structures (`AiProgram`)
 
 ---
 
-# AI Context Layer (Aetheris)
+## Planner Understanding Rules
 
-## ScheduleContext
-* [x] Domain types (AiBlock, AiGoal, AiCommitment, AiCategory, AiSleep, AiNote, AiMetrics, AiProgram)
-* [x] buildContext transformer (ScheduleData → ScheduleContext)
-* [x] Context validation (validateContext)
-* [x] Context compression (compressContext for LLM token efficiency)
-* [x] Serialization layer
-* [x] Unit tests (12 tests)
+* [x] Goals influence schedules but are not schedules
+* [x] Categories establish activity meaning
+* [x] Programs represent recurring structures
+* [x] Fixed commitments cannot be moved automatically
+* [x] Flexible commitments can be repositioned
+* [x] Sleep is a protected resource
+* [x] Notes provide planning context
+* [x] Completion history influences future planning
+* [x] Recovery is equal in importance to productivity
+* [x] Preserve successful routines whenever possible
 
-Files: `src/lib/ai/context/`
+Implemented as `evaluateAllRules()` in `src/lib/ai/rules/understanding.ts` — each rule is a function returning `{rule, passed, detail}`.
 
 ---
 
+# Phase 2 — AI Context Engine
+
+## Context Modeling
+
+* [x] Create unified AIContext builder (`buildContext` in `src/lib/ai/context/buildContext.ts`)
+* [x] Serialize complete planner state into structured JSON (`ScheduleContext` interface)
+* [x] Include Categories
+* [x] Include Goals
+* [x] Include Blocks
+* [x] Include Commitments
+* [x] Include Notes (via `AiNote`, extracted from routine + commitment notes)
+* [x] Include Sleep Data (via `AiSleepBlock`, `AiSleepMetrics` including avg duration, consistency, debt)
+* [x] Include Program Templates (via `AiProgram`, tracking done/total per template)
+* [x] Include Session Progress (via `AiBlock.programProgress`, `inProgress`, `complete`)
+* [x] Include Metrics (ledger, focusTimeMin, recoveryTimeMin, overloadScore, sleep consistency)
+* [x] Include Historical Completion Data (`HistoricalCompletion[]` — tracks past block completions with category, duration, completion state)
+* [x] Include Weekly Statistics (`WeeklyStats[]` — weekly aggregates of minutes, focus, recovery, sleep, completion rate)
+* [x] Include Daily Statistics (`DailyStats[]` — daily aggregates of blocks, minutes, focus, recovery, sleep)
+* [x] Context versioning (`ScheduleContext.version = 1`)
+* [x] Context validation (`validateContext` in `src/lib/ai/context/validation.ts`)
+* [x] Context debugging tools (`debug.ts` — `inspectContext`, `contextSizeBytes`, `estimatedTokenCount`, `summarizeContextHealth`)
+* [x] Context summarization for large planners (`compressContext` in `src/lib/ai/context/serializers.ts`)
+
+Files: `src/lib/ai/context/{ScheduleContext.ts,buildContext.ts,validation.ts,serializers.ts,debug.ts,index.ts}`
+
+---
+
+# Phase 3 — Planning Rules Engine
+
+## Scheduling Rules
+
+* [x] Fixed commitments are immutable
+* [x] Sleep receives highest protection
+* [x] Goals do not override recovery
+* [x] Preserve category consistency
+* [x] Continue unfinished programs
+* [x] Prioritize incomplete sessions
+* [x] Minimize unnecessary changes
+
+Implemented as `validateScheduleChange()` in `src/lib/ai/engine/scheduler.ts` — validates proposed block changes against all scheduling rules, returns violations with severity.
+
+---
+
+## Recovery Rules
+
+* [x] Detect overload
+* [x] Detect burnout risk
+* [x] Detect sleep debt
+* [x] Detect excessive context switching
+* [x] Detect excessive consecutive work blocks
+* [x] Recommend recovery actions
+
+Implemented as `analyzeRecovery()` in `src/lib/ai/engine/recovery.ts` — returns `RecoverySignal[]` with type, severity, detail, and suggestion.
+
+---
+
+## Goal Rules
+
+* [x] Correlate goals with blocks
+* [x] Detect neglected goals
+* [x] Detect conflicting goals
+* [x] Detect over-prioritized goals
+* [x] Goal-based prioritization
+
+Implemented as `analyzeGoals()` + `goalPriorityScore()` in `src/lib/ai/engine/goals.ts` — returns `GoalInsight[]` with type (neglected/conflicting/over_prioritized), detail, and suggestion.
+
+---
+
+## Weekly Rules
+
+* [x] Weekly routine analysis
+* [x] Weekly optimization
+* [x] Pattern preservation
+* [x] Adaptive restructuring
+
+Implemented as `analyzeWeek()` in `src/lib/ai/engine/weekly.ts` — returns `WeeklyInsight[]` with type (pattern/optimization/imbalance/recommendation), detail, and suggestion.
+
+---
+
+# Phase 4 — AI Core Architecture
+
+## Aetheris Core
+
+* [x] Create Aetheris system prompt (`buildSystemPrompt()` in `src/lib/ai/core/systemPrompt.ts`)
+* [x] Define planner instruction layer (10 core principles + autonomy rules in system prompt)
+* [x] Define response schema (`AetherisResponse` in `src/lib/ai/core/schemas.ts`)
+* [x] Define action schema (`ActionProposal` in `src/lib/ai/core/schemas.ts`)
+* [x] Create validation pipeline (`validateResponseStructure()` in `src/lib/ai/core/selfCorrection.ts`)
+* [x] Create self-correction pipeline (`selfCorrectResponse()` in `src/lib/ai/core/selfCorrection.ts`)
+* [x] Create retry mechanism (no-op via validation + self-correction in pipeline)
+* [x] Confidence scoring (`scoreConfidence()` in `src/lib/ai/core/confidence.ts`)
+* [x] Explainability generation (`buildExplainability()` in `src/lib/ai/core/explainability.ts`)
+
+Orchestrated via `runAetherisPipeline()` in `src/lib/ai/core/pipeline.ts`.
+
+---
+
+# Phase 5 — Tool Calling Layer
+
+## Tool Infrastructure
+
+* [x] Tool registry (`ToolRegistry` in `src/lib/ai/tools/registry.ts`)
+* [x] Tool permissions (`ToolPermission: "read" | "write" | "admin"`)
+* [x] Tool validation (per-tool `validate` function in `ToolDefinition`)
+* [x] Tool execution pipeline (`toolRegistry.execute()` with error handling)
+* [ ] Rollback system
+* [ ] Audit log system
+
+---
+
+## Read Tools
+
+* [x] getSchedule() — complete ScheduleContext
+* [x] getBlocks() — all routine blocks
+* [x] getCommitments() — all commitments
+* [x] getGoals() — all tracked goals
+* [x] getCategories() — activity categories
+* [x] getPrograms() — program templates
+* [x] getMetrics() — schedule health metrics
+* [x] getSleepHistory() — sleep blocks + metrics
+* [x] getNotes() — all block/commitment notes
+
+Implemented in `src/lib/ai/tools/readTools.ts` via `globalToolRegistry`.
+
+---
+
+## Block Tools
+
+* [x] createBlock()
+* [x] updateBlock()
+* [x] moveBlock()
+* [x] splitBlock()
+* [x] mergeBlocks()
+* [x] deleteBlock()
+
+Implemented in `src/lib/ai/tools/blockTools.ts` with safety checks against overlap/sleep/protection.
+
+---
+
+## Note Tools
+
+* [x] createBlockNote()
+* [x] updateBlockNote()
+* [x] deleteBlockNote()
+
+Implemented in `src/lib/ai/tools/noteTools.ts` — delegates to routine/commitment mutators.
+
+---
+
+## Commitment Tools
+
+* [x] createCommitment()
+* [x] updateCommitment()
+* [x] moveCommitment()
+* [x] deleteCommitment()
+
+Implemented in `src/lib/ai/tools/commitmentTools.ts`.
+
+---
+
+## Goal Tools
+
+* [x] createGoal()
+* [x] updateGoal()
+* [x] archiveGoal()
+* [x] deleteGoal()
+
+Implemented in `src/lib/ai/tools/goalTools.ts`.
+
+---
+
+## Category Tools
+
+* [x] createCategory()
+* [x] updateCategory()
+* [x] deleteCategory()
+
+Implemented in `src/lib/ai/tools/categoryTools.ts`.
+
+---
+
+## Program Tools
+
+* [x] createProgram()
+* [x] updateProgram()
+* [x] duplicateProgram()
+* [x] deleteProgram()
+
+Implemented in `src/lib/ai/tools/programTools.ts`.
+
+---
+
+## Session Tools
+
+* [x] startSession()
+* [x] pauseSession()
+* [x] resumeSession()
+* [x] completeSession()
+
+Implemented in `src/lib/ai/tools/sessionTools.ts`.
+
+---
+
+## Optimization Tools
+
+* [x] autoFitCommitment()
+* [x] optimizeDay()
+* [x] optimizeWeek()
+* [x] rebalanceGoals()
+* [x] recoverSchedule()
+
+Implemented in `src/lib/ai/tools/optimizationTools.ts` with safety checks.
+
+---
+
+## Safety Layer
+
+* [x] Prevent overlap creation (`checkOverlap` in `src/lib/ai/tools/safety.ts`)
+* [x] Prevent sleep removal (`checkSleepOverlap` in safety.ts)
+* [x] Prevent protected block deletion (`checkProtectedDeletion` — blocks sleep/recovery/commitment)
+* [x] Prevent goal orphaning (`checkGoalOrphaning` — warns when deletion affects goal categories)
+* [x] Prevent invalid schedules (`checkScheduleInvalidity`)
+* [x] Require confirmation for destructive actions (via `allSafetyChecksPass` gate)
+
+---
+
+# Phase 6 — Aetheris Assistant
+
+## Assistant Experience
+
+* [x] Replace Suggestions page with Aetheris (already at `/dashboard/aetheris`)
+* [x] Dedicated assistant page (updated `src/pages/dashboard/Aetheris.tsx` with tabs + pipeline)
+* [x] Planner-aware chat (pipeline-driven insights from ScheduleContext)
+* [x] Suggestion cards (SuggestionsPanel with apply/defer)
+* [x] Insight cards (InsightsPanel with expandable details, severity coloring)
+* [x] Daily recommendations (via suggestion engine)
+* [x] Weekly recommendations (via weekly review engine)
+* [x] Session recommendations (via suggestion engine focus session detection)
+
+---
+
+## Explainability Layer
+
+* [x] Show reasoning (`ExplainabilityCard` renders reasoning chain)
+* [x] Show affected goals (extracted from insight/action analysis)
+* [x] Show affected blocks (from action params and conflict detection)
+* [x] Show affected metrics (overload, recovery, sleep)
+* [x] Show expected impact (via `buildExplainability().expectedImpact`)
+* [x] Show confidence level (per-insight and overall via confidence score)
+
+---
+
+# Phase 7 — Intelligent Planning
+
+## Intelligent Suggestions
+
+* [x] Intelligent block suggestions (`generateSuggestions` in `src/lib/ai/suggestions/suggestionEngine.ts`)
+* [x] Commitment auto-fitting (via `autoFitCommitment` tool, gap analysis in optimization engine)
+* [x] Empty-gap recommendations (`suggestEmptyGapBlocks` — finds 30min+ unscheduled slots)
+* [x] Focus session recommendations (`suggestFocusSessions` — detects in-progress incomplete sessions)
+* [x] Deep work recommendations (`suggestDeepWork` — flags when deep work < 2h/day)
+* [x] Recovery recommendations (`suggestRecovery` — when recovery < 15% of schedule)
+* [x] Habit reinforcement recommendations (`suggestHabitReinforcement` — high-success categories with no blocks)
+
+---
+
+## Goal-Aware Planning
+
+* [x] Goal correlation engine (`correlateGoalsWithBlocks` in `src/lib/ai/suggestions/goalAware.ts`)
+* [x] Goal progress analysis (progress tracking per goal with gap analysis)
+* [x] Goal prioritization (`goalUrgencyScore` — weights deadlines, progress, streaks)
+* [x] Goal conflict detection (via `detectConflictingGoals` in engine/goals.ts)
+* [x] Goal-driven scheduling (`generateGoalDrivenSchedule` — top 3 priority goals + category focus)
+
+---
+
+## Circadian Intelligence
+
+* [x] Productivity pattern detection (`analyzeProductivityPatterns` in `src/lib/ai/suggestions/circadian.ts`)
+* [x] Circadian consistency analysis (start-time variance per category)
+* [x] Peak focus identification (`identifyPeakTimes` — finds focus/recovery peak hours)
+* [x] Peak recovery identification (identifies recovery peak hours vs focus peak)
+* [x] Energy-aware scheduling (suggests consistent time anchoring for categories)
+
+---
+
+## Recovery Intelligence
+
+* [x] Overload detection (`assessRecoveryIntelligence` in `src/lib/ai/suggestions/recoveryIntelligence.ts`)
+* [x] Burnout detection (multi-signal: low recovery, high overload, low sleep, burnout notes)
+* [x] Recovery balancing (`calculateRecoveryScore` — accounts for sleep, breaks, consecutive work)
+* [x] Sustainable routine scoring (`calculateSustainabilityScore` — variety, sleep, overload, consistency)
+
+---
+
+# Phase 8 — Schedule Optimization
+
+## Optimization Engine
+
+* [x] Schedule optimization (`optimizeSchedule` in `src/lib/ai/optimization/optimizationEngine.ts`)
+* [x] Conflict detection (block overlaps + sleep overlaps)
+* [x] Idle-gap analysis (30min+ gaps with suggestions)
+* [x] Time allocation analysis (category minutes, focus/recovery/sleep ratios)
+* [x] Focus fragmentation analysis (category switch frequency as 0-1 score)
+* [x] Routine consistency analysis (start-time variance as 0-1 score)
+
+---
+
+## Dynamic Planning
+
+* [x] Dynamic block generation (`generateDynamicBlocks` in `src/lib/ai/optimization/dynamicPlanning.ts`)
+* [x] Dynamic commitment generation (`generateDynamicCommitments` — at-risk goals with deadlines)
+* [x] Dynamic schedule repair (`repairSchedule` — recovery insertion, session management, overload reduction)
+* [x] Dynamic routine adaptation (`adaptRoutine` — high/low completion category recommendations)
+
+---
+
+## Adaptive Week Restructuring
+
+* [x] Weekly review engine (`performWeeklyReview` in `src/lib/ai/optimization/adaptiveWeek.ts`)
+* [x] Weekly optimization engine (recovery ratio, overload risk, sleep quality, completion rate)
+* [x] Weekly restructuring suggestions (add recovery, remove low-priority, add deep work)
+
+---
+
+# Phase 9 — AI Autonomy System
+
+## Autonomy Controls
+
+* [x] AI freedom slider (3 levels: conservative / balanced / aggressive in `AUTONOMY_PRESETS`)
+* [x] Permission management (per-tool permission: read/write/admin)
+* [x] Approval workflow controls (`ApprovalWorkflow` class with approve/reject/pending)
+* [x] Tool access controls (read requires no approval, writes/configurable per autonomy level)
+
+---
+
+## Conservative Mode
+
+* [x] Suggestions only (autoExecuteWriteWithoutConfirmation: false)
+* [x] Fill empty gaps (never — only suggests, never executes)
+* [x] No modifications (all writes require confirmation)
+* [x] No deletions (destructive actions always require confirmation)
+
+---
+
+## Balanced Mode
+
+* [x] Minor schedule adjustments (auto-executes low-risk writes)
+* [x] Goal-aware suggestions (suggestions pipeline runs)
+* [x] User approval required (for destructive actions and protected categories)
+
+---
+
+## Aggressive Mode
+
+* [x] Full restructuring (maxActionsPerSuggestion: 10, auto-executes all writes)
+* [x] Automatic rescheduling (no confirmation required for any action)
+* [x] Conflict resolution (auto-runs optimization tools)
+* [x] Goal prioritization (adjusts weights based on progress/deadlines)
+* [x] Recovery enforcement (auto-inserts recovery blocks)
+
+---
+
+# Phase 10 — First-Time User Experience
+
+## Welcome Experience
+
+* [x] Welcome cards
+* [x] Guided onboarding
+* [x] Explain blocks
+* [x] Explain commitments
+* [x] Explain goals
+* [x] Explain categories
+* [x] Explain programs
+* [x] Explain Aetheris
+
+Implementation: `OnboardingWizard` modal in `src/components/onboarding/OnboardingWizard.tsx` — 7-step carousel (welcome + 6 concept cards + ready screen with starter choice), gated by `useOnboarding` hook that checks `chronos.onboarding.v1` in localStorage. Wired into `DashboardLayout` so it appears after login for first-time users.
+
+---
+
+## Starter Setup
+
+* [x] Choice screen (scratch / template / explore)
+* [x] True empty-schedule "from scratch" mode
+* [x] Template gallery
+* [ ] Guided planner creation
+
+Implemented in `OnboardingWizard.tsx` ready screen — three paths: "Start from scratch" (calls `createEmptySchedule()`), template gallery (5 archetypes from `SCHEDULE_TEMPLATES`), and "Just explore" (goes straight to dashboard). Templates defined in `src/lib/schedule/templates.ts` (Productivity, Balanced, Student, Deep Work, Recovery).
+
+---
+
+# Phase 11 — AI Planner Generation
+
+## Planner Generation
+
+* [x] User describes desired lifestyle
+* [x] AI analyzes goals and constraints
+* [x] AI generates planner candidates
+
+---
+
+## Planner Preview Cards
+
+* [x] Generate 3–5 planner proposals
+* [x] Weekly preview visualization
+* [x] Workload visualization
+* [x] Recovery visualization
+* [ ] Goal alignment visualization
+
+Examples:
+
+* Productivity Focused
+* Balanced Growth
+* Recovery Focused
+* Student Intensive
+* Deep Work Focused
+
+---
+
+## Planner Merge System
+
+* [ ] Merge planner proposals
+* [ ] Mix sections from multiple plans
+* [ ] Side-by-side comparison
+
+---
+
+## Planner Builder
+
+* [ ] Create from scratch
+* [ ] Create from templates
+* [ ] Create from AI proposal
+* [ ] Create from merged proposal
+* [ ] Iterative refinement
+
+---
+
+## Planner Explanation
+
+* [ ] Explain decisions
+* [ ] Explain workload distribution
+* [ ] Explain recovery allocation
+* [ ] Explain goal alignment
+
+The planner lives at `/dashboard/planner`. Users fill a lifestyle form (work mode, hours, focus style, recovery priority, categories, sleep), then receive 3–5 rule-generated proposals with preview cards showing weekly rhythm, workload, and category distribution. Selecting a plan applies it via `useSchedule().replace()`. Generator in `src/lib/ai/planner/generator.ts`, components in `src/components/planner/`.
+
+---
+
+# Phase 12 — Long-Term Intelligence
+
+## Learning System
+
+* [x] Learn completion behavior
+* [x] Learn scheduling preferences
+* [x] Learn productivity windows
+* [x] Learn recovery needs
+* [ ] Learn goal preferences
+
+---
+
+## Personalization
+
+* [x] Personalized suggestions
+* [ ] Personalized planner generation
+* [ ] Personalized recovery recommendations
+* [ ] Personalized weekly restructuring
+
+---
+
+## Future
+
+* [ ] Multi-agent planning
+* [ ] Local model support
+* [ ] Offline planning mode
+* [ ] AI memory layer
+* [ ] Long-term behavioral modeling
+
+The learning system is at `/dashboard/learning`. It tracks completions and daily patterns in localStorage (`chronos.learning.v1`), computes category preferences and productivity windows, and can personalize suggestions via `personalizeSuggestions()`. Core in `src/lib/ai/learning/`.
+
+---
 
 # Local-First & Cloud Architecture
 
