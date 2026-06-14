@@ -429,7 +429,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
     }
     return buildTimeline(nonSleepAgenda, startMin, endMin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonSleepAgenda.map((a) => `${a.id}|${a.start}|${a.end}|${a.kind}|${a.source}|${a.sourceId ?? ""}`).join(","), startMin, endMin, selectedDateIso, sleepSplits]);
+  }, [(nonSleepAgenda as any[]).map((a: any) => `${a.id}|${a.start}|${a.end}|${a.kind}|${a.source}|${a.sourceId ?? ""}`).join(","), startMin, endMin, selectedDateIso, sleepSplits]);
 
   const totalHiddenSleepMinutes = sleepSplits.reduce((sum, cut) => sum + (cut.durMin - cut.laneMin), 0);
   const totalHeight = ((endMin - startMin - totalHiddenSleepMinutes) / 60) * HOUR_PX;
@@ -503,14 +503,15 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setQuickAccessItem(a); }}
-        className={`shrink-0 rounded-md transition-all border ${
-          tier === "micro"
-            ? "border-transparent hover:border-border/40 hover:bg-muted/20"
-            : "border-border/30 bg-muted/20 hover:bg-muted/40 hover:border-border/60"
-        }`}
-        style={{ padding: tier === "micro" ? "1px 3px" : "2px 5px" }}
+        className="shrink-0 rounded transition-colors hover:bg-black/6 dark:hover:bg-white/6 -mr-0.5"
+        style={{ padding: tier === "micro" ? "1px 3px" : "2px 4px" }}
+        title="Open session"
       >
-        <BlockSessionBadge structure={cat.workspace} runtime={a.workspace ?? {}} tier={tier} />
+        <BlockSessionBadge structure={cat.workspace} runtime={
+          a.source === "routine"
+            ? (data.routine.find(r => r.id === (a.sourceId ?? a.id))?.workspace ?? {})
+            : (data.commitments.find(c => c.id === a.id)?.workspace ?? {})
+        } tier={tier} />
       </button>
     );
   }
@@ -1092,7 +1093,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                 >
                   <span className="truncate max-w-[100px]">{g.title}</span>
                   <span className="num font-medium">
-                    {overdue ? `${Math.abs(d)}d` : isDue ? t.chronos.today.today : `${d}d`}
+                    {overdue ? `${Math.abs(d)}d` : isDue ? t.chronos.today.eyebrow : `${d}d`}
                   </span>
                 </button>
               );
@@ -1736,7 +1737,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
       )}
       {editSleep && (
         <SleepEditDialog
-          sleepWindow={sleepEntry ?? { start: "22:00", end: "07:00", days: [selectedDate.getDay()] }}
+          sleepWindow={sleepEntry ? { start: sleepEntry.start ?? "22:00", end: sleepEntry.end ?? "07:00", days: sleepEntry.days ?? [selectedDate.getDay()] } : { start: "22:00", end: "07:00", days: [selectedDate.getDay()] }}
           dayLabel={selectedDate.toLocaleDateString(bcp47, { weekday: "long", day: "numeric", month: "short" })}
           dateIso={selectedDateIso}
           sleepCuts={sleepCutsForDay}

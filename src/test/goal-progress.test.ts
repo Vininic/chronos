@@ -122,8 +122,10 @@ describe("daysUntilDeadline", () => {
 
   it("should return 0 for today", () => {
     const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
-    expect(daysUntilDeadline(todayStr)).toBe(0);
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    expect(daysUntilDeadline(`${y}-${m}-${d}`)).toBe(0);
   });
 
   it("should return negative for past deadline", () => {
@@ -134,12 +136,16 @@ describe("daysUntilDeadline", () => {
     const today = new Date();
     const future = new Date(today);
     future.setDate(future.getDate() + 12);
-    const futureStr = future.toISOString().slice(0, 10);
-    expect(daysUntilDeadline(futureStr)).toBe(12);
+    const yF = future.getFullYear();
+    const mF = String(future.getMonth() + 1).padStart(2, "0");
+    const dF = String(future.getDate()).padStart(2, "0");
+    expect(daysUntilDeadline(`${yF}-${mF}-${dF}`)).toBe(12);
     const past = new Date(today);
     past.setDate(past.getDate() - 9);
-    const pastStr = past.toISOString().slice(0, 10);
-    expect(daysUntilDeadline(pastStr)).toBe(-9);
+    const yP = past.getFullYear();
+    const mP = String(past.getMonth() + 1).padStart(2, "0");
+    const dP = String(past.getDate()).padStart(2, "0");
+    expect(daysUntilDeadline(`${yP}-${mP}-${dP}`)).toBe(-9);
   });
 });
 
