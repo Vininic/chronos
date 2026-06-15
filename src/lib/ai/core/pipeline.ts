@@ -5,8 +5,8 @@ import { summarizeContextHealth } from "../context/debug";
 import { evaluateAllRules, ruleSummary } from "../rules/understanding";
 import { validateScheduleChange } from "../engine/scheduler";
 import type { AutonomyLevel } from "../context/ScheduleContext";
-import type { AetherisResponse, Insight, InsightSeverity, Suggestion, RecoveryAnalysis } from "./schemas";
-import { scoreConfidence } from "./confidence";
+import type { AetherisResponse, Insight, InsightSeverity, Suggestion, RecoveryAnalysis, ActionProposal } from "./schemas";
+import { scoreConfidence, interpretConfidence } from "./confidence";
 import { buildExplainability } from "./explainability";
 import { buildSystemPrompt } from "./systemPrompt";
 import { optimizeSchedule } from "../optimization/optimizationEngine";
@@ -36,12 +36,38 @@ export interface AetherisPipelineResult {
   recoveryIntelligence: RecoveryAnalysis;
 }
 
+const WRITE_ACTION_PREFIXES = ["add_", "move_", "create_", "update_", "delete_", "remove_", "rebalance_", "schedule_", "auto_fit_"];
+
+function isWriteAction(action: string): boolean {
+  return WRITE_ACTION_PREFIXES.some((p) => action.startsWith(p));
+}
+
+function filterByAutonomy(
+  actions: ActionProposal[],
+  suggestions: Suggestion[],
+  autonomy: AutonomyLevel,
+): { actions: ActionProposal[]; suggestions: Suggestion[] } {
+  switch (autonomy) {
+    case "conservative":
+      return {
+        actions: actions.filter((a) => !isWriteAction(a.action)),
+        suggestions: suggestions.map((s) => ({ ...s, actionable: false })),
+      };
+    case "balanced":
+      return {
+        actions: actions.filter((a) => !isWriteAction(a.action) || !a.action.startsWith("delete_")),
+        suggestions,
+      };
+    case "aggressive":
+      return { actions, suggestions };
+  }
+}
+
 export async function runAetherisPipeline(input: AetherisPipelineInput): Promise<AetherisPipelineResult> {
   const autonomy = input.autonomy ?? "balanced";
   const ctx = buildContext(input.data, autonomy);
 
   const validation = validateContext(ctx);
-  const health = summarizeContextHealth(ctx);
   const rules = evaluateAllRules(ctx);
   const ruleChecks = ruleSummary(rules);
 
@@ -59,9 +85,15 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
   }
 
   const aiResult = await callGemini(ctx, autonomy);
-  const { response, suggestions, recoveryAnalysis } = aiResult;
+  const { response: geminiResponse, suggestions: rawSuggestions, recoveryAnalysis } = aiResult;
 
-  const allInsights = [...schedulerInsights, ...response.insights];
+  const { actions: filteredActions, suggestions: filteredSuggestions } = filterByAutonomy(
+    geminiResponse.suggestedActions,
+    rawSuggestions,
+    autonomy,
+  );
+
+  const allInsights = [...schedulerInsights, ...geminiResponse.insights];
 
   const confidence = scoreConfidence({
     contextFreshnessMs: Date.now() - new Date(ctx.generatedAt).getTime(),
@@ -76,9 +108,10 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
   const optimization = optimizeSchedule(ctx);
 
   const finalResponse: AetherisResponse = {
-    ...response,
+    ...geminiResponse,
     insights: allInsights,
-    explainability: buildExplainability(ctx, allInsights, response.suggestedActions),
+    suggestedActions: filteredActions,
+    explainability: buildExplainability(ctx, allInsights, filteredActions, confidence),
   };
 
   const compressed = compressContext(ctx);
@@ -92,7 +125,7 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
       failing: ruleChecks.failing.map((r) => r.rule),
     },
     systemPrompt: buildSystemPrompt(autonomy),
-    suggestions,
+    suggestions: filteredSuggestions,
     optimization,
     recoveryIntelligence: recoveryAnalysis,
   };

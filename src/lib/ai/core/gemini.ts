@@ -4,6 +4,7 @@ import { buildSystemPrompt } from "./systemPrompt";
 import { compressContext } from "../context/serializers";
 import { validateResponseStructure, selfCorrectResponse } from "./selfCorrection";
 import type { AetherisResponse, Suggestion, RecoveryAnalysis, Insight, ActionProposal, ExecutiveSummary } from "./schemas";
+import { loadProfile } from "../learning/store";
 
 export interface GeminiAnalysisResult {
   response: AetherisResponse;
@@ -109,6 +110,41 @@ function extractActions(data: Record<string, unknown>): ActionProposal[] {
   }));
 }
 
+function summarizeLearningProfile(): string {
+  try {
+    const profile = loadProfile();
+    const prefs = profile.categoryPreferences;
+    const prefSummary = prefs
+      .sort((a, b) => b.completionRate - a.completionRate)
+      .slice(0, 5)
+      .map((p) => `${p.categoryId}: ${Math.round(p.completionRate * 100)}% completion, avg ${Math.round(p.averageDurationMin)}min, ${p.consistency > 0.5 ? "consistent" : "variable"} schedule`)
+      .join("\n");
+
+    const windows = profile.productivityWindows;
+    const focusPeak = windows
+      .filter((w) => w.type === "focus")
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2)
+      .map((w) => `${w.hour}:00 (score ${Math.round(w.score * 100)})`)
+      .join(", ");
+
+    const recoveryPeak = windows
+      .filter((w) => w.type === "recovery")
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2)
+      .map((w) => `${w.hour}:00 (score ${Math.round(w.score * 100)})`)
+      .join(", ");
+
+    return [
+      prefSummary ? `--- High-success categories ---\n${prefSummary}` : "",
+      focusPeak ? `--- Peak focus windows ---\n${focusPeak}` : "",
+      recoveryPeak ? `--- Peak recovery windows ---\n${recoveryPeak}` : "",
+    ].filter(Boolean).join("\n\n");
+  } catch {
+    return "";
+  }
+}
+
 export async function callGemini(ctx: ScheduleContext, autonomy: AutonomyLevel): Promise<GeminiAnalysisResult> {
   const apiKey = typeof import.meta !== "undefined" ? import.meta.env.VITE_GEMINI_API_KEY : undefined;
 
@@ -123,26 +159,74 @@ export async function callGemini(ctx: ScheduleContext, autonomy: AutonomyLevel):
     const systemPrompt = buildSystemPrompt(autonomy);
     const compressed = compressContext(ctx);
     const serialized = JSON.stringify(compressed, null, 2);
+    const learningSummary = summarizeLearningProfile();
 
-    const fullPrompt = [
-      systemPrompt,
-      "",
-      "## Schedule Data",
-      "",
-      serialized,
-      "",
-      "## Response",
-      "",
-      "Return ONLY valid JSON with this structure:",
-      JSON.stringify({
-        summary: { status: "healthy|attention|critical", headline: "string", keyMetrics: {} },
-        insights: [{ type: "string", severity: "info|warning|critical", title: "string", detail: "string", suggestion: "string", confidence: 0.8 }],
-        suggestedActions: [{ action: "string", params: {}, reason: "string", impact: "string", confidence: 0.8 }],
-        suggestions: [{ type: "string", title: "string", detail: "string", priority: "low|medium|high", actionable: true }],
-        recoveryAnalysis: { recoveryScore: 0, sustainableScore: 0, overloadDetected: false, burnoutDetected: false, recommendations: ["string"] },
-        explainability: { reasoning: ["string"], affectedGoals: ["string"], affectedBlocks: ["string"], affectedMetrics: ["string"], expectedImpact: "string", confidence: 0.8 },
-      }, null, 2),
-    ].join("\n");
+    const sections = [systemPrompt, "", "## Schedule Data", "", serialized];
+    if (learningSummary) {
+      sections.push("", "## Learning Profile (historical patterns)", "", learningSummary);
+    }
+    sections.push("", "## Response", "");
+    sections.push("Analyze the schedule data above and return ONLY valid JSON with this structure:");
+    sections.push(`{
+  "summary": {
+    "status": "healthy|attention|critical",
+    "headline": "Short one-line summary of schedule health",
+    "keyMetrics": {
+      "blocks": <number>,
+      "focusHours": <number>,
+      "recoveryHours": <number>,
+      "sleepAvgHours": <number>,
+      "completionRate": <number 0-100>,
+      "overload": <number 0-100>,
+      "consistency": <number 0-100>
+    }
+  },
+  "insights": [
+    {
+      "type": "overload|burnout_risk|sleep_debt|context_switching|consecutive_work|goal_neglected|goal_conflict|weekly_imbalance|optimization|recommendation",
+      "severity": "info|warning|critical",
+      "title": "Short title",
+      "detail": "Detailed explanation based on actual schedule data",
+      "suggestion": "Actionable suggestion addressing the issue",
+      "confidence": 0.0-1.0
+    }
+  ],
+  "suggestedActions": [
+    {
+      "action": "add_block|move_block|add_recovery|reschedule|create_commitment|etc",
+      "params": {},
+      "reason": "Why this action helps",
+      "impact": "Expected outcome",
+      "confidence": 0.0-1.0
+    }
+  ],
+  "suggestions": [
+    {
+      "type": "block|commitment_fit|gap|focus_session|deep_work|recovery|habit",
+      "title": "Short suggestion title",
+      "detail": "Explanation of the suggestion",
+      "priority": "low|medium|high",
+      "actionable": true
+    }
+  ],
+  "recoveryAnalysis": {
+    "recoveryScore": <0-100>,
+    "sustainableScore": <0-100>,
+    "overloadDetected": <bool>,
+    "burnoutDetected": <bool>,
+    "recommendations": ["Specific recovery action 1", "Specific recovery action 2"]
+  },
+  "explainability": {
+    "reasoning": ["Step-by-step reasoning for the analysis"],
+    "affectedGoals": ["Goal titles affected"],
+    "affectedBlocks": ["Block IDs affected"],
+    "affectedMetrics": ["Metric names affected"],
+    "expectedImpact": "Overall expected impact of proposed actions",
+    "confidence": 0.0-1.0
+  }
+}`);
+
+    const fullPrompt = sections.join("\n");
 
     const result = await model.generateContent(fullPrompt);
     const text = result.response.text();

@@ -5,6 +5,7 @@ export function buildExplainability(
   ctx: ScheduleContext,
   insights: Insight[],
   actions: ActionProposal[],
+  dataConfidence?: number,
 ): ExplainabilityReport {
   const reasoning = [
     ...insights.map((i) => i.detail),
@@ -38,12 +39,15 @@ export function buildExplainability(
     ? `${actions.length} action(s) proposed. Expected to address ${insights.filter((i) => i.severity === "critical").length} critical and ${insights.filter((i) => i.severity === "warning").length} warning-level issues.`
     : "No actions proposed — schedule appears stable.";
 
+  const actionConfidence = actions.reduce((a, b) => a + b.confidence, 0) / Math.max(1, actions.length);
+  const finalConfidence = dataConfidence !== undefined ? (dataConfidence + actionConfidence) / 2 : actionConfidence;
+
   return {
     reasoning,
     affectedGoals: [...affectedGoalIds],
     affectedBlocks: [...new Set(affectedBlockIds)],
     affectedMetrics: [...affectedMetrics],
     expectedImpact,
-    confidence: actions.reduce((a, b) => a + b.confidence, 0) / Math.max(1, actions.length),
+    confidence: finalConfidence,
   };
 }
