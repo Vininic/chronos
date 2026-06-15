@@ -28,20 +28,10 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Data types: `src/lib/schedule/types.ts` (`ScheduleData` v3)
 - Planner UI hotspot: `src/components/dashboard/DayPlanner.tsx`
 - Profile dialog hotspot: `src/components/dashboard/ProfileDialog.tsx` (carousel with multi-profile state `extraProfiles: (ScheduleData | null)[]`)
-- Schema-driven block data engine: `src/lib/extensions/` — generic `SchemaField` system, no per-use-case extensions
-  - Core files:
-    - `src/lib/extensions/schema.ts`: `SchemaField` types, defaults, progress, summary, type cycling, label→name
-    - `src/lib/extensions/runtime.ts`: execution state helpers (getValues, setValues, updateValue, getCheckedItems)
-    - `src/lib/extensions/migration.ts`: auto-migrate old `structured-notes` → `schema-data`, legacy `CustomField[]` → `SchemaField[]`
-    - `src/lib/extensions/registry.ts`: simplified `ExtensionIdentity` (id, label, icon — no renderers since all rendering comes from schema)
-    - `src/lib/extensions/types.ts`: `SchemaField`, `SchemaFieldType`, `CategoryTemplate`, `CategoryRule`, `ExecutionState`
-  - Category owns structure (schema, templates, rules on `Category`), block owns execution state (`extensions["schema-data"]`)
-  - No per-use-case Extension files (workout.tsx, checklist.tsx removed)
-  - Three-layer display (Summary→QuickAccess→Workspace) in `src/components/dashboard/BlockSchemaUI.tsx`
-  - Layer 1: `SchemaSummary` — compact badge in DayPlanner blocks
-  - Layer 2: `SchemaQuickAccess` — editable form on block click
-  - Layer 3: `SchemaWorkspace` — full sheet view (pending wire-up)
-  - Legacy `CustomField` type deprecated, old `structured-notes` format migrated automatically
+- Workspace system (replaced extensions): `src/lib/schedule/workspace-engine.ts` (templates, runtime)
+  - Category owns structure (`category.workspace`), block owns runtime state (`block.workspace`)
+  - Renderers: `TemplateEditor.tsx` (form-based list), `SessionView.tsx` (3-state dialog), `BlockSessionBadge.tsx` (timeline pill)
+  - Presets: `src/workspaces/presets.ts` (workout, reading, study — data only)
 
 ## Project conventions
 - Time math is string-based (`HH:mm`) with explicit `24:00` boundary handling in agenda generation
@@ -56,6 +46,12 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Tests live under `src/**/*.{test,spec}.{ts,tsx}`
 - Test setup: `src/test/setup.ts`
 - Use `@/` imports in tests and app code (alias configured in Vite + Vitest)
+
+## AI system (Aetheris) — honest state
+- NOT connected to any LLM. All "AI" output is heuristic simulation (`if` statements, hardcoded thresholds).
+- Gemini API key exists in `.env` (`GEMINI_API_KEY`) but is dead code. Use `import.meta.env.VITE_GEMINI_API_KEY` when wiring.
+- Plan: install `@google/generative-ai`, create `src/lib/ai/core/gemini.ts` adapter, rewrite `pipeline.ts` to call Gemini instead of heuristic engines.
+- 4,748 LOC across 51 files in `src/lib/ai/`. ~65% genuine infrastructure, ~35% heuristic simulation to replace.
 
 ## Agent guardrails
 - Do not introduce server/cloud assumptions unless explicitly requested; current app behavior is local-first

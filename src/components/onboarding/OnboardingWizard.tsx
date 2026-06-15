@@ -82,7 +82,7 @@ export default function OnboardingWizard() {
                 <span className="text-xs text-muted-foreground">{t.chronos.onboarding.step(step + 1, total)}</span>
               </div>
               <button onClick={dismiss} className="text-xs text-muted-foreground hover:text-primary transition-colors">
-                {t.chronos.common.cancel}
+                {t.common.cancel}
               </button>
             </div>
 
@@ -131,7 +131,7 @@ export default function OnboardingWizard() {
             <div className="flex items-center justify-between mb-6">
               <span className="text-xs text-muted-foreground">{t.chronos.onboarding.step(total, total)}</span>
               <button onClick={dismiss} className="text-xs text-muted-foreground hover:text-primary transition-colors">
-                {t.chronos.common.cancel}
+                {t.common.cancel}
               </button>
             </div>
 

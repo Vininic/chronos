@@ -31,13 +31,15 @@ export interface TimeAllocation {
 }
 
 export function optimizeSchedule(ctx: ScheduleContext): OptimizationResult {
+  const conflicts = detectConflicts(ctx);
+  const idleGaps = findIdleGaps(ctx);
+  const timeAllocation = analyzeTimeAllocation(ctx);
+  const focusFragmentation = calculateFragmentation(ctx);
+  const routineConsistency = calculateRoutineConsistency(ctx);
+  const partial: OptimizationResult = { conflicts, idleGaps, timeAllocation, focusFragmentation, routineConsistency, recommendations: [] };
   return {
-    conflicts: detectConflicts(ctx),
-    idleGaps: findIdleGaps(ctx),
-    timeAllocation: analyzeTimeAllocation(ctx),
-    focusFragmentation: calculateFragmentation(ctx),
-    routineConsistency: calculateRoutineConsistency(ctx),
-    recommendations: generateOptimizationRecommendations(ctx),
+    ...partial,
+    recommendations: generateOptimizationRecommendations(partial),
   };
 }
 
