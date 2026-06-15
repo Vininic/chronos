@@ -4,19 +4,15 @@ import { validateContext } from "../context/validation";
 import { summarizeContextHealth } from "../context/debug";
 import { evaluateAllRules, ruleSummary } from "../rules/understanding";
 import { validateScheduleChange } from "../engine/scheduler";
-import { analyzeRecovery, assessRecoveryIntelligence } from "../engine/recovery";
-import { analyzeGoals } from "../engine/goals";
-import { analyzeWeek } from "../engine/weekly";
 import type { AutonomyLevel } from "../context/ScheduleContext";
-import type { AetherisResponse, Insight, ActionProposal, ExecutiveSummary, InsightSeverity } from "./schemas";
+import type { AetherisResponse, Insight, InsightSeverity, Suggestion, RecoveryAnalysis } from "./schemas";
 import { scoreConfidence } from "./confidence";
 import { buildExplainability } from "./explainability";
 import { buildSystemPrompt } from "./systemPrompt";
-import { generateSuggestions } from "../suggestions/suggestionEngine";
-import type { Suggestion } from "../suggestions/suggestionEngine";
 import { optimizeSchedule } from "../optimization/optimizationEngine";
 import type { OptimizationResult } from "../optimization/optimizationEngine";
-import type { RecoveryIntelligenceResult } from "../engine/recovery";
+import { callGemini } from "./gemini";
+import { compressedTokenEstimate, compressContext } from "../context/serializers";
 
 export interface AetherisPipelineInput {
   data: ScheduleData;
@@ -37,10 +33,10 @@ export interface AetherisPipelineResult {
   systemPrompt: string;
   suggestions: Suggestion[];
   optimization: OptimizationResult;
-  recoveryIntelligence: RecoveryIntelligenceResult;
+  recoveryIntelligence: RecoveryAnalysis;
 }
 
-export function runAetherisPipeline(input: AetherisPipelineInput): AetherisPipelineResult {
+export async function runAetherisPipeline(input: AetherisPipelineInput): Promise<AetherisPipelineResult> {
   const autonomy = input.autonomy ?? "balanced";
   const ctx = buildContext(input.data, autonomy);
 
@@ -48,11 +44,6 @@ export function runAetherisPipeline(input: AetherisPipelineInput): AetherisPipel
   const health = summarizeContextHealth(ctx);
   const rules = evaluateAllRules(ctx);
   const ruleChecks = ruleSummary(rules);
-
-  const recoverySignals = analyzeRecovery(ctx);
-  const recoveryIntel = assessRecoveryIntelligence(ctx);
-  const goalInsights = analyzeGoals(ctx);
-  const weeklyInsights = analyzeWeek(ctx);
 
   let schedulerInsights: Insight[] = [];
   if (input.proposedChanges) {
@@ -67,63 +58,10 @@ export function runAetherisPipeline(input: AetherisPipelineInput): AetherisPipel
     }));
   }
 
-  const insights: Insight[] = [
-    ...recoverySignals.map((s) => ({
-      type: s.type,
-      severity: s.severity === "high" ? "critical" as const : s.severity === "medium" ? "warning" as const : "info" as const,
-      title: s.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      detail: s.detail,
-      suggestion: s.suggestion,
-      confidence: recoveryIntel.recoveryScore / 100,
-    })),
-    ...goalInsights.map((g) => ({
-      type: `goal_${g.type}`,
-      severity: "warning" as InsightSeverity,
-      title: g.goalTitle,
-      detail: g.detail,
-      suggestion: g.suggestion,
-      confidence: 0.5 + (ctx.goals.find((x) => x.id === g.goalId)?.progress ?? 0) * 0.4,
-    })),
-    ...weeklyInsights.map((w) => ({
-      type: `weekly_${w.type}`,
-      severity: "info" as InsightSeverity,
-      title: w.type.charAt(0).toUpperCase() + w.type.slice(1),
-      detail: w.detail,
-      suggestion: w.suggestion,
-      confidence: 0.7,
-    })),
-    ...schedulerInsights,
-  ];
+  const aiResult = await callGemini(ctx, autonomy);
+  const { response, suggestions, recoveryAnalysis } = aiResult;
 
-  const suggestedActions: ActionProposal[] = [];
-  for (const ins of insights) {
-    if (ins.suggestion && ins.severity !== "info") {
-      suggestedActions.push({
-        action: `address_${ins.type}`,
-        params: {},
-        reason: ins.detail,
-        impact: ins.suggestion,
-        confidence: ins.confidence,
-      });
-    }
-  }
-
-  const summary: ExecutiveSummary = {
-    status: health.status,
-    headline: createHeadline(health.status, ctx),
-    keyMetrics: {
-      blocks: ctx.blocks.length,
-      goals: ctx.goals.length,
-      focusHours: Math.round(ctx.metrics.focusTimeMin / 60 * 10) / 10,
-      recoveryHours: Math.round(ctx.metrics.recoveryTimeMin / 60 * 10) / 10,
-      sleepAvgHours: Math.round(ctx.sleep.metrics.averageDurationMin / 60 * 10) / 10,
-      completionRate: ctx.blocks.length > 0
-        ? Math.round(ctx.blocks.filter((b) => b.complete).length / ctx.blocks.length * 100)
-        : 0,
-      recoveryScore: recoveryIntel.recoveryScore,
-      sustainableScore: recoveryIntel.sustainableScore,
-    },
-  };
+  const allInsights = [...schedulerInsights, ...response.insights];
 
   const confidence = scoreConfidence({
     contextFreshnessMs: Date.now() - new Date(ctx.generatedAt).getTime(),
@@ -135,22 +73,19 @@ export function runAetherisPipeline(input: AetherisPipelineInput): AetherisPipel
     validationWarnings: validation.warnings.length,
   });
 
-  const suggestions = generateSuggestions(ctx);
   const optimization = optimizeSchedule(ctx);
 
-  const response: AetherisResponse = {
-    version: 1,
-    generatedAt: new Date().toISOString(),
-    summary,
-    insights,
-    suggestedActions,
-    explainability: buildExplainability(ctx, insights, suggestedActions),
-    autonomyLevel: autonomy,
+  const finalResponse: AetherisResponse = {
+    ...response,
+    insights: allInsights,
+    explainability: buildExplainability(ctx, allInsights, response.suggestedActions),
   };
 
+  const compressed = compressContext(ctx);
+
   return {
-    response,
-    contextTokenEstimate: Math.round(JSON.stringify(ctx).length / 4),
+    response: finalResponse,
+    contextTokenEstimate: compressedTokenEstimate(compressed),
     ruleCheckSummary: {
       passed: ruleChecks.passed,
       total: ruleChecks.total,
@@ -159,19 +94,6 @@ export function runAetherisPipeline(input: AetherisPipelineInput): AetherisPipel
     systemPrompt: buildSystemPrompt(autonomy),
     suggestions,
     optimization,
-    recoveryIntelligence: recoveryIntel,
+    recoveryIntelligence: recoveryAnalysis,
   };
-}
-
-function createHeadline(status: "healthy" | "attention" | "critical", ctx: {
-  blocks: unknown[];
-  goals: unknown[];
-}): string {
-  if (status === "critical") {
-    return `${ctx.blocks.length} blocks, ${ctx.goals.length} goals — critical issues detected`;
-  }
-  if (status === "attention") {
-    return `${ctx.blocks.length} blocks, ${ctx.goals.length} goals — some areas need attention`;
-  }
-  return `${ctx.blocks.length} blocks, ${ctx.goals.length} goals — schedule looks healthy`;
 }

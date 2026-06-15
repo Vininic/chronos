@@ -35,11 +35,28 @@ export interface AetherisResponse {
   autonomyLevel: AutonomyLevel;
 }
 
-export export interface ExplainabilityReport {
+export interface ExplainabilityReport {
   reasoning: string[];
   affectedGoals: string[];
   affectedBlocks: string[];
   affectedMetrics: string[];
   expectedImpact: string;
   confidence: number;
+}
+
+export interface Suggestion {
+  id: string;
+  type: string;
+  title: string;
+  detail: string;
+  priority: "low" | "medium" | "high";
+  actionable: boolean;
+}
+
+export interface RecoveryAnalysis {
+  recoveryScore: number;
+  sustainableScore: number;
+  overloadDetected: boolean;
+  burnoutDetected: boolean;
+  recommendations: string[];
 }

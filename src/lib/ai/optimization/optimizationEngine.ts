@@ -36,10 +36,13 @@ export function optimizeSchedule(ctx: ScheduleContext): OptimizationResult {
   const timeAllocation = analyzeTimeAllocation(ctx);
   const focusFragmentation = calculateFragmentation(ctx);
   const routineConsistency = calculateRoutineConsistency(ctx);
-  const partial: OptimizationResult = { conflicts, idleGaps, timeAllocation, focusFragmentation, routineConsistency, recommendations: [] };
   return {
-    ...partial,
-    recommendations: generateOptimizationRecommendations(partial),
+    conflicts,
+    idleGaps,
+    timeAllocation,
+    focusFragmentation,
+    routineConsistency,
+    recommendations: [],
   };
 }
 
@@ -120,13 +123,4 @@ function calculateRoutineConsistency(ctx: ScheduleContext): number {
   const mean = startTimes.reduce((s, v) => s + v, 0) / startTimes.length;
   const variance = Math.sqrt(startTimes.reduce((s, v) => s + (v - mean) ** 2, 0) / startTimes.length);
   return Math.max(0, Math.min(1, 1 - variance / (12 * 60)));
-}
-
-function generateOptimizationRecommendations(result: OptimizationResult): string[] {
-  const recs: string[] = [];
-  if (result.conflicts.length > 0) recs.push(`Resolve ${result.conflicts.length} scheduling conflict(s)`);
-  if (result.idleGaps.length > 0) recs.push(`Fill ${result.idleGaps.length} idle gap(s) totaling ${result.idleGaps.reduce((s, g) => s + g.durationMin, 0)}min`);
-  if (result.focusFragmentation > 0.4) recs.push("Reduce context switching by batching similar activities");
-  if (result.routineConsistency < 0.5) recs.push("Improve routine consistency by anchoring blocks to fixed times");
-  return recs;
 }

@@ -1,12 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { FunctionComponent, SVGProps } from "react";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { useSchedule } from "@/lib/schedule/store";
 import { runAetherisPipeline, type AetherisPipelineResult } from "@/lib/ai/core/pipeline";
-import type { Insight } from "@/lib/ai/core/schemas";
-import type { Suggestion } from "@/lib/ai/suggestions/suggestionEngine";
-import { Sparkles, Brain, Target, Coffee, AlertTriangle, Check, ChevronDown, ChevronUp } from "lucide-react";
+import type { Insight, Suggestion, RecoveryAnalysis } from "@/lib/ai/core/schemas";
+import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
+import { Sparkles, Brain, Target, Coffee, AlertTriangle, Check, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
@@ -20,12 +20,47 @@ export default function Aetheris() {
   const scheduleText = useScheduleText();
   const [tab, setTab] = useState<TabView>("insights");
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
+  const [pipeline, setPipeline] = useState<AetherisPipelineResult | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const pipeline = useMemo(
-    () => runAetherisPipeline({ data }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.meta.version, data.routine.length, data.commitments.length, data.categories.length],
-  );
+  const runPipeline = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await runAetherisPipeline({ data });
+      setPipeline(result);
+    } catch {
+      setPipeline(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [data.meta.version, data.routine.length, data.commitments.length, data.categories.length]);
+
+  useEffect(() => {
+    runPipeline();
+  }, [runPipeline]);
+
+  if (loading) {
+    return (
+      <div className="grid place-items-center min-h-[60vh]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-secondary mx-auto" />
+          <p className="mt-4 text-sm text-muted-foreground">{t.chronos.aetheris.loading ?? "Analyzing schedule..."}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!pipeline) {
+    return (
+      <div className="grid place-items-center min-h-[60vh]">
+        <div className="text-center">
+          <Brain className="h-8 w-8 text-secondary mx-auto" />
+          <p className="mt-3 text-sm text-muted-foreground">Could not load analysis.</p>
+        </div>
+      </div>
+    );
+  }
+
   const { insights, summary, explainability } = pipeline.response;
   const suggestions = pipeline.suggestions;
   const optimization = pipeline.optimization;
@@ -223,7 +258,7 @@ function SuggestionsPanel({ suggestions, onApply, onDefer, t }: {
   );
 }
 
-function RecoveryPanel({ recoveryIntel }: { recoveryIntel: { recoveryScore: number; sustainableScore: number; overloadDetected: boolean; burnoutDetected: boolean; recommendations: string[] } }) {
+function RecoveryPanel({ recoveryIntel }: { recoveryIntel: RecoveryAnalysis }) {
   return (
     <div className="chronos-card p-6">
       <div className="flex items-center gap-2.5 mb-4">
@@ -255,7 +290,7 @@ function RecoveryPanel({ recoveryIntel }: { recoveryIntel: { recoveryScore: numb
   );
 }
 
-function OptimizePanel({ optimization, data }: { optimization: { conflicts: unknown[]; idleGaps: unknown[]; focusFragmentation: number; routineConsistency: number; recommendations: string[] }; data: ScheduleData }) {
+function OptimizePanel({ optimization, data }: { optimization: OptimizationResult; data: ScheduleData }) {
   return (
     <div className="chronos-card p-6">
       <div className="flex items-center gap-2.5 mb-4">
@@ -280,16 +315,6 @@ function OptimizePanel({ optimization, data }: { optimization: { conflicts: unkn
           <div className="font-display text-xl text-primary mt-0.5 num">{Math.round(optimization.routineConsistency * 100)}%</div>
         </div>
       </div>
-      {optimization.recommendations.length > 0 && (
-        <div className="space-y-1.5">
-          {optimization.recommendations.map((r, i) => (
-            <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-              <span className="mt-1 h-1 w-1 rounded-full bg-violet-400 shrink-0" />
-              {r}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
