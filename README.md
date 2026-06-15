@@ -1427,7 +1427,7 @@ Examples:
 * [x] Explain recovery allocation
 * [x] Explain goal alignment
 
-The planner lives at `/dashboard/planner`. Users fill a lifestyle form (work mode, hours, focus style, recovery priority, categories, sleep), then receive 3–5 rule-generated proposals with preview cards showing weekly rhythm, workload, and category distribution. Selecting a plan applies it via `useSchedule().replace()`. Generator in `src/lib/ai/planner/generator.ts`, components in `src/components/planner/`.
+The planner lives at `/dashboard/planner`. Users can use the step-by-step Builder (scratch/template/AI), generate proposals via the lifestyle form, compare & merge plans side-by-side, and view explanations per proposal. Plans are personalized from learning profile data. Components: `PlannerBuilder`, `PlannerMerge`, `PlannerExplanation`, `PlannerForm`, `PlannerProposals` in `src/components/planner/`. Generator in `src/lib/ai/planner/generator.ts`.
 
 ---
 
@@ -1439,7 +1439,7 @@ The planner lives at `/dashboard/planner`. Users fill a lifestyle form (work mod
 * [x] Learn scheduling preferences
 * [x] Learn productivity windows
 * [x] Learn recovery needs
-* [ ] Learn goal preferences
+* [x] Learn goal preferences
 
 ---
 
@@ -1460,7 +1460,7 @@ The planner lives at `/dashboard/planner`. Users fill a lifestyle form (work mod
 * [ ] AI memory layer
 * [ ] Long-term behavioral modeling
 
-The learning system is at `/dashboard/learning`. It tracks completions and daily patterns in localStorage (`chronos.learning.v1`), computes category preferences and productivity windows, and can personalize suggestions via `personalizeSuggestions()`. Core in `src/lib/ai/learning/`.
+The learning system is at `/dashboard/learning`. It tracks completions, daily patterns, and goal completions in localStorage (`chronos.learning.v1`), computes category preferences, productivity windows, and neglected goals. Personalization engine (`personalizeSuggestions`, `personalizeProposal`, `personalizeRecovery`, `personalizeWeeklyRestructuring`) adjusts suggestions and planner proposals from learned data. Core in `src/lib/ai/learning/`.
 
 ---
 

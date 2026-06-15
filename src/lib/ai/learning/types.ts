@@ -37,6 +37,16 @@ export interface ProductivityWindow {
   sessionCount: number;
 }
 
+export interface GoalCompletionRecord {
+  goalId: string;
+  goalTitle: string;
+  date: string;
+  progressBefore: number;
+  progressAfter: number;
+  delta: number;
+  categoryId?: string;
+}
+
 export interface LearningProfile {
   version: number;
   lastUpdated: string;
@@ -52,6 +62,8 @@ export interface LearningProfile {
   preferredWorkEnd: string;
   commonlyUsedCategories: string[];
   neglectedCategories: string[];
+  goalCompletions: GoalCompletionRecord[];
+  neglectedGoalIds: string[];
 }
 
 export const EMPTY_PROFILE: LearningProfile = {
@@ -69,4 +81,6 @@ export const EMPTY_PROFILE: LearningProfile = {
   preferredWorkEnd: "19:00",
   commonlyUsedCategories: [],
   neglectedCategories: [],
+  goalCompletions: [],
+  neglectedGoalIds: [],
 };

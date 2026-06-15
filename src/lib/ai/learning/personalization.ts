@@ -90,6 +90,65 @@ export function personalizeSuggestions(
   return { suggestions: working, adjustments };
 }
 
+export function personalizeRecovery(
+  recoveryScore: number,
+  profile: LearningProfile
+): { adjustedScore: number; recommendations: string[] } {
+  const recommendations: string[] = [];
+  let adjustedScore = recoveryScore;
+
+  if (profile.averageRecoveryMinutesPerDay < 60) {
+    recommendations.push("Consider adding recovery blocks — you average under 1h of recovery per day");
+    adjustedScore = Math.min(1, adjustedScore + 0.1);
+  }
+
+  if (profile.averageCompletionRate > 0.8 && profile.averageFocusMinutesPerDay > profile.averageRecoveryMinutesPerDay) {
+    recommendations.push("Your completion rate is high — you may be able to handle more focus blocks");
+  } else if (profile.averageCompletionRate < 0.5) {
+    recommendations.push("Your completion rate is low — consider reducing your weekly load");
+    adjustedScore = Math.max(0, adjustedScore - 0.1);
+  }
+
+  return { adjustedScore, recommendations };
+}
+
+export function personalizeWeeklyRestructuring(
+  currentSchedule: ScheduleData,
+  profile: LearningProfile
+): { suggestions: string[] } {
+  const suggestions: string[] = [];
+
+  if (profile.commonlyUsedCategories.length > 0) {
+    suggestions.push(
+      `You frequently use: ${profile.commonlyUsedCategories.join(", ")} — consider adding more blocks for these`
+    );
+  }
+
+  if (profile.neglectedCategories.length > 0) {
+    suggestions.push(
+      `These categories are often neglected: ${profile.neglectedCategories.join(", ")} — review if they still serve you`
+    );
+  }
+
+  if (profile.productivityWindows.length > 0) {
+    const bestWindow = profile.productivityWindows.reduce((best, w) =>
+      w.averageFocusScore > best.averageFocusScore ? w : best
+    );
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const startH = Math.floor(bestWindow.startMin / 60);
+    const endH = Math.floor(bestWindow.endMin / 60);
+    suggestions.push(
+      `Your peak productivity is ${dayNames[bestWindow.dayOfWeek]} ${startH}:00–${endH}:00 — try scheduling focus blocks here`
+    );
+  }
+
+  if (profile.averageFocusMinutesPerDay < 120) {
+    suggestions.push("Your average focus time is under 2h/day — try adding more focus blocks");
+  }
+
+  return { suggestions };
+}
+
 function findCategoryInSuggestion(s: Suggestion, data: ScheduleData): string | null {
   const titleLower = s.title.toLowerCase();
   const detailLower = s.detail.toLowerCase();

@@ -5,6 +5,7 @@ import type {
   DailyPattern,
   CategoryPreference,
   ProductivityWindow,
+  GoalCompletionRecord,
 } from "./types";
 import { EMPTY_PROFILE } from "./types";
 import { timeToMinutes } from "@/lib/schedule/types";
@@ -159,6 +160,8 @@ export function useLearningProfile(): {
   recordCompletion: (record: CompletionRecord) => void;
   updateDailyPattern: (pattern: DailyPattern) => void;
   recalculatePreferences: () => void;
+  recordGoalCompletion: (record: GoalCompletionRecord) => void;
+  recalculateGoalPreferences: () => void;
   resetProfile: () => void;
 } {
   const [profile, setProfile] = useState<LearningProfile>(() => loadProfile());
@@ -200,6 +203,72 @@ export function useLearningProfile(): {
     setProfile((prev) => recompute(prev));
   }, []);
 
+  const recalculateGoalPreferences = useCallback(() => {
+    setProfile((prev) => {
+      const byGoal = new Map<string, GoalCompletionRecord[]>();
+      for (const rec of prev.goalCompletions) {
+        const list = byGoal.get(rec.goalId);
+        if (list) {
+          list.push(rec);
+        } else {
+          byGoal.set(rec.goalId, [rec]);
+        }
+      }
+
+      const goalDeltas: { goalId: string; totalDelta: number }[] = [];
+      for (const [goalId, records] of byGoal) {
+        const totalDelta = records.reduce((s, r) => s + r.delta, 0);
+        goalDeltas.push({ goalId, totalDelta });
+      }
+
+      goalDeltas.sort((a, b) => a.totalDelta - b.totalDelta);
+
+      const quartileSize = Math.max(1, Math.floor(goalDeltas.length / 4));
+      const neglectedGoalIds = goalDeltas.slice(0, quartileSize).map((g) => g.goalId);
+
+      return {
+        ...prev,
+        neglectedGoalIds,
+        lastUpdated: new Date().toISOString(),
+      };
+    });
+  }, []);
+
+  const recordGoalCompletion = useCallback((record: GoalCompletionRecord) => {
+    setProfile((prev) => {
+      const next = {
+        ...prev,
+        goalCompletions: [...prev.goalCompletions, record],
+      };
+      const byGoal = new Map<string, GoalCompletionRecord[]>();
+      for (const rec of next.goalCompletions) {
+        const list = byGoal.get(rec.goalId);
+        if (list) {
+          list.push(rec);
+        } else {
+          byGoal.set(rec.goalId, [rec]);
+        }
+      }
+
+      const goalDeltas: { goalId: string; totalDelta: number }[] = [];
+      for (const [goalId, records] of byGoal) {
+        const totalDelta = records.reduce((s, r) => s + r.delta, 0);
+        goalDeltas.push({ goalId, totalDelta });
+      }
+
+      goalDeltas.sort((a, b) => a.totalDelta - b.totalDelta);
+
+      const quartileSize = Math.max(1, Math.floor(goalDeltas.length / 4));
+      const neglectedGoalIds = goalDeltas.slice(0, quartileSize).map((g) => g.goalId);
+
+      return {
+        ...next,
+        neglectedGoalIds,
+        lastUpdated: new Date().toISOString(),
+      };
+    });
+  }, []);
+
   const resetProfile = useCallback(() => {
     setProfile({ ...EMPTY_PROFILE, lastUpdated: new Date().toISOString() });
   }, []);
@@ -209,6 +278,8 @@ export function useLearningProfile(): {
     recordCompletion,
     updateDailyPattern,
     recalculatePreferences,
+    recordGoalCompletion,
+    recalculateGoalPreferences,
     resetProfile,
   };
 }

@@ -1,5 +1,6 @@
 import type { PlannerPreferences, PlannerProposal } from "./types";
 import type { ScheduleData, RoutineBlock, Category } from "@/lib/schedule/types";
+import type { LearningProfile } from "@/lib/ai/learning/types";
 import { SCHEDULE_TEMPLATES } from "@/lib/schedule/templates";
 import { DAY_LABELS, durationMin } from "@/lib/schedule/types";
 
@@ -321,34 +322,100 @@ function computePreview(archetype: Archetype, prefs: PlannerPreferences): Planne
   return { weeklyBreakdown, categoryDistribution, goalAlignment };
 }
 
-export function generateProposals(prefs: PlannerPreferences): PlannerProposal[] {
+export function generateProposals(prefs: PlannerPreferences, profile?: LearningProfile): PlannerProposal[] {
   const archetypes = pickArchetypes(prefs);
 
   return archetypes.map((archetype, index) => {
     const categoryCount = archetype.extraCategories.length + 6 + prefs.weeklyCategories.filter((c) => c.trim()).length;
     const weekMins = weekMinutes(prefs.workHoursStart, prefs.workHoursEnd);
-    const estimatedFocusHours = Math.round(weekMins * archetype.focusRatio / 60);
-    const estimatedRecoveryHours = Math.round(weekMins * archetype.recoveryRatio / 60);
+    let estimatedFocusHours = Math.round(weekMins * archetype.focusRatio / 60);
+    let estimatedRecoveryHours = Math.round(weekMins * archetype.recoveryRatio / 60);
     const weeklyBlockCount = estimatedFocusHours + estimatedRecoveryHours + Math.round(weekMins * (1 - archetype.focusRatio - archetype.recoveryRatio) / 60);
 
-    const preview = computePreview(archetype, prefs);
+    let finalFocusRatio = archetype.focusRatio;
+    let finalRecoveryRatio = archetype.recoveryRatio;
+    let description = archetype.description;
+
+    if (profile) {
+      const commonlyUsed = new Set(profile.commonlyUsedCategories);
+      const userCats = prefs.weeklyCategories.filter((c) => c.trim());
+      const boost = userCats.some((c) => commonlyUsed.has(c.toLowerCase().replace(/\s+/g, "-"))) ? 0.05 : 0;
+      finalFocusRatio = Math.min(1, finalFocusRatio + boost);
+      finalRecoveryRatio = Math.max(0, finalRecoveryRatio - boost * 0.5);
+
+      if (profile.averageCompletionRate > 0.8) {
+        finalFocusRatio = Math.min(1, finalFocusRatio + 0.03);
+        finalRecoveryRatio = Math.max(0, finalRecoveryRatio - 0.03);
+      } else if (profile.averageCompletionRate < 0.5) {
+        finalFocusRatio = Math.max(0.2, finalFocusRatio - 0.03);
+        finalRecoveryRatio = Math.min(0.6, finalRecoveryRatio + 0.03);
+      }
+
+      if (profile.neglectedGoalIds.length > 0) {
+        description += ` · ${profile.neglectedGoalIds.length} neglected goal(s) to address`;
+      }
+    }
+
+    estimatedFocusHours = Math.round(weekMins * finalFocusRatio / 60);
+    estimatedRecoveryHours = Math.round(weekMins * finalRecoveryRatio / 60);
+
+    const preview = computePreview(
+      { ...archetype, focusRatio: finalFocusRatio, recoveryRatio: finalRecoveryRatio },
+      prefs,
+    );
+
+    const goalAlignment = [...preview.goalAlignment];
+    if (profile && profile.neglectedGoalIds.length > 0) {
+      goalAlignment.push({ goal: "Neglected Goals", match: Math.round((1 - profile.neglectedGoalIds.length / Math.max(1, profile.goalCompletions.length)) * 100) });
+    }
 
     const proposal: PlannerProposal = {
       id: `proposal-${index}`,
       name: archetype.name,
-      description: archetype.description,
+      description,
       workload: archetype.workload,
-      focusRatio: archetype.focusRatio,
-      recoveryRatio: archetype.recoveryRatio,
+      focusRatio: finalFocusRatio,
+      recoveryRatio: finalRecoveryRatio,
       categoryCount,
       weeklyBlockCount,
       estimatedFocusHours,
       estimatedRecoveryHours,
       generatedAt: new Date().toISOString(),
       generate: async () => buildScheduleData(archetype, prefs),
-      preview,
+      preview: { ...preview, goalAlignment },
     };
 
     return proposal;
   });
+}
+
+export function personalizeProposal(proposal: PlannerProposal, profile: LearningProfile): PlannerProposal {
+  let focusRatio = proposal.focusRatio;
+  let recoveryRatio = proposal.recoveryRatio;
+
+  if (profile.averageCompletionRate > 0.8 && focusRatio > recoveryRatio) {
+    focusRatio = Math.min(1, focusRatio + 0.02);
+    recoveryRatio = Math.max(0, recoveryRatio - 0.02);
+  } else if (profile.averageCompletionRate < 0.5) {
+    focusRatio = Math.max(0.2, focusRatio - 0.02);
+    recoveryRatio = Math.min(0.6, recoveryRatio + 0.02);
+  }
+
+  const goalAlignment = [...proposal.preview.goalAlignment];
+  if (profile.neglectedGoalIds.length > 0) {
+    goalAlignment.push({ goal: "Neglected Goals", match: Math.round((1 - profile.neglectedGoalIds.length / Math.max(1, profile.goalCompletions.length)) * 100) });
+  }
+
+  const note = "• Personalized based on your habits";
+
+  return {
+    ...proposal,
+    description: proposal.description + "\n" + note,
+    focusRatio,
+    recoveryRatio,
+    preview: {
+      ...proposal.preview,
+      goalAlignment,
+    },
+  };
 }

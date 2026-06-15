@@ -7,6 +7,8 @@ interface Props {
   proposals: PlannerProposal[];
   onSelect: (proposal: PlannerProposal) => void;
   onBack: () => void;
+  onExplain?: (proposal: PlannerProposal) => void;
+  onMerge?: () => void;
 }
 
 const WORKLOAD_COLORS: Record<string, string> = {
@@ -31,7 +33,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   indigo: "bg-indigo-500",
 };
 
-export default function PlannerProposals({ proposals, onSelect, onBack }: Props) {
+export default function PlannerProposals({ proposals, onSelect, onBack, onExplain, onMerge }: Props) {
   const t = useT();
   if (proposals.length === 0) {
     return (
@@ -54,10 +56,18 @@ export default function PlannerProposals({ proposals, onSelect, onBack }: Props)
             {t.chronos.plannerPage.proposals.subtitle}
           </p>
         </div>
-        <Button variant="outline" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 mr-1.5" />
-          {t.chronos.plannerPage.proposals.adjustPrefs}
-        </Button>
+        <div className="flex items-center gap-2">
+          {proposals.length >= 2 && onMerge && (
+            <Button variant="outline" onClick={onMerge}>
+              <Layers className="h-4 w-4 mr-1.5" />
+              {t.chronos.plannerPage.merge.compare}
+            </Button>
+          )}
+          <Button variant="outline" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4 mr-1.5" />
+            {t.chronos.plannerPage.proposals.adjustPrefs}
+          </Button>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -150,11 +160,13 @@ export default function PlannerProposals({ proposals, onSelect, onBack }: Props)
               </div>
             </div>
 
-            <div className="mt-auto p-5 pt-0">
-              <Button
-                className="w-full"
-                onClick={() => onSelect(proposal)}
-              >
+            <div className="mt-auto p-5 pt-0 flex gap-2">
+              {onExplain && (
+                <Button variant="outline" className="flex-1 text-xs" onClick={() => onExplain(proposal)}>
+                  {t.chronos.plannerPage.proposals.explain}
+                </Button>
+              )}
+              <Button className="flex-1" onClick={() => onSelect(proposal)}>
                 <Check className="h-4 w-4 mr-1.5" />
                 {t.chronos.plannerPage.proposals.selectPlan}
               </Button>
