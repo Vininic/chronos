@@ -1322,12 +1322,12 @@ Heuristic `adaptiveWeek.ts` deleted. Weekly restructuring now comes from Gemini.
 
 ---
 
-# Phase 9 — AI Autonomy System — INFRASTRUCTURE KEPT
+# Phase 9 — AI Autonomy System — ACTIVE
 
-Configured modes and permission systems kept. Ready for Gemini tool-calling integration (future).
+Autonomy enforcement via `filterByAutonomy()` in `pipeline.ts`. Gemini output is filtered by autonomy level before returning to the UI.
 
 * [x] AI freedom slider (3 levels: conservative / balanced / aggressive)
-* [x] Permission management (per-tool permission: read/write/admin)
+* [x] Permission management — conservative strips write actions, balanced blocks destructive actions, aggressive allows all
 * [x] Approval workflow controls (`ApprovalWorkflow` class)
 * [x] Tool access controls (read requires no approval, writes configurable)
 
@@ -1459,7 +1459,7 @@ The planner lives at `/dashboard/planner`. Users can use the step-by-step Builde
 
 ## Personalization — HANDLED BY GEMINI
 
-Heuristic `personalization.ts` deleted. Personalization now comes from Gemini (learning profile stats used as prompt enrichment).
+Heuristic `personalization.ts` deleted. Learning profile stats injected into Gemini prompt via `summarizeLearningProfile()` in `gemini.ts` — includes top categories by completion rate, peak focus/recovery windows.
 
 * [x] Personalized suggestions
 * [x] Personalized planner generation
