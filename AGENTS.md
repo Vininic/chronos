@@ -47,11 +47,12 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Test setup: `src/test/setup.ts`
 - Use `@/` imports in tests and app code (alias configured in Vite + Vitest)
 
-## AI system (Aetheris) — honest state
-- NOT connected to any LLM. All "AI" output is heuristic simulation (`if` statements, hardcoded thresholds).
-- Gemini API key exists in `.env` (`GEMINI_API_KEY`) but is dead code. Use `import.meta.env.VITE_GEMINI_API_KEY` when wiring.
-- Plan: install `@google/generative-ai`, create `src/lib/ai/core/gemini.ts` adapter, rewrite `pipeline.ts` to call Gemini instead of heuristic engines.
-- 4,748 LOC across 51 files in `src/lib/ai/`. ~65% genuine infrastructure, ~35% heuristic simulation to replace.
+## AI system (Aetheris) — connected to Gemini
+- Connected to Gemini via `src/lib/ai/core/gemini.ts` adapter (calls `gemini-2.0-flash`).
+- Pipeline (`pipeline.ts`) is async — calls Gemini with compressed ScheduleContext + system prompt, returns structured JSON.
+- 11 heuristic simulation files (1,658 LOC) deleted. 41 infrastructure files remain.
+- `VITE_GEMINI_API_KEY` must be set in `.env` (file is gitignored).
+- Fallback: if key is missing or API fails, returns empty/graceful analysis.
 
 ## Agent guardrails
 - Do not introduce server/cloud assumptions unless explicitly requested; current app behavior is local-first
