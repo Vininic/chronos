@@ -1039,7 +1039,7 @@ Heuristic `engine/recovery.ts` deleted. Recovery analysis now comes from Gemini 
 * [x] Detect excessive consecutive work blocks
 * [x] Recommend recovery actions
 
-Implemented as `analyzeRecovery()` in `src/lib/ai/engine/recovery.ts` — returns `RecoverySignal[]` with type, severity, detail, and suggestion.
+Now implemented as part of Gemini analysis in `core/gemini.ts` → `extractRecovery()`.
 
 ---
 
@@ -1053,7 +1053,7 @@ Heuristic `engine/goals.ts` deleted. Goal analysis now comes from Gemini.
 * [x] Detect over-prioritized goals
 * [x] Goal-based prioritization
 
-Implemented as `analyzeGoals()` + `goalPriorityScore()` in `src/lib/ai/engine/goals.ts` — returns `GoalInsight[]` with type (neglected/conflicting/over_prioritized), detail, and suggestion.
+Now implemented as part of Gemini analysis in `core/gemini.ts` → `extractInsights()`.
 
 ---
 
@@ -1066,7 +1066,7 @@ Heuristic `engine/weekly.ts` deleted. Weekly analysis now comes from Gemini.
 * [x] Pattern preservation
 * [x] Adaptive restructuring
 
-Implemented as `analyzeWeek()` in `src/lib/ai/engine/weekly.ts` — returns `WeeklyInsight[]` with type (pattern/optimization/imbalance/recommendation), detail, and suggestion.
+Now implemented as part of Gemini analysis in `core/gemini.ts` → `extractInsights()`.
 
 ---
 
@@ -1194,15 +1194,15 @@ Implemented in `src/lib/ai/tools/sessionTools.ts`.
 
 ---
 
-## Optimization Tools
+## Optimization Tools — DELETED, handled by Gemini
 
-* [x] autoFitCommitment()
-* [x] optimizeDay()
-* [x] optimizeWeek()
-* [x] rebalanceGoals()
-* [x] recoverSchedule()
+Heuristic `tools/optimizationTools.ts` deleted. These actions are now generated as Gemini `suggestedActions`/`suggestions` in the pipeline response.
 
-Implemented in `src/lib/ai/tools/optimizationTools.ts` with safety checks.
+* [x] autoFitCommitment() → Gemini suggestedActions
+* [x] optimizeDay() → Gemini insights + suggestions
+* [x] optimizeWeek() → Gemini suggestions
+* [x] rebalanceGoals() → Gemini insights
+* [x] recoverSchedule() → Gemini recoveryAnalysis + suggestions
 
 ---
 
@@ -1223,7 +1223,7 @@ Implemented in `src/lib/ai/tools/optimizationTools.ts` with safety checks.
 
 * [x] Replace Suggestions page with Aetheris UI (at `/dashboard/aetheris`)
 * [x] Dedicated assistant page (`Aetheris.tsx` with tabs + async pipeline)
-* [x] Planner-aware chat (Gemini-driven insights from ScheduleContext)
+* [x] Gemini-driven analysis (tabbed dashboard: insights, suggestions, recovery, optimize)
 * [x] Suggestion card UI (SuggestionsPanel with apply/defer)
 * [x] Insight card UI (InsightsPanel with expandable details)
 * [x] Daily recommendations (Gemini-generated)
@@ -1476,7 +1476,7 @@ Heuristic `personalization.ts` deleted. Personalization now comes from Gemini (l
 * [ ] AI memory layer
 * [ ] Long-term behavioral modeling
 
-The learning system is at `/dashboard/learning`. It tracks completions, daily patterns, and goal completions in localStorage (`chronos.learning.v1`), computes category preferences, productivity windows, and neglected goals. Personalization engine (`personalizeSuggestions`, `personalizeProposal`, `personalizeRecovery`, `personalizeWeeklyRestructuring`) adjusts suggestions and planner proposals from learned data. Core in `src/lib/ai/learning/`.
+The learning system is at `/dashboard/learning`. It tracks completions, daily patterns, and goal completions in localStorage (`chronos.learning.v1`), computes category preferences, productivity windows, and neglected goals. Personalization now handled by Gemini (learning profile stats used as prompt enrichment via `compressContext()`). Core in `src/lib/ai/learning/`.
 
 ---
 
