@@ -3,7 +3,7 @@ import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Brain, Pause, Play, RotateCcw, ChevronRight } from "lucide-react";
-import { FocusCategoryPicker, kindStyle, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
+import { FocusCategoryPicker, kindStyle, safeKindStyle, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
 import { BlockKind } from "@/lib/schedule/types";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { toast } from "@/hooks/use-toast";
@@ -243,8 +243,8 @@ export default function Focus() {
   const nextScheduled = todays.find((b) => timeToMinutes(b.start) > nowMin);
   const upcoming = data.routine.filter((r) => focusIds.includes(r.kind));
 
-  const previewDot = kindStyle[(previewBlock?.kind ?? activeScheduled?.kind ?? "deep") as BlockKind]?.dot ?? "bg-primary";
-  const previewColor = TAILWIND_TO_HEX[previewDot] ?? "hsl(var(--primary))";
+  const previewStyle = safeKindStyle(previewBlock?.kind ?? activeScheduled?.kind ?? "deep", data.categories);
+  const previewColor = previewStyle.customColor ?? TAILWIND_TO_HEX[previewStyle.dot] ?? "hsl(var(--primary))";
   const ratio = timer.target > 0 ? timer.seconds / timer.target : 1;
 
   // Active session progress for the integrated card
@@ -428,20 +428,23 @@ export default function Focus() {
                 </tr>
               </thead>
               <tbody>
-                {upcoming.map((r) => (
-                  <tr key={r.id} className="border-b border-border/60">
-                    <td className="py-2.5 text-muted-foreground">{t.common.days.short[r.day]}</td>
-                    <td className="text-primary py-2.5">
-                      <span className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full shrink-0 ${kindStyle[r.kind as BlockKind]?.dot ?? "bg-primary"}`} />
-                        {scheduleText.blockTitle(r.title, r.titleCustom)}
-                      </span>
-                    </td>
-                    <td className="text-right num">{r.start}</td>
-                    <td className="text-right num">{r.end}</td>
-                    <td className="text-right num text-secondary">{fmtDur(durationMin(r.start, r.end))}</td>
-                  </tr>
-                ))}
+                {upcoming.map((r) => {
+                  const kStyle = safeKindStyle(r.kind, data.categories);
+                  return (
+                    <tr key={r.id} className="border-b border-border/60">
+                      <td className="py-2.5 text-muted-foreground">{t.common.days.short[r.day]}</td>
+                      <td className="text-primary py-2.5">
+                        <span className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${kStyle.dot}`} style={kStyle.dotStyle} />
+                          {scheduleText.blockTitle(r.title, r.titleCustom)}
+                        </span>
+                      </td>
+                      <td className="text-right num">{r.start}</td>
+                      <td className="text-right num">{r.end}</td>
+                      <td className="text-right num text-secondary">{fmtDur(durationMin(r.start, r.end))}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -11,7 +11,7 @@ import { TimeSelect } from "@/components/ui/time-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes, CommitmentPriority, eisenhowerQuadrant, QUADRANT_COLORS, QUADRANT_LABELS } from "@/lib/schedule/types";
-import { kindStyle } from "./widgets";
+import { kindStyle, safeKindStyle, alpha, TAILWIND_TO_HEX } from "./widgets";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Bookmark, CalendarDays, StickyNote } from "lucide-react";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
@@ -300,30 +300,29 @@ export function ComposeBlockDialog({
             <div className="grid grid-cols-2 gap-3">
               <div className={`space-y-1.5 ${mode === "commitment" ? "pt-10" : ""}`}>
                 <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.chronos.dialog.kind}</Label>
-                  <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}>
-                  <SelectTrigger>
-                    <span className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${kindStyle[kind]?.dot ?? "bg-secondary"}`} />
-                      <SelectValue />
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {data.categories.filter((c) => c.id !== "sleep").map((c) => {
-                      const s = kindStyle[c.id as BlockKind];
-                      const dotClass = s?.dot ?? "bg-secondary";
-                      const hex = DOT_HEX[dotClass] ?? DOT_HEX["bg-secondary"];
-                      return (
-                        <SelectItem key={c.id} value={c.id}
-                          className="kind-hover-item"
-                          style={{ "--kind-hover": `${hex}22` } as React.CSSProperties}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-                            {scheduleText.categoryLabel(c.id, c.label || t.common.kinds[c.id], c.labelCustom)}
-                          </span>
-                        </SelectItem>
-                      );
-                    })}
+                    <Select value={kind} onValueChange={(v) => setKind(v as BlockKind)}>
+                      <SelectTrigger>
+                        <span className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${safeKindStyle(kind, data.categories).dot}`} style={safeKindStyle(kind, data.categories).dotStyle} />
+                          <SelectValue />
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {data.categories.filter((c) => c.id !== "sleep").map((c) => {
+                          const s = safeKindStyle(c.id, data.categories);
+                          const hoverColor = alpha(s.customColor ?? TAILWIND_TO_HEX[s.dot] ?? "#6b7280", "22");
+                          return (
+                            <SelectItem key={c.id} value={c.id}
+                              className="kind-hover-item"
+                              style={{ "--kind-hover": hoverColor } as React.CSSProperties}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className={`h-2 w-2 rounded-full ${s.dot}`} style={s.dotStyle} />
+                                {scheduleText.categoryLabel(c.id, c.label || t.common.kinds[c.id], c.labelCustom)}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
                   </SelectContent>
                 </Select>
               </div>

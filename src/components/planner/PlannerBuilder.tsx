@@ -6,6 +6,7 @@ import type { PlannerProposal, PlannerPreferences, LearningProfile } from "@/lib
 import type { ScheduleData } from "@/lib/schedule/types";
 import { generateProposals } from "@/lib/ai/planner/generator";
 import PlannerForm from "./PlannerForm";
+import CategoryInput from "./CategoryInput";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ArrowLeft, Check, Sparkles, FileText, Wand2 } from "lucide-react";
 
@@ -110,32 +111,43 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
 
   function handleApply() {
     if (generatedSchedule) {
-      let finalSchedule = generatedSchedule;
+      let { categories } = generatedSchedule;
       if (editedCategories.trim().length > 0) {
         const editedLabels = editedCategories
           .split(",")
           .map((s) => s.trim())
           .filter((s) => s.length > 0);
-        const existingCats = generatedSchedule.categories.filter(
-          (c) => !editedLabels.includes(c.label)
-        );
-        const newCats = editedLabels
-          .filter((label) => !generatedSchedule.categories.some((c) => c.label === label))
-          .map((label) => {
+        // Start from existing categories, then add any new labels from the edited list
+        const reconciled = [...categories];
+        for (const label of editedLabels) {
+          const exists = reconciled.some((c) => c.label.toLowerCase() === label.toLowerCase());
+          if (!exists) {
             const id = label.toLowerCase().replace(/\s+/g, "-");
-            return {
+            reconciled.push({
               id,
               label,
               tone: id === "deep" ? "bronze" : "neutral",
               description: `${label} activities.`,
-            };
-          });
-        finalSchedule = {
-          ...generatedSchedule,
-          categories: [...existingCats, ...newCats],
-        };
+            });
+          }
+        }
+        categories = reconciled;
       }
-      onApply(finalSchedule);
+      // Final safety: ensure every routine block kind has a matching category
+      const knownKinds = new Set(categories.map((c) => c.id));
+      for (const b of generatedSchedule.routine) {
+        if (b.kind === "sleep") continue;
+        if (!knownKinds.has(b.kind)) {
+          categories.push({
+            id: b.kind,
+            label: b.kind.charAt(0).toUpperCase() + b.kind.slice(1),
+            tone: "neutral",
+            description: `${b.kind} activities.`,
+          });
+          knownKinds.add(b.kind);
+        }
+      }
+      onApply({ ...generatedSchedule, categories });
     }
   }
 
@@ -418,15 +430,11 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
 
           <div className="chronos-card p-5 mb-6">
             <label className="text-xs font-medium text-primary mb-2 block">{b.categories}</label>
-            <textarea
+            <CategoryInput
               value={editedCategories}
-              onChange={(e) => setEditedCategories(e.target.value)}
-              rows={3}
-              className="w-full rounded-lg border border-border bg-background text-primary text-sm p-3 focus:outline-none focus:ring-2 focus:ring-secondary/40 resize-none"
+              onChange={setEditedCategories}
+              placeholder="Add, edit or remove categories..."
             />
-            <p className="text-xs text-muted-foreground mt-1.5">
-              Separate categories with commas.
-            </p>
           </div>
 
           <div className="flex items-center justify-center gap-3">

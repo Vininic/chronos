@@ -281,15 +281,18 @@ function NowNextCards({
   bcp47: string;
   isNextFromTomorrow: boolean;
 }) {
+  const { data } = useSchedule();
   function cardStyle(kind: string) {
-    if (kind === "sleep") return "border-primary/35 bg-muted/45";
-    const s = kindStyle[kind as keyof typeof kindStyle];
-    return s ? `${s.blockBorder} ${s.blockBg}` : "border-dashed border-border/60 bg-muted/5";
+    if (kind === "sleep") return { className: "border-primary/35 bg-muted/45", style: undefined as React.CSSProperties | undefined };
+    const ns = safeKindStyle(kind, data.categories);
+    return { className: `${ns.blockBorder} ${ns.blockBg}`, style: ns.blockStyle };
   }
 
+  const currentCard = displayCurrentBlock ? cardStyle(displayCurrentBlock.kind) : null;
+  const nextCard = displayNextBlock ? cardStyle(displayNextBlock.kind) : null;
   return (
     <section className="mb-4 grid grid-cols-1 lg:grid-cols-2 gap-3 animate-fade-up">
-      <div className={`rounded-lg border px-4 py-3 ${displayCurrentBlock ? cardStyle(displayCurrentBlock.kind) : "border-dashed border-border/60 bg-muted/5"}`}>
+      <div className={`rounded-lg border px-4 py-3 ${currentCard?.className ?? "border-dashed border-border/60 bg-muted/5"}`} style={currentCard?.style}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{t.chronos.today.now}</div>
@@ -299,7 +302,7 @@ function NowNextCards({
           <button type="button" onClick={() => currentBlock && jumpToBlock(currentBlock.id, currentBlock.source, currentBlock.kind)} disabled={!currentBlock} className="h-7 w-7 rounded-md border border-border/60 grid place-items-center text-muted-foreground enabled:hover:text-primary enabled:hover:border-secondary/50 disabled:opacity-40"><ChevronDown className="h-4 w-4" /></button>
         </div>
       </div>
-      <div className={`rounded-lg border px-4 py-3 ${displayNextBlock ? cardStyle(displayNextBlock.kind) : "border-dashed border-border/60 bg-muted/5"}`}>
+      <div className={`rounded-lg border px-4 py-3 ${nextCard?.className ?? "border-dashed border-border/60 bg-muted/5"}`} style={nextCard?.style}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{nextLabel}</div>
@@ -350,7 +353,8 @@ function CommitmentDetailDialog({ c, open, onClose, onRemove, onUpdate }: { c: S
   const { bcp47 } = useI18n();
   const isPt = bcp47.toLowerCase().startsWith("pt");
   const scheduleText = useScheduleText();
-  const s = kindStyle[c.kind as BlockKind];
+  const { data: cdData } = useSchedule();
+  const s = safeKindStyle(c.kind, cdData.categories);
   const noteLines = parseNotes(c.notes);
   const dur = durationMin(c.start, c.end);
   const [urgent, setUrgent] = useState(c.priority?.urgent ?? false);
@@ -378,8 +382,8 @@ function CommitmentDetailDialog({ c, open, onClose, onRemove, onUpdate }: { c: S
         </DialogHeader>
         <div className="space-y-3 py-1">
           <div className="flex items-center gap-2.5">
-            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
-            <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${s?.chip ?? ""} ${s?.blockBorder ?? ""}`}>{t.common.kinds[c.kind]}</span>
+            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s.dot}`} style={s.dotStyle} />
+            <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${s.chip} ${s.blockBorder}`} style={s.chipStyle}>{scheduleText.categoryLabel(c.kind, cdData.categories.find((cat) => cat.id === c.kind)?.label, cdData.categories.find((cat) => cat.id === c.kind)?.labelCustom)}</span>
           </div>
           <div className="text-sm num text-muted-foreground">
             {c.date ? `${c.date} · ${formatClock(c.start, bcp47)}–${formatClock(c.end, bcp47)} · ${fmtFriendlyDuration(dur, isPt)}` : fmtFriendlyDuration(dur, isPt)}
@@ -444,6 +448,7 @@ function CommitmentListPopup({ sections, initialSection, open, onClose }: { sect
   const { bcp47 } = useI18n();
   const isPt = bcp47.toLowerCase().startsWith("pt");
   const scheduleText = useScheduleText();
+  const { data: clpData } = useSchedule();
   useEffect(() => { if (open) setTab(initialSection); }, [open, initialSection]);
   const active = sections.find((s) => s.key === tab);
   if (!active) return null;
@@ -472,7 +477,7 @@ function CommitmentListPopup({ sections, initialSection, open, onClose }: { sect
         </div>
         <div className="space-y-1.5">
           {active.items.map((c, idx: number) => {
-            const s = kindStyle[c.kind as BlockKind];
+            const s = safeKindStyle(c.kind, clpData.categories);
             return (
               <div key={c.id}>
                 {showDivider && idx === MAX_VISIBLE && <div className="border-t border-dashed border-border/40 my-2" />}
@@ -481,7 +486,7 @@ function CommitmentListPopup({ sections, initialSection, open, onClose }: { sect
                     ? "border-dashed border-amber-500/30 bg-amber-500/5"
                     : "border-border/60 bg-surface-raised"
                 }`}>
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} style={s.dotStyle} />
                   <span className="flex-1 truncate text-primary font-medium min-w-0">{scheduleText.blockTitle(c.title, c.titleCustom)}</span>
                   <span className="text-[11px] num text-muted-foreground/60 shrink-0 whitespace-nowrap">
                     {isPresetSection ? fmtDur(c.duration) : (
@@ -564,7 +569,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
 
 
   function card(c: ScheduleData["commitments"][number]) {
-    const s = kindStyle[c.kind as BlockKind];
+    const s = safeKindStyle(c.kind, data.categories);
     const dur = durationMin(c.start, c.end);
     const isUndated = !c.date;
     const timeStr = isUndated
@@ -580,8 +585,8 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
         onDragEnd={handleDragEnd}
         onClick={() => setDetailCommitment(c)}
       >
-        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-sm ${s?.dot ?? "bg-secondary"}`} />
-        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s?.dot ?? "bg-secondary"}`} />
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-sm ${s.dot}`} style={s.dotStyle} />
+        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${s.dot}`} style={s.dotStyle} />
         <span className="shrink-0 flex items-center gap-0.5 min-w-[4.5rem] prio-group">
           <span className={`h-2 w-2 rounded-full ${c.priority ? QUADRANT_COLORS[eisenhowerQuadrant(c.priority)] : "invisible"}`} />
           <span className={`text-[9px] whitespace-nowrap transition-opacity ${c.priority ? QUADRANT_TEXT_COLORS[eisenhowerQuadrant(c.priority)] + " opacity-0 prio-label" : "invisible"}`}>
@@ -619,6 +624,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
   }
 
   function presetCard(p: ScheduleData["presets"][number]) {
+    const pStyle = safeKindStyle(p.kind, data.categories);
     return (
       <div
         key={p.id}
@@ -632,7 +638,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
         }}
         onDragEnd={handleDragEnd}
       >
-        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${kindStyle[p.kind as BlockKind]?.dot ?? "bg-secondary"}`} />
+        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${pStyle.dot}`} style={pStyle.dotStyle} />
         <span className="shrink-0 flex items-center gap-0.5 min-w-[4.5rem] prio-group">
           {p.priority && (
             <>
@@ -645,7 +651,7 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
         </span>
         <span className="flex-1 truncate text-primary font-medium min-w-0">{scheduleText.blockTitle(p.title, p.titleCustom)}</span>
         <span className="text-[11px] num text-muted-foreground/60 shrink-0">{fmtDur(p.duration)}</span>
-        <span className={`rounded border px-1.5 py-[1px] text-[9px] uppercase tracking-wider ${kindStyle[p.kind as BlockKind]?.chip ?? ""} ${kindStyle[p.kind as BlockKind]?.blockBorder ?? ""}`}>
+        <span className={`rounded border px-1.5 py-[1px] text-[9px] uppercase tracking-wider ${pStyle.chip} ${pStyle.blockBorder}`} style={pStyle.chipStyle}>
           {t.common.kinds[p.kind]}
         </span>
         <button
@@ -858,7 +864,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
     setEditingId(c.id);
     setDraftLabel(scheduleText.categoryLabel(c.id, c.label, c.labelCustom));
     setDraftDesc(scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom));
-    setDraftColor(c.color ?? TAILWIND_TO_HEX[kindStyle[c.id]?.dot] ?? "#f59e0b");
+    setDraftColor(c.color ?? TAILWIND_TO_HEX[safeKindStyle(c.id, data.categories).dot] ?? "#f59e0b");
   }
 
   function saveEdit(c: ScheduleData["categories"][number]) {
@@ -938,21 +944,20 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
 
         <div className="space-y-px">
           {data.categories.map((c) => {
-            const blockStyle = safeKindStyle(c.id);
+            const blockStyle = safeKindStyle(c.id, data.categories);
             const dotKey = blockStyle.dot;
-            const dotHex = c.color ?? TAILWIND_TO_HEX[dotKey] ?? "#f59e0b";
+            const dotHex = blockStyle.customColor ?? TAILWIND_TO_HEX[dotKey] ?? "#f59e0b";
             const isEditing = editingId === c.id;
             const label = scheduleText.categoryLabel(c.id, c.label, c.labelCustom);
             const description = scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom);
             const isBuiltin = BUILTIN_KINDS.includes(c.id);
             const hasCustom = !!(c.labelCustom || c.descriptionCustom || c.color);
-            const customBorder = c.color && !kindStyle[c.id] ? `${c.color}66` : undefined;
 
             return (
               <div
                 key={c.id}
                 className={`${blockStyle.blockBg} ${blockStyle.blockBorder} rounded-lg px-4 py-3`}
-                style={customBorder ? { borderColor: customBorder } : undefined}
+                style={blockStyle.blockStyle}
               >
                 {isEditing ? (
                   <div className="space-y-4">

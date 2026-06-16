@@ -7,6 +7,7 @@ import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 
+type BlockStyle = { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string; customColor?: string; blockStyle?: React.CSSProperties; chipStyle?: React.CSSProperties; dotStyle?: React.CSSProperties };
 
 function categoryLabel(
   data: ReturnType<typeof useSchedule>["data"],
@@ -18,7 +19,7 @@ function categoryLabel(
   return category ? localizeCategoryLabel(kind, category.label, category.labelCustom) : fallback.common.kinds[kind];
 }
 
-export const kindStyle: Record<string, { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string }> = {
+export const kindStyle: Record<string, BlockStyle> = {
   deep:     { dot: "bg-amber-500",   chip: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",     icon: Brain,   blockBg: "bg-amber-500/10 dark:bg-amber-400/15",    blockBorder: "border-amber-500/35 dark:border-amber-400/30" },
   meeting:  { dot: "bg-blue-500",    chip: "bg-blue-500/15  text-blue-700  dark:bg-blue-400/20  dark:text-blue-300",      icon: CalIcon, blockBg: "bg-blue-500/10  dark:bg-blue-400/15",     blockBorder: "border-blue-500/30  dark:border-blue-400/25" },
   ritual:   { dot: "bg-violet-500",  chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300", icon: Zap,     blockBg: "bg-violet-500/10 dark:bg-violet-400/15", blockBorder: "border-violet-500/30 dark:border-violet-400/25" },
@@ -27,8 +28,77 @@ export const kindStyle: Record<string, { dot: string; chip: string; icon: React.
   sleep:    { dot: "bg-indigo-400",  chip: "bg-indigo-400/15  text-indigo-700 dark:bg-indigo-400/20  dark:text-indigo-300",  icon: Moon,    blockBg: "bg-indigo-400/10  dark:bg-indigo-400/12",  blockBorder: "border-indigo-400/30 dark:border-indigo-400/20" },
 };
 
-export function safeKindStyle(kind: string): { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string } {
-  return kindStyle[kind] ?? { dot: "bg-muted-foreground", chip: "bg-muted/50 text-muted-foreground", icon: Clock, blockBg: "bg-muted/30", blockBorder: "border-border/50" };
+const toneStyle: Record<string, BlockStyle> = {
+  bronze:       { dot: "bg-amber-600",   chip: "bg-amber-600/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",     icon: Brain,  blockBg: "bg-amber-600/10",                      blockBorder: "border-amber-600/35" },
+  midnight:     { dot: "bg-indigo-600",  chip: "bg-indigo-600/15 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-300",   icon: Moon,   blockBg: "bg-indigo-600/10",                     blockBorder: "border-indigo-600/35" },
+  "primary-glow": { dot: "bg-violet-500", chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300", icon: Zap,    blockBg: "bg-violet-500/10 dark:bg-violet-400/15", blockBorder: "border-violet-500/35" },
+  neutral:      { dot: "bg-slate-400",   chip: "bg-slate-400/15 text-slate-600 dark:bg-slate-400/20 dark:text-slate-300",       icon: Clock,  blockBg: "bg-slate-400/10",                     blockBorder: "border-slate-400/30" },
+  sky:          { dot: "bg-sky-500",     chip: "bg-sky-500/15 text-sky-700 dark:bg-sky-400/20 dark:text-sky-300",              icon: Brain,  blockBg: "bg-sky-500/10",                       blockBorder: "border-sky-500/35" },
+  violet:       { dot: "bg-violet-500",  chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300",   icon: Brain,  blockBg: "bg-violet-500/10",                    blockBorder: "border-violet-500/35" },
+  coral:        { dot: "bg-rose-500",    chip: "bg-rose-500/15 text-rose-700 dark:bg-rose-400/20 dark:text-rose-300",            icon: Clock,  blockBg: "bg-rose-500/10",                      blockBorder: "border-rose-500/35" },
+  mint:         { dot: "bg-emerald-400", chip: "bg-emerald-400/15 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300", icon: Coffee, blockBg: "bg-emerald-400/10",                  blockBorder: "border-emerald-400/35" },
+  peach:        { dot: "bg-amber-400",   chip: "bg-amber-400/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",       icon: Coffee, blockBg: "bg-amber-400/10",                    blockBorder: "border-amber-400/35" },
+  amber:        { dot: "bg-amber-500",   chip: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",        icon: Brain,  blockBg: "bg-amber-500/10",                    blockBorder: "border-amber-500/35" },
+  slate:        { dot: "bg-slate-500",   chip: "bg-slate-500/15 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300",        icon: Clock,  blockBg: "bg-slate-500/10",                    blockBorder: "border-slate-500/35" },
+  lime:         { dot: "bg-lime-500",    chip: "bg-lime-500/15 text-lime-700 dark:bg-lime-400/20 dark:text-lime-300",             icon: Zap,    blockBg: "bg-lime-500/10",                     blockBorder: "border-lime-500/35" },
+  rose:         { dot: "bg-rose-400",    chip: "bg-rose-400/15 text-rose-700 dark:bg-rose-400/20 dark:text-rose-300",            icon: Coffee, blockBg: "bg-rose-400/10",                     blockBorder: "border-rose-400/35" },
+  emerald:      { dot: "bg-emerald-500", chip: "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300", icon: Brain,  blockBg: "bg-emerald-500/10",                  blockBorder: "border-emerald-500/35" },
+  indigo:       { dot: "bg-indigo-500",  chip: "bg-indigo-500/15 text-indigo-700 dark:bg-indigo-400/20 dark:text-indigo-300",    icon: Moon,   blockBg: "bg-indigo-500/10",                   blockBorder: "border-indigo-500/35" },
+  chartreuse:   { dot: "bg-lime-500",    chip: "bg-lime-500/15 text-lime-700 dark:bg-lime-400/20 dark:text-lime-300",             icon: Zap,    blockBg: "bg-lime-500/10",                     blockBorder: "border-lime-500/35" },
+};
+
+const FALLBACK_STYLE: BlockStyle = { dot: "bg-muted-foreground", chip: "bg-muted/50 text-muted-foreground", icon: Clock, blockBg: "bg-muted/30", blockBorder: "border-border/50" };
+
+export function toCssColor(color: string | undefined): string | undefined {
+  if (!color) return undefined;
+  const t = color.trim();
+  if (t.startsWith("#") || t.startsWith("rgb") || t.startsWith("hsl")) return t;
+  if (/^\d+\s+\d+\s+\d+$/.test(t)) return `rgb(${t.replace(/\s+/g, ", ")})`;
+  if (/^\d+,\s*\d+,\s*\d+$/.test(t)) return `rgb(${t})`;
+  return t;
+}
+
+export function alpha(color: string, opacity: string): string {
+  if (color.startsWith("#")) return color + opacity;
+  if (color.startsWith("rgb(")) return color.replace("rgb(", "rgba(").replace(")", `, ${parseInt(opacity, 16) / 255})`);
+  return color;
+}
+
+const DEFAULT_TONES = ["sky", "violet", "coral", "mint", "peach", "amber", "emerald", "indigo", "rose", "lime"];
+
+function pickDefaultTone(kind: string): string {
+  let hash = 0;
+  for (let i = 0; i < kind.length; i++) hash = ((hash << 5) - hash) + kind.charCodeAt(i) | 0;
+  return DEFAULT_TONES[Math.abs(hash) % DEFAULT_TONES.length];
+}
+
+export function safeKindStyle(kind: string, categories?: { id: string; tone?: string; color?: string }[]): BlockStyle {
+  if (kindStyle[kind]) {
+    if (categories) {
+      const cat = categories.find(c => c.id === kind);
+      const cssColor = toCssColor(cat?.color);
+      if (cssColor) return { ...kindStyle[kind], customColor: cssColor, blockStyle: { backgroundColor: alpha(cssColor, "18"), borderColor: alpha(cssColor, "40") }, chipStyle: { backgroundColor: alpha(cssColor, "22"), color: cssColor }, dotStyle: { backgroundColor: cssColor } };
+    }
+    return kindStyle[kind];
+  }
+  if (categories) {
+    const cat = categories.find(c => c.id === kind);
+    const cssColor = toCssColor(cat?.color);
+    const effectiveTone = (cat?.tone && toneStyle[cat.tone]) ? cat.tone : (cat ? pickDefaultTone(kind) : undefined);
+    if (effectiveTone && toneStyle[effectiveTone]) {
+      const base = toneStyle[effectiveTone];
+      if (cssColor) return { ...base, customColor: cssColor, blockStyle: { backgroundColor: alpha(cssColor, "18"), borderColor: alpha(cssColor, "40") }, chipStyle: { backgroundColor: alpha(cssColor, "22"), color: cssColor }, dotStyle: { backgroundColor: cssColor } };
+      return base;
+    }
+    if (cssColor) return {
+      ...FALLBACK_STYLE,
+      customColor: cssColor,
+      blockStyle: { backgroundColor: alpha(cssColor, "18"), borderColor: alpha(cssColor, "40") },
+      chipStyle: { backgroundColor: alpha(cssColor, "22"), color: cssColor },
+      dotStyle: { backgroundColor: cssColor },
+    };
+  }
+  return FALLBACK_STYLE;
 }
 
 /* ---------------- Daily agenda (data-driven) ---------------- */
@@ -64,7 +134,7 @@ export function DailyAgenda() {
           <div className="absolute left-[68px] top-1 bottom-1 w-px bg-border" />
           <ul className="space-y-3">
             {agenda.map((a) => {
-              const s = safeKindStyle(a.kind);
+              const s = safeKindStyle(a.kind, data.categories);
               const Icon = s.icon;
               const live = a.id === liveId;
               return (
@@ -74,14 +144,14 @@ export function DailyAgenda() {
                     <div className="text-[10px] text-muted-foreground/70">{a.end}</div>
                   </div>
                   <div className="relative pt-2.5">
-                    <span className={`block h-2.5 w-2.5 rounded-full ${s.dot} ${live ? "ring-4 ring-secondary/30" : ""}`} />
+                    <span className={`block h-2.5 w-2.5 rounded-full ${s.dot} ${live ? "ring-4 ring-secondary/30" : ""}`} style={s.dotStyle} />
                   </div>
                   <div className={`flex-1 rounded-lg border ${live ? "border-secondary/40 bg-secondary/5" : "border-border bg-surface-raised"} p-3.5 flex items-center gap-3`}>
-                    <div className={`h-8 w-8 rounded-md grid place-items-center ${s.chip}`}><Icon className="h-4 w-4" /></div>
+                    <div className={`h-8 w-8 rounded-md grid place-items-center ${s.chip}`} style={s.chipStyle}><Icon className="h-4 w-4" /></div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-primary truncate">{scheduleText.blockTitle(a.title, a.titleCustom)}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
-                        <span className={`inline-block px-1.5 py-0.5 rounded ${s.chip} font-medium uppercase tracking-wider text-[10px]`}>{categoryLabel(data, a.kind, t, scheduleText.categoryLabel)}</span>
+                        <span className={`inline-block px-1.5 py-0.5 rounded ${s.chip} font-medium uppercase tracking-wider text-[10px]`} style={s.chipStyle}>{categoryLabel(data, a.kind, t, scheduleText.categoryLabel)}</span>
                         <span className="ml-2 num">{fmtDur(durationMin(a.start, a.end))}</span>
                         {live && <span className="ml-2 text-secondary font-medium">· {t.chronos.widgets.inProgress}</span>}
                         {a.source === "commitment" && <span className="ml-2 text-muted-foreground">· {t.chronos.widgets.commitmentTag}</span>}
@@ -336,9 +406,9 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
               const eh = timeToMinutes(b.end) / 60;
               const top = ((sh - startHour) / totalHours) * gridHeight;
               const height = Math.max(18, ((eh - sh) / totalHours) * gridHeight - 2);
-              const s = safeKindStyle(b.kind as BlockKind);
+              const s = safeKindStyle(b.kind, data.categories);
               return (
-                <div key={b.id} className={`group absolute left-1 right-1 rounded-md text-[10px] font-medium px-1.5 py-1 ${s.chip} border border-current/10 overflow-hidden`} style={{ top, height }} title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.start}–${b.end}`}>
+                <div key={b.id} className={`group absolute left-1 right-1 rounded-md text-[10px] font-medium px-1.5 py-1 ${s.chip} border border-current/10 overflow-hidden`} style={s.chipStyle ? { top, height, ...s.chipStyle } : { top, height }} title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.start}–${b.end}`}>
                   <div className="truncate">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>
                   <div className="text-[9px] opacity-70 num">{b.start}</div>
                   {editable && (
@@ -445,11 +515,22 @@ export function FocusBlocksCard() {
 
 export const TAILWIND_TO_HEX: Record<string, string> = {
   "bg-amber-500": "#f59e0b",
+  "bg-amber-600": "#d97706",
+  "bg-amber-400": "#fbbf24",
   "bg-blue-500": "#3b82f6",
   "bg-violet-500": "#8b5cf6",
   "bg-emerald-500": "#10b981",
+  "bg-emerald-400": "#34d399",
   "bg-slate-400": "#94a3b8",
+  "bg-slate-500": "#64748b",
   "bg-indigo-400": "#818cf8",
+  "bg-indigo-500": "#6366f1",
+  "bg-indigo-600": "#4f46e5",
+  "bg-sky-500": "#0ea5e9",
+  "bg-rose-500": "#f43f5e",
+  "bg-rose-400": "#fb7185",
+  "bg-lime-500": "#84cc16",
+  "bg-muted-foreground": "#6b7280",
 };
 
 export const COLOR_FAMILIES = [
@@ -538,9 +619,8 @@ export function BalanceCard() {
     const dayMins = Array.from({ length: DAYS }, (_, i) => dayMin(i % 7, id));
     const hours = dayMins.map((m) => Math.round(m / 6) / 10);
     const totalMin = Math.round(dayMins.reduce((s, v) => s + v, 0) / 2);
-    const style = kindStyle[id as BlockKind];
-    const colorKey = style?.dot ?? "bg-primary";
-    const color = TAILWIND_TO_HEX[colorKey] ?? "hsl(var(--primary))";
+    const style = safeKindStyle(id, data.categories);
+    const color = style.customColor ?? TAILWIND_TO_HEX[style.dot] ?? "hsl(var(--primary))";
     const name = t.common.kinds[id] ?? data.categories.find((c) => c.id === id)?.label ?? id;
     return { hours, totalMin, color, name };
   });
@@ -682,6 +762,7 @@ export function FocusCategoryPicker() {
     <div className="space-y-1.5">
       {data.categories.map((c) => {
         const on = selected.includes(c.id);
+        const s = on ? safeKindStyle(c.id, data.categories) : null;
         return (
           <button
             key={c.id}
@@ -693,7 +774,7 @@ export function FocusCategoryPicker() {
                 : "border-border/60 text-muted-foreground hover:border-border hover:text-primary"
             }`}
           >
-            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${on ? kindStyle[c.id as BlockKind]?.dot ?? "bg-primary" : "bg-secondary/40"}`} />
+            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${on ? s!.dot : "bg-secondary/40"}`} style={s?.dotStyle} />
             <span className="flex-1">{scheduleText.categoryLabel(c.id, c.label, c.labelCustom)}</span>
             {on && <Check className="h-3.5 w-3.5 text-primary" />}
           </button>

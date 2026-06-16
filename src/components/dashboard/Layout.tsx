@@ -2,22 +2,22 @@ import { Outlet, Link } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { useTimer } from "@/lib/timer/TimerContext";
-import { kindStyle, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
-import { BlockKind } from "@/lib/schedule/types";
+import { safeKindStyle } from "@/components/dashboard/widgets";
+import { useSchedule } from "@/lib/schedule/store";
 import { Button } from "@/components/ui/button";
 import { Pause, Play, RotateCcw, X, ExternalLink } from "lucide-react";
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
 
 function TimerPopup() {
+  const { data } = useSchedule();
   const { running, activeBlock, mm, ss, togglePause, reset, dismiss } = useTimer();
   if (!running) return null;
-  const dotClass = kindStyle[activeBlock?.kind as BlockKind]?.dot ?? "bg-primary";
-  const color = TAILWIND_TO_HEX[dotClass] ?? "hsl(var(--primary))";
+  const kindVisual = activeBlock?.kind ? safeKindStyle(activeBlock.kind, data.categories) : null;
   return (
     <div className="fixed bottom-6 right-6 z-50 chronos-card-elevated p-4 w-72 shadow-xl">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
+          <span className="h-3 w-3 rounded-full" style={kindVisual?.dotStyle ?? { backgroundColor: "hsl(var(--primary))" }} />
           <span className="font-display text-2xl text-primary num tracking-tight">{mm}:{ss}</span>
         </div>
         <div className="flex items-center gap-1">

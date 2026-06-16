@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DEFAULT_PREFERENCES } from "@/lib/ai/planner/generator";
 import type { PlannerPreferences, WorkMode, FocusPreference, RecoveryPriority } from "@/lib/ai/planner/types";
 import { useT } from "@/lib/i18n/I18nProvider";
+import CategoryInput from "./CategoryInput";
 
 interface Props {
   onSubmit: (prefs: PlannerPreferences) => void;
@@ -182,16 +183,11 @@ export default function PlannerForm({ onSubmit }: Props) {
           <CardDescription>{t.chronos.plannerPage.form.categoriesDesc}</CardDescription>
         </CardHeader>
         <CardContent>
-          <input
-            type="text"
+          <CategoryInput
             value={categoriesInput}
-            onChange={(e) => setCategoriesInput(e.target.value)}
+            onChange={setCategoriesInput}
             placeholder={t.chronos.plannerPage.form.categoriesPlaceholder}
-            className="w-full h-10 px-3 rounded-lg border border-border bg-background text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/40"
           />
-          <p className="text-xs text-muted-foreground mt-1.5">
-            Separate categories with commas. Base types (Deep Work, Meeting, Ritual, Recovery, Shallow, Sleep) are always included.
-          </p>
         </CardContent>
       </Card>
 

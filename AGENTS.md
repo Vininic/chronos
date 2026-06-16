@@ -53,6 +53,13 @@ Use this file for fast, practical context. Prefer links for product/background d
 - 11 heuristic simulation files (1,658 LOC) deleted. 41 infrastructure files remain.
 - `VITE_GEMINI_API_KEY` must be set in `.env` (file is gitignored).
 - Fallback: if key is missing or API fails, returns empty/graceful analysis.
+- Aetheris page (`src/pages/dashboard/Aetheris.tsx`) is the central AI hub with 6 internal tabs: Insights, Suggestions, Recovery, Optimize, Planner, Learning. Includes "Ask Aetheris" text input at top (stub for Phase 14 chat).
+- Planner and Learning page content embedded inline in Aetheris as sub-tabs. Standalone routes (`/dashboard/planner`, `/dashboard/learning`) still exist.
+- Planner page (`src/pages/dashboard/Planner.tsx`) detects existing schedule on load and shows current-plan dashboard with View/Create New/Delete options instead of always starting from step 0.
+- `CategoryInput` component (`src/components/planner/CategoryInput.tsx`) replaces all comma-separated text inputs with tag-based chips.
+- 10 schedule templates in `templates.ts`: Productivity, Balanced, Student, Deep Work, Recovery, Weekend Maker, Freelancer Flow, Early Bird, Night Owl, Shift Worker.
+- **Gemini schedule planner**: `src/lib/ai/planner/gemini-planner.ts` calls `gemini-2.0-flash` to generate personalized ScheduleData from PlannerPreferences + LearningProfile. Falls back to heuristic `generator.ts` if API key missing. Not yet wired into PlannerBuilder UI.
+- **Category tone fix**: `safeKindStyle(kind, categories)` in `widgets.tsx` now resolves custom category tones (sky, violet, coral, etc.) via `toneStyle` map instead of returning muted fallback. Updated in DayPlanner, Today, Focus, Week pages.
 
 ## Agent guardrails
 - Do not introduce server/cloud assumptions unless explicitly requested; current app behavior is local-first

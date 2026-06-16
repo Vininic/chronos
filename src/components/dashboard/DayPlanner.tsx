@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, use
 import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
 import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
 import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
-import { safeKindStyle } from "./widgets";
+import { safeKindStyle, toCssColor, alpha } from "./widgets";
 import { useFmtDur, useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { isKnownDefaultBlockTitle, useScheduleText } from "@/lib/i18n/scheduleText";
 import { ArrowDownToLine, ArrowRightToLine, ArrowUpToLine, ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, StickyNote, Table2, Trash2, Circle, CheckCircle2, CalendarDays } from "lucide-react";
@@ -1348,6 +1348,14 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
               }
 
               const a = item as AgendaItem;
+              const blockCat = data.categories.find((c) => c.id === a.kind);
+              const catColor = toCssColor(blockCat?.color);
+              const hasColor = !!catColor;
+              const catBlockStyle = hasColor ? { backgroundColor: alpha(catColor, "18"), borderColor: alpha(catColor, "40") } as const : undefined;
+              const catChipStyle = hasColor ? { backgroundColor: alpha(catColor, "22"), color: catColor } as const : undefined;
+              const catChipLabel = blockCat
+                ? scheduleText.categoryLabel(a.kind, blockCat.label, blockCat.labelCustom)
+                : t.common.kinds[a.kind];
               const sm = timeToMinutes(a.start);
               const em = timeToMinutes(a.end);
               const blockMinutes = Math.max(0, em - sm);
@@ -1375,7 +1383,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
               const preOffset = top - (topForProjected(a.start) + topBadgeLane);
               let effectiveTop = isDragging ? topForProjected(snapTime(sm + dragDeltaMin)) + topBadgeLane + preOffset : top;
               let bh = height;
-              const s = safeKindStyle(a.kind);
+              const s = safeKindStyle(a.kind, data.categories);
               const live = a.id === liveId;
 
               if (isDragging && dragState.current && dragState.current.sourceId === (a.sourceId ?? a.id)) {
@@ -1470,6 +1478,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                     overflow: "visible",
                     willChange: isDragging ? "transform, height" : undefined,
                     transition: isDragging ? (dragLimitHint ? "none" : "transform 0.08s ease-out, height 0.08s ease-out") : "box-shadow 0.15s",
+                    ...catBlockStyle,
                   }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
@@ -1483,7 +1492,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                     setInspectItem(a);
                   }}
                   >
-                    <div className={`absolute ${railShape} ${dotLeft} ${s.dot}`} />
+                    <div className={`absolute ${railShape} ${dotLeft} ${s.dot}`} style={catBlockStyle ? { backgroundColor: catColor } : undefined} />
                     {a.source === "commitment" && (
                       <div className={`absolute ${isMicro ? "top-0.5 bottom-0.5 w-[2px] rounded-none" : "top-1 bottom-1 w-[2px] rounded-full"} left-8 bg-amber-500/50 opacity-0 group-hover:opacity-100 transition-opacity`} />
                     )}
@@ -1556,11 +1565,11 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                       )}
 
                       {/* ── COMPACT TIER (30–45 min) ──────────────────────────── */}
-                      {isCompact && (
+                        {isCompact && (
                         <div className="h-full flex flex-col justify-center gap-0.5">
                           <div className="flex items-center gap-1.5">
-                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
-                              {t.common.kinds[a.kind]}
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`} style={catChipStyle}>
+                              {catChipLabel}
                             </span>
                             <span className={`min-w-0 flex-1 font-medium text-primary truncate ${titleSz}`}>{blockTitle}</span>
                             <span className="num text-[9px] text-muted-foreground/60 shrink-0 ml-auto">
@@ -1595,8 +1604,8 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                             {crossdayMeta && <span className={`ml-2 text-[9px] uppercase tracking-wider rounded px-1.5 py-0.5 ${s.chip}`}>{crossdayMeta}</span>}
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
-                              {t.common.kinds[a.kind]}
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`} style={catChipStyle}>
+                              {catChipLabel}
                             </span>
                             <span className={`shrink min-w-0 font-medium text-primary truncate ${titleSz} max-w-[8rem]`}>{blockTitle}</span>
                             {/* Notes inline to the right */}
@@ -1638,8 +1647,8 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
                             {a.source === "commitment" && <span className="text-[10px] uppercase tracking-wider text-amber-500/80">· {t.chronos.today.commitmentTag}</span>}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5">
-                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`}>
-                              {t.common.kinds[a.kind]}
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${s.chip} font-medium shrink-0`} style={catChipStyle}>
+                              {catChipLabel}
                             </span>
                             <span className={`min-w-0 flex-1 font-medium text-primary truncate ${titleSz}`}>{blockTitle}</span>
                             {showStickyBadge && (
@@ -1869,7 +1878,8 @@ function BlockDetailsDialog({
   const scheduleText = useScheduleText();
   const { data, trackBlockForGoal, updateCommitment, updateRoutine } = useSchedule();
   const noteLines = parseNotes(item.notes);
-  const kindVisual = safeKindStyle(item.kind);
+  const kindVisual = safeKindStyle(item.kind, data.categories);
+  const dialogCat = data.categories.find((c) => c.id === item.kind);
   const blockKey = item.source + "-" + (item.sourceId ?? item.id);
   const dialogGoals = data.goals.filter(
     (g) => g.categoryId === item.kind && g.autoTrackMode
@@ -1892,8 +1902,8 @@ function BlockDetailsDialog({
           </div>
           <div className="inline-flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.chronos.dialog.kind}</span>
-            <span className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wider ${kindVisual.chip} ${kindVisual.blockBorder}`}>
-              {t.common.kinds[item.kind]}
+            <span className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-wider ${kindVisual.chip} ${kindVisual.blockBorder}`} style={kindVisual.chipStyle}>
+              {scheduleText.categoryLabel(item.kind, dialogCat?.label, dialogCat?.labelCustom)}
             </span>
             {item.source === "commitment" && (
               <span className="rounded border border-amber-500/30 bg-amber-500/8 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-600/80 dark:text-amber-400/80">

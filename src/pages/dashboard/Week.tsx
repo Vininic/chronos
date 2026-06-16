@@ -225,7 +225,7 @@ export default function Week() {
                 {blocks.map((b) => (
                   <li key={b.id} className="group rounded-md border border-border/60 bg-surface-raised p-2.5 text-sm">
                     <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${safeKindStyle(b.kind as BlockKind).dot}`} />
+                    <span className={`h-2 w-2 rounded-full ${safeKindStyle(b.kind, data.categories).dot}`} style={safeKindStyle(b.kind, data.categories).dotStyle} />
                     <span className="text-primary truncate flex-1">{scheduleText.blockTitle(b.title, b.titleCustom)}</span>
                     <span className="text-[11px] text-muted-foreground num">{b.start} · {fmtDur(durationMin(b.start, b.end))}</span>
                     <button onClick={() => setEditItem(b)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary"><Pencil className="h-3.5 w-3.5" /></button>

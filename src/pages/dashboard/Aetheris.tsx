@@ -6,22 +6,27 @@ import { useSchedule } from "@/lib/schedule/store";
 import { runAetherisPipeline, type AetherisPipelineResult } from "@/lib/ai/core/pipeline";
 import type { Insight, Suggestion, RecoveryAnalysis } from "@/lib/ai/core/schemas";
 import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
-import { Sparkles, Brain, Target, Coffee, AlertTriangle, Check, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Sparkles, Brain, Target, Coffee, AlertTriangle, Check, ChevronDown, ChevronUp, Loader2, MessageSquare, Send, BarChart3 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
+import PlannerBuilder from "@/components/planner/PlannerBuilder";
+import LearningInsights from "@/components/planner/LearningInsights";
+import { useLearningProfile } from "@/lib/ai/learning/store";
 
-type TabView = "insights" | "suggestions" | "recovery" | "optimize";
+type TabView = "insights" | "suggestions" | "recovery" | "optimize" | "planner" | "learning";
 type LucideIcon = FunctionComponent<SVGProps<SVGSVGElement>>;
 
 export default function Aetheris() {
-  const { data, applySuggestion, deferSuggestion } = useSchedule();
+  const { data, replace, applySuggestion, deferSuggestion } = useSchedule();
+  const { profile } = useLearningProfile();
   const t = useT();
   const scheduleText = useScheduleText();
   const [tab, setTab] = useState<TabView>("insights");
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
   const [pipeline, setPipeline] = useState<AetherisPipelineResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [askInput, setAskInput] = useState("");
 
   const runPipeline = useCallback(async () => {
     setLoading(true);
@@ -38,6 +43,24 @@ export default function Aetheris() {
   useEffect(() => {
     runPipeline();
   }, [runPipeline]);
+
+  const { insights = [], summary = { status: "unknown" as const, headline: "", keyMetrics: {} }, explainability = { reasoning: [], affectedGoals: [], affectedBlocks: [], affectedMetrics: [], expectedImpact: "", confidence: 0 } } = pipeline?.response ?? {};
+  const suggestions = pipeline?.suggestions ?? [];
+  const optimization = pipeline?.optimization ?? { conflicts: [], idleGaps: [], focusFragmentation: 0, routineConsistency: 0, timeAllocation: [], compositionScore: 0, scheduledHours: [] };
+  const recoveryIntel = pipeline?.recoveryIntelligence ?? { recoveryScore: 0, sustainableScore: 0, recommendations: [] };
+
+  const recoveryCount = insights.filter((i) =>
+    ["overload", "burnout_risk", "sleep_debt", "context_switching", "consecutive_work"].includes(i.type),
+  ).length;
+
+  const tabs: { key: TabView; label: string; icon: LucideIcon; count: number }[] = [
+    { key: "insights", label: "Insights", icon: Brain, count: insights.length },
+    { key: "suggestions", label: "Suggestions", icon: Sparkles, count: suggestions.length },
+    { key: "recovery", label: "Recovery", icon: Coffee, count: recoveryCount },
+    { key: "optimize", label: "Optimize", icon: Target, count: optimization.conflicts.length + optimization.idleGaps.length },
+    { key: "planner", label: "Planner", icon: BarChart3, count: 0 },
+    { key: "learning", label: "Learning", icon: MessageSquare, count: 0 },
+  ];
 
   if (loading) {
     return (
@@ -61,47 +84,83 @@ export default function Aetheris() {
     );
   }
 
-  const { insights, summary, explainability } = pipeline.response;
-  const suggestions = pipeline.suggestions;
-  const optimization = pipeline.optimization;
-  const recoveryIntel = pipeline.recoveryIntelligence;
-
-  const recoveryCount = insights.filter((i) =>
-    ["overload", "burnout_risk", "sleep_debt", "context_switching", "consecutive_work"].includes(i.type),
-  ).length;
-
-  const tabs: { key: TabView; label: string; icon: LucideIcon; count: number }[] = [
-    { key: "insights", label: "Insights", icon: Brain, count: insights.length },
-    { key: "suggestions", label: "Suggestions", icon: Sparkles, count: suggestions.length },
-    { key: "recovery", label: "Recovery", icon: Coffee, count: recoveryCount },
-    { key: "optimize", label: "Optimize", icon: Target, count: optimization.conflicts.length + optimization.idleGaps.length },
-  ];
-
   return (
-    <>
-      <header className="mb-7">
+    <div className="max-w-6xl mx-auto">
+      {/* Header */}
+      <header className="mb-6">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.aetheris.eyebrow}</div>
-            <h1 className="font-display text-4xl text-primary mt-1.5">{t.chronos.aetheris.title}</h1>
-            <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{t.chronos.aetheris.lead}</p>
+            <h1 className="font-display text-3xl text-primary mt-1">{t.chronos.aetheris.title}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`text-[11px] uppercase tracking-[0.18em] px-2.5 py-1 rounded-full border ${
-              summary.status === "healthy" ? "text-emerald-600 border-emerald-300 bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:bg-emerald-950/30" :
-              summary.status === "critical" ? "text-red-600 border-red-300 bg-red-50 dark:text-red-400 dark:border-red-800 dark:bg-red-950/30" :
-              "text-amber-600 border-amber-300 bg-amber-50 dark:text-amber-400 dark:border-amber-800 dark:bg-amber-950/30"
-            }`}>
-              {summary.status}
-            </span>
-          </div>
+          <span className={`text-[11px] uppercase tracking-[0.18em] px-2.5 py-1 rounded-full border ${
+            summary.status === "healthy" ? "text-emerald-600 border-emerald-300 bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:bg-emerald-950/30" :
+            summary.status === "critical" ? "text-red-600 border-red-300 bg-red-50 dark:text-red-400 dark:border-red-800 dark:bg-red-950/30" :
+            "text-amber-600 border-amber-300 bg-amber-50 dark:text-amber-400 dark:border-amber-800 dark:bg-amber-950/30"
+          }`}>
+            {summary.status}
+          </span>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3 space-y-6">
-          <div className="chronos-card p-5">
-            <p className="text-sm text-primary font-medium">{summary.headline}</p>
+      {/* Ask Aetheris */}
+      <div className="chronos-card p-4 mb-6">
+        <div className="flex items-center gap-3">
+          <Brain className="h-5 w-5 text-secondary shrink-0" />
+          <input
+            type="text"
+            value={askInput}
+            onChange={(e) => setAskInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && askInput.trim()) {
+                toast({ title: "Aetheris chat coming in Phase 14" });
+                setAskInput("");
+              }
+            }}
+            placeholder="Ask Aetheris about your schedule..."
+            className="flex-1 bg-transparent text-sm text-primary placeholder:text-muted-foreground/50 focus:outline-none"
+          />
+          <button
+            onClick={() => {
+              if (askInput.trim()) {
+                toast({ title: "Aetheris chat coming in Phase 14" });
+                setAskInput("");
+              }
+            }}
+            disabled={!askInput.trim()}
+            className="h-8 w-8 rounded-md bg-primary grid place-items-center text-primary-foreground disabled:opacity-30"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-border mb-6 overflow-x-auto">
+        {tabs.map((tabDef) => (
+          <button
+            key={tabDef.key}
+            onClick={() => setTab(tabDef.key)}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium uppercase tracking-wider border-b-2 transition-colors shrink-0 ${
+              tab === tabDef.key
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-primary"
+            }`}
+          >
+            <tabDef.icon className="h-3.5 w-3.5" />
+            {tabDef.label}
+            {tabDef.count > 0 && (
+              <span className="ml-1 text-[10px] bg-secondary/20 text-secondary px-1.5 py-0.5 rounded-full">{tabDef.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary card for analysis tabs */}
+      {(tab === "insights" || tab === "suggestions" || tab === "recovery" || tab === "optimize") && (
+        <div className="chronos-card p-4 mb-6">
+          <p className="text-sm text-primary font-medium">{summary.headline}</p>
+          {Object.keys(summary.keyMetrics).length > 0 && (
             <div className="mt-3 flex flex-wrap gap-6 text-sm">
               {Object.entries(summary.keyMetrics).map(([k, v]) => (
                 <div key={k}>
@@ -110,42 +169,37 @@ export default function Aetheris() {
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </div>
+      )}
 
-          <div className="flex gap-1 border-b border-border">
-            {tabs.map((tabDef) => (
-              <button
-                key={tabDef.key}
-                onClick={() => setTab(tabDef.key)}
-                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium uppercase tracking-wider border-b-2 transition-colors ${
-                  tab === tabDef.key
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-primary"
-                }`}
-              >
-                <tabDef.icon className="h-3.5 w-3.5" />
-                {tabDef.label}
-                {tabDef.count > 0 && (
-                  <span className="ml-1 text-[10px] bg-secondary/20 text-secondary px-1.5 py-0.5 rounded-full">{tabDef.count}</span>
-                )}
-              </button>
-            ))}
-          </div>
-
+      {/* Tab panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-3 space-y-6">
           {tab === "insights" && <InsightsPanel insights={insights} expanded={expandedInsight} onToggle={setExpandedInsight} />}
           {tab === "suggestions" && <SuggestionsPanel suggestions={suggestions} onApply={applySuggestion} onDefer={deferSuggestion} t={t} />}
           {tab === "recovery" && <RecoveryPanel recoveryIntel={recoveryIntel} />}
           {tab === "optimize" && <OptimizePanel optimization={optimization} data={data} />}
+          {tab === "planner" && (
+            <PlannerBuilder onApply={(schedule) => { replace(schedule); toast({ title: "Plan applied!" }); }} />
+          )}
+          {tab === "learning" && <LearningInsights profile={profile} />}
 
-          <ExplainabilityCard explainability={explainability} />
+          {(tab === "insights" || tab === "suggestions" || tab === "recovery" || tab === "optimize") && (
+            <ExplainabilityCard explainability={explainability} />
+          )}
         </div>
 
         <div className="space-y-6">
-          <ContextCard data={data} scheduleText={scheduleText} t={t} pipeline={pipeline} />
-          <RuleCheckCard pipeline={pipeline} />
+          {(tab === "insights" || tab === "suggestions" || tab === "recovery" || tab === "optimize") && (
+            <>
+              <ContextCard data={data} scheduleText={scheduleText} t={t} pipeline={pipeline} />
+              <RuleCheckCard pipeline={pipeline} />
+            </>
+          )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

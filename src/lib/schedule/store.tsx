@@ -22,7 +22,17 @@ function load(locale: Locale = "en"): ScheduleData {
     const raw = localStorage.getItem(STORAGE_KEY)
       ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean)
       ?? null;
-    if (raw) return normalizeNamingModel(JSON.parse(raw) as ScheduleData, locale);
+    if (raw) {
+      const data = normalizeNamingModel(JSON.parse(raw) as ScheduleData, locale);
+      // Repair: if a routine block kind has no matching category, create one
+      for (const b of data.routine) {
+        if (b.kind !== "sleep" && !data.categories.some((c) => c.id === b.kind)) {
+          const label = b.kind.charAt(0).toUpperCase() + b.kind.slice(1);
+          data.categories.push({ id: b.kind, label, tone: "neutral", description: `${label} activities.` });
+        }
+      }
+      return data;
+    }
   } catch { /* ignore parse errors */ }
   return normalizeNamingModel(getSeedForLocale(locale), locale);
 }
@@ -92,11 +102,19 @@ function migrateWorkspaceBlockRuntime(b: unknown) {
 
 /* ─── Main normalization ─── */
 
+const FALLBACK_TONES = ["sky", "violet", "coral", "mint", "peach", "amber", "emerald", "indigo", "rose", "lime"];
+
+function pickDefaultTone(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i) | 0;
+  return FALLBACK_TONES[Math.abs(hash) % FALLBACK_TONES.length];
+}
+
 function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
   const categories = data.categories.map((c) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
-    return migrateWorkspaceCategory({ id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone, color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, workspace: c.workspace });
+    return migrateWorkspaceCategory({ id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone ?? pickDefaultTone(c.id), color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, workspace: c.workspace });
   });
 
   const routine = data.routine
@@ -1559,7 +1577,16 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   const resetToSeed = useCallback(() => setData(withDerived(normalizeNamingModel(getSeedForLocale(locale) as ScheduleData, locale), true, locale)), [locale]);
-  const replace = useCallback((next: ScheduleData) => setData(withDerived(normalizeNamingModel(next, locale), true, locale)), [locale]);
+  const replace = useCallback((next: ScheduleData) => {
+    // Repair: if a routine block kind has no matching category, create one
+    for (const b of next.routine) {
+      if (b.kind !== "sleep" && !next.categories.some((c) => c.id === b.kind)) {
+        const label = b.kind.charAt(0).toUpperCase() + b.kind.slice(1);
+        next.categories.push({ id: b.kind, label, tone: "neutral", description: `${label} activities.` });
+      }
+    }
+    setData(withDerived(normalizeNamingModel(next, locale), true, locale));
+  }, [locale]);
 
   const value = useMemo(
     () => ({

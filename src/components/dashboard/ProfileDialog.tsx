@@ -13,7 +13,7 @@ import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { useT, useFmtDur, useI18n } from "@/lib/i18n/I18nProvider";
 import { toast } from "@/hooks/use-toast";
 import { exportToJSON, exportToXLSX, exportToICS } from "@/lib/schedule/export";
-import { kindStyle } from "./widgets";
+import { kindStyle, safeKindStyle, toCssColor, TAILWIND_TO_HEX } from "./widgets";
 import type { BlockKind } from "@/lib/schedule/types";
 import { durationMin } from "@/lib/schedule/types";
 import type { ScheduleData } from "@/lib/schedule/types";
@@ -134,8 +134,8 @@ function ProfileSlide({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {p.topBlocks.map((b) => {
-              const s = kindStyle[b.kind as BlockKind] ?? kindStyle.deep;
-              const hex = DOT_HEX_BY_KIND[s.dot] ?? "#f59e0b";
+              const s = safeKindStyle(b.kind, data.categories);
+              const hex = s.customColor ?? TAILWIND_TO_HEX[s.dot] ?? "#f59e0b";
               return (
                 <div
                   key={b.id}
@@ -167,8 +167,8 @@ function ProfileSlide({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {p.topCategories.map(([kind, count]) => {
-              const s = kindStyle[kind] ?? kindStyle.deep;
-              const hex = DOT_HEX_BY_KIND[s.dot] ?? "#f59e0b";
+              const s = safeKindStyle(kind, data.categories);
+              const hex = s.customColor ?? TAILWIND_TO_HEX[s.dot] ?? "#f59e0b";
               return (
                 <div
                   key={kind}

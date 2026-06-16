@@ -130,20 +130,93 @@ Cross-day systems should only activate when timeline boundaries explicitly allow
 
 The AI system is one of the main differentiators of Chronos.
 
-The AI should function as an adaptive planning assistant capable of:
-- suggesting improvements
-- balancing schedules
-- detecting overload
-- preserving recovery time
-- reorganizing blocks
-- generating commitments
-- adapting routines dynamically
+All analysis runs against a real LLM (Gemini 2.0 Flash) via the `gemini.ts` adapter. 11 heuristic simulation files (1,658 LOC) were deleted and replaced. The implementation spans 15 phases:
+
+---
+
+## Phases 1–3 — Foundations (Done)
+
+- **Phase 1** — Planner domain model: `AiBlock`, `AiGoal`, `AiCommitment`, `AiCategory`, `AiProgram`, `AiNote`, `AiSleepBlock` types
+- **Phase 2** — AI context engine: `buildContext()` serializes full planner state into `ScheduleContext` (categories, goals, blocks, commitments, notes, sleep, programs, metrics, historical completions, daily/weekly stats). Includes validation, compression, and debugging tools.
+- **Phase 3** — Planning rules engine: `validateScheduleChange()` enforces 7 deterministic rules (immutable fixed commitments, sleep protection, goal-recovery balance, category consistency, minimize unnecessary changes). Recovery/goal/weekly rule heuristics deleted — now handled by Gemini.
+
+---
+
+## Phases 4–6 — Core Architecture & Aetheris (Done)
+
+- **Phase 4** — Aetheris core: system prompt, response schema (`AetherisResponse`), validation pipeline, self-correction, confidence scoring, explainability. Orchestrated via `runAetherisPipeline()`.
+- **Phase 5** — Tool calling layer: registry with read/write/admin permissions. 20+ tools (blocks, commitments, goals, categories, programs, sessions, notes). Safety layer prevents overlap, sleep removal, protected deletions, goal orphaning.
+- **Phase 6** — Aetheris assistant UI: dedicated page at `/dashboard/aetheris` with Gemini-driven analysis (insights, suggestions, recovery, optimize, planner, learning tabs). Explainability cards per insight/action.
+
+---
+
+## Phases 7–9 — Intelligent Planning & Autonomy (Done)
+
+- **Phase 7** — All heuristic engines replaced by Gemini. Suggestions, goal-aware planning, circadian intelligence, recovery intelligence all from LLM.
+- **Phase 8** — Algorithmic metrics (conflict detection, idle-gap analysis, time allocation, focus fragmentation, routine consistency) + Gemini-generated optimization recommendations.
+- **Phase 9** — AI autonomy system: 3-level slider (Conservative/Balanced/Aggressive) filters Gemini output. Permission management, approval workflows, tool access controls.
+
+---
+
+## Phases 10–12 — UX & Learning (Done)
+
+- **Phase 10** — First-time user experience: onboarding wizard (7-step carousel), starter setup (scratch/template/explore).
+- **Phase 11** — Planner generation: template-based UI (`PlannerBuilder`, `PlannerMerge`, `PlannerForm`). Gemini adapter exists (`gemini-planner.ts` generates `ScheduleData` from `PlannerPreferences` + `LearningProfile`) but is not yet wired into the "Guided plan" path (still uses heuristic `generator.ts`).
+- **Phase 12** — Long-term learning: tracks completions, scheduling preferences, productivity windows, recovery needs, goal patterns in localStorage (`chronos.learning.v1`). Stats injected into Gemini prompts via `summarizeLearningProfile()` for personalization.
+
+---
+
+## Phase 13 — AI Polish & UX Hardening (Done)
+
+Template application bugs, planner builder UX fixes, category color display fixes, Aetheris page consolidation (3 pages → single hub), "Ask Aetheris" stub input.
+
+---
+
+## Phase 14 — Aetheris Chat (Planned)
+
+Replace the static Aetheris analysis page with a full conversational AI assistant — the flagship portfolio feature.
+
+- Chat thread — user types natural language, Gemini responds with streaming tokens via `generateContentStream()`
+- Function-calling with safety guardrails — tool registry wired to Gemini function declarations, overlap/sleep/constraint validation before execution
+- Approval workflow — destructive actions require user confirmation via inline chat button
+- Multi-turn planning — users iterate, Gemini remembers conversation context
+- Undo support — every tool call stores a reverse action
+- Hybrid chat + dashboard page — chat thread primary, context card + stats sidebar
+- Persistent chat history in localStorage (`chronos.chat.v1`)
+
+---
+
+## Phase 15 — Proactive AI & Self-Improvement (Planned)
+
+Move from reactive (user asks → Gemini answers) to proactive (Gemini observes → suggests → acts).
+
+- Background agent — idle analysis pushes suggestions without interrupting
+- Daily briefing — auto-generated summary on first visit each day
+- Pattern detection — multi-week trend analysis
+- Alert system — toast notifications for critical issues
+- Wire Gemini planner into PlannerBuilder — replace heuristic `generator.ts` with `generateGeminiProposals()`
+- Cross-session memory — Gemini remembers preferences across conversations
+- Feedback integration — rejected suggestions influence future recommendations
+---
+
+## Phase 16 — Portfolio Polish & AI Maturity (Planned)
+
+Make the project portfolio-ready with features that demonstrate architectural depth, product thinking, and reviewer delight.
+
+- **AI Settings** — API key management (bring-your-own-key), LLM provider selection (Gemini/OpenAI/Anthropic/Ollama), feature toggles, privacy controls
+- **Multi-LLM Adapter** — Abstract `LLMProvider` interface with pluggable adapters; the system works with Gemini, GPT, Claude, or local models without code changes
+- **Prompt Architecture** — Versioned, auditable system prompts with A/B testing infrastructure; demonstrate deliberate prompt engineering
+- **Quality Metrics Dashboard** — Suggestion acceptance rate, helpfulness tracking, prompt performance statistics
+- **Synthetic Demo Data** — Generate realistic schedule + learning data on first visit so reviewers can immediately explore every AI feature
+- **AI Onboarding Tour** — Guided tour on first chat visit ("Try asking me..."), example prompts gallery, capability cards
+- **Safety & Transparency** — Confidence indicators on suggestions ("Sure" / "Not sure"), hallucination guardrails, AI disclaimer footer, undo-everything safety net
+- **Schedule Notifications with AI** — Notifications context-aware via AI: dynamic block reminders, smart rescheduling suggestions on conflicts, recovery nudges
 
 ---
 
 ## AI Autonomy Levels
 
-Planned autonomy system:
+The user controls how much freedom the AI has:
 
 ### Conservative
 - suggestions only
@@ -156,8 +229,6 @@ Planned autonomy system:
 ### Aggressive
 - fully restructures schedules
 - aggressively optimizes routines
-
-The user should control how much freedom the AI has.
 
 ---
 
@@ -935,8 +1006,10 @@ The architecture is complete when:
 - [ ] Improve "Focus" concept; Highlight "Focus" blocks in category creator;
 - [ ] Better time search UI on create/edit blocks; Fix weird spacing on boxes when searching; Add smarter searching (ex: typing "4" will result in 4AM and 4PM as topmost options)
 - [ ] Improve top-left card; Fix spacing/Out of bounds issue
-- [ ] Created categories have innacurate color display across all instances
+- [x] Created categories have innacurate color display across all instances
 - [ ] No way to rearrange created categories
+- [ ] Top-Left goals meter always on 0% if no goals.
+- [ ] Slight UI oversight in category creator color pickers. Small lines on the bottom.
 - [ ] Remove any trace of system-baked instances (Categories, Goals, Extensions, Blocks, anything.) System should be fully modular.
 - [ ] "New block" button tries creating a 1h block in now bar instead of 09:00 default
 - [ ] Move system to clean-architecture (Is it already?)
@@ -1477,6 +1550,154 @@ Heuristic `personalization.ts` deleted. Learning profile stats injected into Gem
 * [ ] Long-term behavioral modeling
 
 The learning system is at `/dashboard/learning`. It tracks completions, daily patterns, and goal completions in localStorage (`chronos.learning.v1`), computes category preferences, productivity windows, and neglected goals. Personalization now handled by Gemini (learning profile stats used as prompt enrichment via `compressContext()`). Core in `src/lib/ai/learning/`.
+
+---
+
+# Phase 13 — AI Polish & UX Hardening — [DONE]
+
+## Template Application Bugs — [DONE]
+
+* [x] Fix: applying a template schedule leaves Today empty — `handleApply()` in `PlannerBuilder.tsx` had inverted category reconciliation logic that dropped ALL categories from the generated schedule. Rewrote it to preserve existing category objects for matching labels.
+* [x] Fix: template application doesn't create categories alongside routine blocks — same root cause as above (categories were being wiped by broken reconciliation).
+* [x] Fix: template gallery has only 5 archetypes — expanded to 10: added Weekend Maker, Freelancer Flow, Early Bird, Night Owl, Shift Worker.
+
+## Planner Builder UX — [DONE]
+
+* [x] Fix: comma-separated custom category input → created `CategoryInput.tsx` component with tag chips (add via Enter/comma, remove via X button, Backspace to delete last, base category quick-add buttons).
+* [x] Fix: planner always starts at step 0 even when a schedule exists — `PlannerPage` now detects `data.routine.length > 0 && data.categories.length > 0` and shows a current-plan dashboard with View Schedule, Create New, and Remove Plan options.
+* [x] Fix: "AI-Generated plan" label is misleading — relabeled to "Guided plan" (PT: "Plano guiado") with description "Fill in preferences and get suggested plans."
+
+## Today Category Color Display — [DONE]
+
+* [x] Fix: custom categories from templates (admin, study, creative, class, etc.) rendered with muted/gray fallback instead of their assigned tone colors.
+* [x] Fix: built-in kinds (deep, meeting, ritual, recovery, shallow, sleep) ignored custom `color` field because `safeKindStyle` returned `kindStyle[kind]` immediately without checking for user-set colors.
+* [x] Fix: categories stored without a `tone` field (legacy data) fell through to `FALLBACK_STYLE` (gray). Added `pickDefaultTone()` migration in `normalizeNamingModel` + safety net in `safeKindStyle`.
+
+---
+
+# Phase 14 — Aetheris Chat: Conversational AI Sidekick
+
+Replace the static Aetheris analysis page with a full conversational AI assistant. This is the **flagship portfolio feature** — a real LLM-powered schedule sidekick that users can talk to.
+
+## Chat Interface
+
+* [ ] **Tab Overview** — Rethink the current page layout (Suggestions, Planner, Learning).
+* [ ] **Chat thread** at `/dashboard/aetheris` — user types natural language, Gemini responds. Messages are grouped per session with scrollable history.
+* [ ] **Streaming responses** — Gemini returns tokens progressively via `generateContentStream()`. Users see the AI "thinking" in real time.
+* [ ] **Context-aware** — every message includes the user's current schedule, learning profile, and last 5 conversation turns.
+* [ ] **Markdown + actions in chat** — Gemini responses render schedule blocks, suggestions, and diffs inline. Action buttons ("Apply", "Preview", "Dismiss") embedded in responses.
+* [ ] **Quick-action chips** — pre-built prompts like "Optimize my Thursday", "What's my recovery score?", "Make tomorrow lighter" as clickable chips above the input.
+
+## Gemini Agentic Actions
+
+* [ ] **Function-calling** — wire Gemini to execute real schedule changes via structured tool calls:
+  - `createBlock(day, start, end, kind, title)`
+  - `moveBlock(id, newStart, newEnd)`
+  - `deleteBlock(id)`
+  - `mergeCommitment(id, ...)` 
+  - `applySuggestion(id)`
+  - `setFocusCategories(ids)`
+* [ ] **Tool registry** — all available tools defined in `src/lib/ai/tools/registry.ts` with JSON schema for Gemini function declarations.
+* [ ] **Safety guardrails** — overlap detection, sleep boundary enforcement, constraint validation before any write executes. If a tool call would violate rules, Gemini gets an error response and can self-correct.
+* [ ] **Approval workflow** — destructive actions (delete, merge, bulk reorder) require user confirmation via inline button in chat.
+* [ ] **Multi-turn planning** — user iterates: "Move my deep work to 9 AM" → "Actually make it 90 minutes" → "Now show me the week" → Gemini remembers the full conversation context.
+* [ ] **Undo** — every tool execution stores a reverse action. Chat includes an "Undo" button for each applied change.
+
+## Aetheris Page Redesign
+
+* [ ] The current 6-tab layout becomes a **hybrid chat + dashboard**:
+  - Left: chat thread (primary interaction surface)
+  - Right sidebar: live schedule context card, quick stats, suggestions feed
+  - Tabs become secondary panels accessible via hamburger or collapsible sidebar
+* [ ] "Ask Aetheris" input is always visible at the bottom, pinned like a messaging app
+* [ ] When no chat history exists, show a welcome screen with example prompts and feature highlights
+
+## Implementation Details
+
+* [ ] Chat state persisted in localStorage (`chronos.chat.v1`), survives page reloads
+* [ ] Messages model: `{ id, role: "user" | "assistant", content: string, actions?: ToolCall[], timestamp }`
+* [ ] Tool calls use `gemini-2.0-flash` function-calling API (`toolConfig` in `@google/generative-ai`)
+* [ ] System prompt extended with available tool schemas and usage instructions
+
+---
+
+# Phase 15 — Proactive AI & Self-Improvement
+
+Move from reactive (user asks → Gemini answers) to proactive (Gemini observes → suggests → acts).
+
+## Background Agent
+
+* [ ] **Idle analysis** — when user is inactive for 30+ seconds, Gemini silently analyzes the schedule and pushes proactive suggestions to the chat sidebar without interrupting the user.
+* [ ] **Daily briefing** — on first visit each day, Gemini auto-generates a summary: "You have 8 blocks today. Your recovery score dropped 10% from last week. Want to adjust?"
+* [ ] **Pattern detection** — Gemini analyzes multi-week data to identify recurring issues: "You've skipped Wednesday recovery 4 weeks in a row. Should I shorten it?"
+* [ ] **Alert system** — push notifications (via toast) when Gemini detects critical issues: burnout risk, sleep debt, overloaded days.
+
+## AI-Generated Schedule Planning
+
+* [/] **Gemini-powered schedule generation** — `gemini-planner.ts` adapter exists (calls `gemini-2.0-flash` with PlannerPreferences + LearningProfile, returns ScheduleData). Not yet wired into the PlannerBuilder UI.
+* [ ] **Wire into PlannerBuilder** — "Guided plan" path in `PlannerBuilder.tsx` currently calls heuristic `generator.ts`. Replace with `generateGeminiProposals()` call. The PlannerForm UI should feel like interacting with AI (not a boring form).
+* [ ] **Iterative refinement** — user tweaks the AI-generated plan via chat: "Make Tuesday lighter", "Add more recovery" → Gemini regenerates specific days.
+* [ ] **Merge & compare** — user generates 3 plans via chat, compares them in a diff view, merges preferred days.
+
+## Learning & Memory
+
+* [ ] **Cross-session memory** — Gemini remembers user preferences across conversations (e.g., "you prefer deep work in the morning") stored in the learning profile.
+* [ ] **Feedback integration** — when user rejects a suggestion, Gemini notes the reason and avoids similar suggestions.
+* [ ] **Prompt self-evaluation** — Gemini scores its own responses (helpfulness, accuracy) and the system tracks performance to refine future prompts.
+---
+
+# Phase 16 — Portfolio Polish & AI Maturity
+
+Make the project portfolio-ready with features that demonstrate architectural depth, product thinking, and reviewer delight.
+
+## AI Settings & Provider Abstraction
+
+* [ ] **AI Settings page** at `/dashboard/settings/ai` — API key management (bring-your-own-key), provider selection, feature toggles (disable proactive mode, disable function-calling, opt out of learning), privacy controls (clear chat history, reset learning profile).
+* [ ] **Multi-LLM Adapter** — `LLMProvider` interface in `src/lib/ai/core/provider.ts` with pluggable adapters for Gemini, OpenAI (`gpt-4o`), Anthropic (`claude-sonnet-4`), and local models via Ollama. One import swap = different model.
+* [ ] **Provider registry** — `src/lib/ai/core/registry.ts` handles model discovery, capability advertisement (which models support function-calling, streaming), and fallback chains.
+* [ ] **Config persistence** — provider choice + settings stored in localStorage (`chronos.ai-settings.v1`). Chat history tagged with provider used per session.
+
+## Prompt Architecture & Observability
+
+* [ ] **Versioned system prompts** — prompts stored in `src/lib/ai/prompts/` as versioned JSON files with metadata (version, date, purpose, author). Git-tracked for full history.
+* [ ] **Prompt A/B testing** — system randomly serves variant A or B, logs which was used, tracks outcome metrics (suggestion acceptance, user satisfaction). Dashboard shows winner.
+* [ ] **Prompt template engine** — `PromptBuilder` class composes system prompt from modular blocks (context, tools, instructions, personality). Each block independently versioned.
+* [ ] **Request/response logging** — every LLM call logged with full prompt, raw response, latency, token count. Accessible via dev panel or admin page.
+
+## Quality Metrics Dashboard
+
+* [ ] **AI performance page** at `/dashboard/aetheris/metrics` — charts for suggestion acceptance rate, top-performing prompts, response latency, token usage over time.
+* [ ] **Feedback tracking** — every suggestion rendered with thumbs-up/down + optional text feedback. Stored in `chronos.ai-metrics.v1`.
+* [ ] **Automated regression testing** — a suite of "canonical" prompts with expected response patterns. Run manually or in CI to catch regressions when prompts change.
+
+## Synthetic Data Generator
+
+* [ ] **Demo mode detection** — on first visit (no `chronos.schedule.v3` data), offer "Load demo data" button on the dashboard. In dev builds, auto-activate.
+* [ ] **Generator** — `src/lib/demo/generator.ts` creates a full ScheduleData with 7 days, varied categories, realistic routine (work blocks, deep work, meetings, recovery, sleep), and a pre-populated learning profile with completion history, productivity windows, and goal data.
+* [ ] **Tour mode** — after loading demo data, launch a guided 3-step tour: "Here's your schedule" → "Ask Aetheris about your day" → "Let AI optimize your week". Each step highlights the relevant UI.
+* [ ] **Clean reset** — "Exit demo" button clears all demo data and returns to blank state. Clearly indicated in the UI that demo mode is active.
+
+## AI Onboarding & First Experience
+
+* [ ] **Welcome screen** — on first chat visit, show "Welcome to Aetheris" with animated capability cards (Optimize, Analyze, Reschedule, Ask Anything) that collapse into example prompts on click.
+* [ ] **Example prompt gallery** — pre-built prompts as clickable chips: "What does my ideal Thursday look like?", "Help me recover from a heavy Monday", "Create a study schedule for exams".
+* [ ] **Progressive disclosure** — new users see simpler responses first. As they interact more, Gemini's responses become more detailed and technical.
+* [ ] **Tooltip hints** — on first function-calling action, show an overlay: "Aetheris can make changes to your schedule. You'll see a preview before anything is saved."
+
+## Safety, Transparency & Trust
+
+* [ ] **Confidence indicators** — suggestion cards tagged with confidence level: "Sure" (high confidence), "Fair" (medium), "Unsure" (low). Low-confidence suggestions require explicit confirmation.
+* [ ] **Hallucination guardrails** — prompt-level instructions that penalize fabricating schedule data. Responses must cite block IDs or time ranges that actually exist. Post-processing step validates all time references.
+* [ ] **Transparency footer** — chat footer showing current AI model + provider. "AI suggestions can be incorrect. Always review before applying." link to settings.
+* [ ] **Explainable AI** — every suggestion includes a 1-line rationale: "Because your recovery score dropped 15% this week" or "Based on your pattern of productive morning deep work."
+* [ ] **Global undo safety net** — `/dashboard/aetheris/history` shows every tool action ever executed with a timestamped audit log and a "Revert" button.
+
+## AI-Powered Notifications (augmenting the Notification section)
+
+* [ ] **Context-aware block reminders** — notification text generated by Gemini: "Your Deep Work: Report Analysis starts in 15 min. Your focus is highest right now." instead of static "Block starting soon".
+* [ ] **Smart conflict notifications** — when a calendar conflict is detected, Gemini suggests a resolution: "Design Review overlaps with Lunch. Move Lunch to 14:00 to keep free time?"
+* [ ] **Recovery nudges** — if Gemini detects declining recovery scores, push a notification: "You've had 4 intense days. Tomorrow is light — consider adding a recovery block."
+* [ ] **End-of-day digest** — notification summarizing what you accomplished, what shifted, and a preview of tomorrow (all AI-generated).
 
 ---
 
