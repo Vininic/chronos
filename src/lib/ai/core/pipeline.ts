@@ -11,8 +11,12 @@ import { buildExplainability } from "./explainability";
 import { buildSystemPrompt } from "./systemPrompt";
 import { optimizeSchedule } from "../optimization/optimizationEngine";
 import type { OptimizationResult } from "../optimization/optimizationEngine";
+import { detectPatterns } from "../pattern/detect";
 import { callGemini } from "./gemini";
 import { compressedTokenEstimate, compressContext } from "../context/serializers";
+import type { LLMProvider } from "./provider";
+import { createProviderFromSettings, resolveFallbackProvider } from "./registry";
+import { loadSettingsSync, getApiKeyForProvider } from "../settings/store";
 
 export interface AetherisPipelineInput {
   data: ScheduleData;
@@ -24,6 +28,7 @@ export interface AetherisPipelineInput {
     addedMinutes?: number;
     newBlockCount?: number;
   };
+  provider?: LLMProvider;
 }
 
 export interface AetherisPipelineResult {
@@ -63,6 +68,23 @@ function filterByAutonomy(
   }
 }
 
+function resolveProvider(): LLMProvider | null {
+  const settings = loadSettingsSync();
+  const apiKey = settings.apiKeys[settings.providerId] ?? getApiKeyForProvider(settings.providerId);
+
+  if (apiKey) {
+    return createProviderFromSettings({
+      providerId: settings.providerId,
+      apiKey,
+      model: settings.models[settings.providerId],
+      baseUrl: settings.baseUrls[settings.providerId],
+    });
+  }
+
+  const fallback = resolveFallbackProvider(settings.providerId, settings.apiKeys);
+  return fallback?.provider ?? null;
+}
+
 export async function runAetherisPipeline(input: AetherisPipelineInput): Promise<AetherisPipelineResult> {
   const autonomy = input.autonomy ?? "balanced";
   const ctx = buildContext(input.data, autonomy);
@@ -84,7 +106,8 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
     }));
   }
 
-  const aiResult = await callGemini(ctx, autonomy);
+  const provider = input.provider ?? resolveProvider();
+  const aiResult = await callGemini(ctx, autonomy, provider ?? undefined);
   const { response: geminiResponse, suggestions: rawSuggestions, recoveryAnalysis } = aiResult;
 
   const { actions: filteredActions, suggestions: filteredSuggestions } = filterByAutonomy(
@@ -94,6 +117,51 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
   );
 
   const allInsights = [...schedulerInsights, ...geminiResponse.insights];
+
+  // Pattern detection from learning profile
+  const patterns = detectPatterns();
+  for (const p of patterns) {
+    allInsights.push({
+      type: "pattern",
+      severity: p.severity === "high" ? "critical" : p.severity === "medium" ? "warning" : "info",
+      title: p.title,
+      detail: p.detail,
+      suggestion: p.detail,
+      confidence: 0.7,
+    });
+  }
+
+  // Recovery nudges: low recovery score → critical alert
+  if (aiResult.recoveryAnalysis.recoveryScore < 30) {
+    allInsights.push({
+      type: "recovery",
+      severity: "critical",
+      title: "Recovery score critically low",
+      detail: `Your recovery score is ${aiResult.recoveryAnalysis.recoveryScore}. Consider adding rest blocks or reducing intensity.`,
+      suggestion: aiResult.recoveryAnalysis.recommendations[0] ?? "Take a lighter day to recover.",
+      confidence: 0.85,
+    });
+  } else if (aiResult.recoveryAnalysis.recoveryScore < 50) {
+    allInsights.push({
+      type: "recovery",
+      severity: "warning",
+      title: "Recovery could be better",
+      detail: `Your recovery score is ${aiResult.recoveryAnalysis.recoveryScore}. A recovery block today could help.`,
+      suggestion: aiResult.recoveryAnalysis.recommendations[0] ?? "Schedule a recovery block.",
+      confidence: 0.8,
+    });
+  }
+
+  if (aiResult.recoveryAnalysis.burnoutDetected) {
+    allInsights.push({
+      type: "recovery",
+      severity: "critical",
+      title: "Burnout risk detected",
+      detail: "The schedule shows signs of burnout risk. Consider reducing block density and adding recovery time.",
+      suggestion: "Reduce total block count by 20% for the next 2 days.",
+      confidence: 0.9,
+    });
+  }
 
   const confidence = scoreConfidence({
     contextFreshnessMs: Date.now() - new Date(ctx.generatedAt).getTime(),

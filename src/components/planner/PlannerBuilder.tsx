@@ -5,10 +5,11 @@ import type { ScheduleTemplate } from "@/lib/schedule/templates";
 import type { PlannerProposal, PlannerPreferences, LearningProfile } from "@/lib/ai/planner/types";
 import type { ScheduleData } from "@/lib/schedule/types";
 import { generateProposals } from "@/lib/ai/planner/generator";
+import { generateGeminiProposals } from "@/lib/ai/planner/gemini-planner";
 import PlannerForm from "./PlannerForm";
 import CategoryInput from "./CategoryInput";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowLeft, Check, Sparkles, FileText, Wand2 } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, Sparkles, FileText, Wand2, Merge } from "lucide-react";
 
 interface PlannerBuilderProps {
   onApply: (schedule: ScheduleData) => void;
@@ -33,6 +34,9 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
   const [editedCategories, setEditedCategories] = useState("");
   const [showProposalPicker, setShowProposalPicker] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [daySelections, setDaySelections] = useState<Record<number, string>>({});
+  const [merging, setMerging] = useState(false);
 
   const b = t.chronos.plannerPage.builder;
 
@@ -64,11 +68,14 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
 
   function handleFormSubmit(prefs: PlannerPreferences) {
     setAiPrefs(prefs);
-    const generated = generateProposals(prefs, learningProfile);
-    setProposals(generated);
-    if (generated.length > 0) {
-      setShowProposalPicker(true);
-    }
+    setGenerating(true);
+    generateGeminiProposals(prefs, learningProfile).then((generated) => {
+      setProposals(generated);
+      setGenerating(false);
+      if (generated.length > 0) {
+        setShowProposalPicker(true);
+      }
+    });
   }
 
   function handleSelectProposal(proposal: PlannerProposal) {
@@ -97,15 +104,20 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
       const updatedPrefs = { ...aiPrefs, weeklyCategories: parsedCats };
-      const newProposals = generateProposals(updatedPrefs, learningProfile);
-      if (newProposals.length > 0) {
-        setProposals(newProposals);
-        setSelectedProposal(newProposals[0]);
-        newProposals[0].generate().then((schedule) => {
-          setGeneratedSchedule(schedule);
-          setEditedCategories(schedule.categories.map((c) => c.label).join(", "));
-        });
-      }
+      setGenerating(true);
+      generateGeminiProposals(updatedPrefs, learningProfile).then((newProposals) => {
+        if (newProposals.length > 0) {
+          setProposals(newProposals);
+          setSelectedProposal(newProposals[0]);
+          newProposals[0].generate().then((schedule) => {
+            setGeneratedSchedule(schedule);
+            setEditedCategories(schedule.categories.map((c) => c.label).join(", "));
+            setGenerating(false);
+          });
+        } else {
+          setGenerating(false);
+        }
+      });
     }
   }
 
@@ -148,6 +160,65 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
         }
       }
       onApply({ ...generatedSchedule, categories });
+    }
+  }
+
+  async function handleMerge() {
+    const selectedIds = new Set(Object.values(daySelections));
+    if (selectedIds.size === 0) return;
+
+    setMerging(true);
+    try {
+      const schedules = await Promise.all(
+        proposals
+          .filter((p) => selectedIds.has(p.id))
+          .map((p) => p.generate()),
+      );
+      const valid = schedules.filter(Boolean) as ScheduleData[];
+      if (valid.length === 0) return;
+
+      // Build a map: proposal id → schedule
+      const scheduleMap = new Map<string, ScheduleData>();
+      for (let i = 0; i < proposals.length; i++) {
+        if (selectedIds.has(proposals[i].id) && valid[i]) {
+          scheduleMap.set(proposals[i].id, valid[i]);
+        }
+      }
+
+      // Merge: for each day, take blocks from the selected proposal's schedule
+      const base = valid[0];
+      const merged: ScheduleData = {
+        ...base,
+        routine: base.routine.filter((b) => !selectedIds.has(daySelections[b.day] ?? "")),
+        commitments: base.commitments.filter((c) => !selectedIds.has(daySelections[c.day] ?? "")),
+      };
+
+      for (const [proposalId, schedule] of scheduleMap) {
+        const daysForThis = Object.entries(daySelections)
+          .filter(([, v]) => v === proposalId)
+          .map(([k]) => parseInt(k, 10));
+        const daySet = new Set(daysForThis);
+        merged.routine.push(...schedule.routine.filter((b) => daySet.has(b.day)));
+        merged.commitments.push(...schedule.commitments.filter((c) => daySet.has(c.day)));
+      }
+
+      // Merge categories from all sources
+      const catMap = new Map<string, typeof base.categories[0]>();
+      for (const s of valid) {
+        for (const c of s.categories) {
+          if (!catMap.has(c.id)) catMap.set(c.id, c);
+        }
+      }
+      merged.categories = [...catMap.values()];
+
+      setGeneratedSchedule(merged);
+      const labels = merged.categories.map((c) => c.label).join(", ");
+      setEditedCategories(labels);
+      setMerging(false);
+      setMergeMode(false);
+      setStep(3);
+    } catch {
+      setMerging(false);
     }
   }
 
@@ -312,8 +383,18 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
             {t.chronos.plannerPage.proposals.title}
           </h2>
           <p className="text-sm text-muted-foreground text-center mb-6">
-            {t.chronos.plannerPage.proposals.subtitle}
+            {generating ? "Generating your personalized schedule..." : t.chronos.plannerPage.proposals.subtitle}
           </p>
+
+          {generating ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <Wand2 className="h-8 w-8 text-secondary animate-pulse" />
+                <p className="text-sm text-muted-foreground">AI is designing your schedule...</p>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {proposals.map((proposal) => (
               <div
@@ -380,12 +461,73 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
               </div>
             ))}
           </div>
-          <div className="flex justify-center mt-6">
+          <div className="flex justify-center gap-3 mt-6">
+            <Button variant="outline" onClick={() => { setMergeMode(true); setDaySelections({}); }} disabled={generating || proposals.length < 2}>
+              <Merge className="h-4 w-4 mr-1.5" />
+              Compare & Merge
+            </Button>
             <Button variant="outline" onClick={goBack} disabled={generating}>
               <ArrowLeft className="h-4 w-4 mr-1.5" />
               {b.back}
             </Button>
           </div>
+          </>
+          )}
+        </div>
+      )}
+
+      {/* MERGE & COMPARE */}
+      {step === 2 && startPoint === "ai" && mergeMode && proposals.length >= 2 && (
+        <div>
+          <h2 className="text-lg font-display text-primary mb-2 text-center">Compare & Merge</h2>
+          <p className="text-sm text-muted-foreground text-center mb-6">
+            Choose which plan to use for each day of the week.
+          </p>
+
+          {generating || merging ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <Wand2 className="h-8 w-8 text-secondary animate-pulse" />
+                <p className="text-sm text-muted-foreground">Generating merged schedule...</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {[0, 1, 2, 3, 4, 5, 6].map((day) => {
+                const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                return (
+                  <div key={day} className="flex items-center gap-4 p-3 rounded-lg border border-border">
+                    <span className="w-12 text-sm font-medium text-primary">{dayNames[day]}</span>
+                    <div className="flex gap-3 flex-wrap">
+                      {proposals.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => setDaySelections((prev) => ({ ...prev, [day]: p.id }))}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                            daySelections[day] === p.id
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border text-muted-foreground hover:border-primary"
+                          }`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex justify-center gap-3 pt-4">
+                <Button onClick={handleMerge} disabled={Object.keys(daySelections).length < 7 || merging}>
+                  <Merge className="h-4 w-4 mr-1.5" />
+                  Merge Selected
+                </Button>
+                <Button variant="outline" onClick={() => setMergeMode(false)}>
+                  <ArrowLeft className="h-4 w-4 mr-1.5" />
+                  Back to Plans
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

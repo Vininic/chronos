@@ -1,12 +1,15 @@
-import { Outlet, Link } from "react-router-dom";
+import { Outlet, Link, useLocation } from "react-router-dom";
+import { useState } from "react";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { useTimer } from "@/lib/timer/TimerContext";
 import { safeKindStyle } from "@/components/dashboard/widgets";
 import { useSchedule } from "@/lib/schedule/store";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, RotateCcw, X, ExternalLink } from "lucide-react";
+import { Pause, Play, RotateCcw, X, ExternalLink, Sparkles } from "lucide-react";
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
+import DemoPrompt from "./DemoPrompt";
+import { isDemoMode, clearDemoData, setDemoMode } from "@/lib/demo/generator";
 
 function TimerPopup() {
   const { data } = useSchedule();
@@ -48,23 +51,60 @@ function TimerPopup() {
   );
 }
 
+function DemoBanner() {
+  const { replace } = useSchedule();
+  const [demo, setDemo] = useState(isDemoMode());
+
+  if (!demo) return null;
+
+  const handleExit = () => {
+    clearDemoData();
+    setDemoMode(false);
+    setDemo(false);
+    replace(null as unknown as never);
+    window.location.reload();
+  };
+
+  return (
+    <div className="flex items-center justify-between px-4 py-1.5 bg-secondary/10 border-b border-secondary/20 text-xs text-secondary-foreground">
+      <span className="flex items-center gap-1.5">
+        <Sparkles className="h-3 w-3" />
+        Demo mode — exploring with sample data
+      </span>
+      <button
+        onClick={handleExit}
+        className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+      >
+        <RotateCcw className="h-3 w-3" />
+        Exit demo
+      </button>
+    </div>
+  );
+}
+
 export default function DashboardLayout() {
+  const loc = useLocation();
+  const isAetheris = loc.pathname === "/dashboard/aetheris" || loc.pathname.startsWith("/dashboard/aetheris/");
   return (
     <div className="h-screen flex overflow-hidden bg-background">
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 chronos-surface overflow-y-auto overflow-x-hidden flex flex-col">
-          <div className="flex-1 p-6 lg:p-8">
+        <DemoBanner />
+        <main className="flex-1 chronos-surface flex flex-col" style={{ overflow: "auto hidden" }}>
+          <div className={`flex-1 ${isAetheris ? '' : 'p-6 lg:p-8'}`}>
             <Outlet />
           </div>
-          <footer className="py-8 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground shrink-0">
-            Chronos · by Vinicius
-          </footer>
+          {!isAetheris && (
+            <footer className="py-8 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground shrink-0">
+              Chronos · by Vinicius
+            </footer>
+          )}
         </main>
       </div>
       <TimerPopup />
       <OnboardingWizard />
+      <DemoPrompt />
     </div>
   );
 }

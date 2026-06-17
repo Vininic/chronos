@@ -47,18 +47,20 @@ Use this file for fast, practical context. Prefer links for product/background d
 - Test setup: `src/test/setup.ts`
 - Use `@/` imports in tests and app code (alias configured in Vite + Vitest)
 
-## AI system (Aetheris) — connected to Gemini
-- Connected to Gemini via `src/lib/ai/core/gemini.ts` adapter (calls `gemini-2.0-flash`).
-- Pipeline (`pipeline.ts`) is async — calls Gemini with compressed ScheduleContext + system prompt, returns structured JSON.
+## AI system (Aetheris)
+- Connected to Gemini (default), OpenAI, Anthropic, OpenRouter (200+ models), or Ollama (local) via pluggable adapters in `src/lib/ai/core/adapters/`.
+- Adapter pattern: `LLMProvider` interface in `provider.ts`. Registry in `registry.ts` handles discovery, fallback chains.
+- Pipeline (`pipeline.ts`) is async — calls active provider with compressed ScheduleContext + system prompt, returns structured JSON.
 - 11 heuristic simulation files (1,658 LOC) deleted. 41 infrastructure files remain.
-- `VITE_GEMINI_API_KEY` must be set in `.env` (file is gitignored).
-- Fallback: if key is missing or API fails, returns empty/graceful analysis.
-- Aetheris page (`src/pages/dashboard/Aetheris.tsx`) is the central AI hub with 6 internal tabs: Insights, Suggestions, Recovery, Optimize, Planner, Learning. Includes "Ask Aetheris" text input at top (stub for Phase 14 chat).
+- `VITE_GEMINI_API_KEY` in `.env` (gitignored) provides a default Gemini key for local dev. Not required — falls back to localStorage-stored keys or graceful heuristic analysis.
+- Fallback: if no key is configured, returns empty/graceful analysis.
+- Aetheris page (`src/pages/dashboard/Aetheris.tsx`) is the central AI hub with 7 sidebar tabs: Insights, Suggestions, Recovery, Optimize, Proactive, Planner, Learning. Includes "Ask Aetheris" chat input at bottom.
 - Planner and Learning page content embedded inline in Aetheris as sub-tabs. Standalone routes (`/dashboard/planner`, `/dashboard/learning`) still exist.
 - Planner page (`src/pages/dashboard/Planner.tsx`) detects existing schedule on load and shows current-plan dashboard with View/Create New/Delete options instead of always starting from step 0.
 - `CategoryInput` component (`src/components/planner/CategoryInput.tsx`) replaces all comma-separated text inputs with tag-based chips.
 - 10 schedule templates in `templates.ts`: Productivity, Balanced, Student, Deep Work, Recovery, Weekend Maker, Freelancer Flow, Early Bird, Night Owl, Shift Worker.
 - **Gemini schedule planner**: `src/lib/ai/planner/gemini-planner.ts` calls `gemini-2.0-flash` to generate personalized ScheduleData from PlannerPreferences + LearningProfile. Falls back to heuristic `generator.ts` if API key missing. Not yet wired into PlannerBuilder UI.
+- **OpenRouter adapter**: `src/lib/ai/core/adapters/openrouter.ts` — OpenAI-compatible adapter pointing to `openrouter.ai/api/v1`. Supports 200+ models (GPT-4o, Claude, Gemini, Llama) via a single API key. Registered in `registry.ts` and auto-displayed in AI Settings page.
 - **Category tone fix**: `safeKindStyle(kind, categories)` in `widgets.tsx` now resolves custom category tones (sky, violet, coral, etc.) via `toneStyle` map instead of returning muted fallback. Updated in DayPlanner, Today, Focus, Week pages.
 
 ## Agent guardrails

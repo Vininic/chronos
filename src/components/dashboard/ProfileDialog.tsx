@@ -64,6 +64,7 @@ function ProfileSlide({
   onClone,
   onDelete,
   onActivate,
+  categories,
 }: {
   sd: ScheduleData | null;
   label: string;
@@ -74,6 +75,7 @@ function ProfileSlide({
   onClone?: () => void;
   onDelete?: () => void;
   onActivate?: () => void;
+  categories: ScheduleData["categories"];
 }) {
   const { locale } = useI18n();
   const t = useT();
@@ -134,7 +136,7 @@ function ProfileSlide({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {p.topBlocks.map((b) => {
-              const s = safeKindStyle(b.kind, data.categories);
+              const s = safeKindStyle(b.kind, categories);
               const hex = s.customColor ?? TAILWIND_TO_HEX[s.dot] ?? "#f59e0b";
               return (
                 <div
@@ -167,7 +169,7 @@ function ProfileSlide({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {p.topCategories.map(([kind, count]) => {
-              const s = safeKindStyle(kind, data.categories);
+              const s = safeKindStyle(kind, categories);
               const hex = s.customColor ?? TAILWIND_TO_HEX[s.dot] ?? "#f59e0b";
               return (
                 <div
@@ -441,6 +443,7 @@ export default function ProfileDialog({ open, onOpenChange }: Props) {
                     sd={data}
                     label={locale === "pt" ? "Perfil atual" : "Current profile"}
                     isCurrent
+                    categories={data.categories}
                     onImport={() => triggerImport(0)}
                     onReset={() => { resetToSeed(); toast({ title: t.chronos.settings.resetDone }); }}
                     onSignOut={() => { signOut(); navigate("/login"); onOpenChange(false); }}
@@ -460,6 +463,7 @@ export default function ProfileDialog({ open, onOpenChange }: Props) {
                       sd={ep}
                       label={locale === "pt" ? `Perfil ${i + 2}` : `Profile ${i + 2}`}
                       isCurrent={false}
+                      categories={data.categories}
                       onImport={() => triggerImport(i + 1)}
                       onClone={() => cloneToSlot(i)}
                       onDelete={() => removeSlot(i)}

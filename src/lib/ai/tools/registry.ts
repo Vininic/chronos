@@ -20,9 +20,7 @@ export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>();
 
   register<TParams, TResult>(def: ToolDefinition<TParams, TResult>): void {
-    if (this.tools.has(def.name)) {
-      throw new Error(`Tool "${def.name}" already registered`);
-    }
+    if (this.tools.has(def.name)) return;
     this.tools.set(def.name, def as ToolDefinition);
   }
 

@@ -1,0 +1,353 @@
+import type { ScheduleData } from "@/lib/schedule/types";
+import { buildContext } from "../context/buildContext";
+import { compressContext } from "../context/serializers";
+import type { ChatMessage } from "./store";
+import { createProviderFromSettings, resolveFallbackProvider } from "../core/registry";
+import { loadSettingsSync } from "../settings/store";
+import { globalToolRegistry, type ToolDefinition } from "../tools/registry";
+import { PromptBuilder } from "../prompts/builder";
+import { recordLLMCall } from "../core/logger";
+import { evaluateResponse } from "../eval/selfEval";
+import { loadProfile } from "../learning/store";
+import { formatPreferencesForPrompt } from "../memory";
+
+const AB_VARIANT_KEY = "chronos.ab-variant";
+
+const REASON_LABELS: Record<string, string> = {
+  irrelevant: "Not relevant",
+  incorrect: "Incorrect info",
+  "too-vague": "Too vague",
+  "already-known": "Already known",
+  other: "Custom feedback",
+  "thumbs-down": "Thumbs down",
+  deferred: "Deferred",
+};
+
+export function getABVariant(): string {
+  try {
+    let variant = localStorage.getItem(AB_VARIANT_KEY);
+    if (!variant) {
+      variant = Math.random() < 0.5 ? "1.0" : "1.0-b";
+      localStorage.setItem(AB_VARIANT_KEY, variant);
+    }
+    return variant;
+  } catch {
+    return "1.0";
+  }
+}
+
+export function selectPromptVersion(messages: ChatMessage[]): string {
+  const userMsgCount = messages.filter((m) => m.role === "user").length;
+  if (userMsgCount <= 3) return "1.0-lite";
+  return getABVariant();
+}
+
+function buildToolSchema(): string {
+  const tools = globalToolRegistry.getAll();
+  return tools.map((t) => {
+    const params = describeToolParams(t);
+    return `- **${t.name}**: ${t.description} (${t.permission})${params ? `\n  Params: ${params}` : ""}`;
+  }).join("\n");
+}
+
+function describeToolParams(tool: ToolDefinition): string {
+  const keyMap: Record<string, string> = {
+    blockId: "string (block ID)",
+    title: "string",
+    start: 'string (HH:mm)',
+    end: 'string (HH:mm)',
+    category: "string (category ID)",
+    day: "number (0=Sun, 1=Mon, ..., 6=Sat)",
+    notes: "string (optional)",
+    newStart: 'string (HH:mm)',
+    newEnd: 'string (HH:mm)',
+    splitTime: 'string (HH:mm)',
+    blockIds: "string[] (block IDs)",
+    mergedTitle: "string (optional)",
+    commitmentId: "string",
+    goalId: "string",
+    categoryId: "string",
+    text: "string",
+    date: 'string (YYYY-MM-DD)',
+  };
+
+  const name = tool.name;
+  const known = [
+    "createBlock", "updateBlock", "moveBlock", "deleteBlock",
+    "splitBlock", "mergeBlocks",
+    "addCommitment", "updateCommitment", "removeCommitment",
+    "addNote", "updateNote", "removeNote",
+    "suggestBlock", "suggestCommitment",
+    "setFocusCategories",
+    "getBlocks", "getCommitments", "getGoals", "getCategories",
+  ];
+
+  if (known.includes(name)) {
+    const params = [];
+    if (["createBlock", "updateBlock", "splitBlock", "mergeBlocks", "deleteBlock", "moveBlock"].includes(name)) {
+      if (name === "createBlock") params.push("title, start, end, category, day");
+      if (name === "updateBlock") params.push("blockId, patch (title/start/end/category/notes)");
+      if (name === "moveBlock") params.push("blockId, newStart, newEnd");
+      if (name === "deleteBlock") params.push("blockId");
+      if (name === "splitBlock") params.push("blockId, splitTime");
+      if (name === "mergeBlocks") params.push("blockIds[], mergedTitle?");
+    }
+    if (["addCommitment", "updateCommitment", "removeCommitment"].includes(name)) {
+      if (name === "addCommitment") params.push("title, start, end, day?, date?, category");
+      if (name === "updateCommitment") params.push("commitmentId, patch");
+      if (name === "removeCommitment") params.push("commitmentId");
+    }
+    return params.length > 0 ? params.join(", ") : "";
+  }
+
+  return "";
+}
+
+function formatMessageForPrompt(msg: ChatMessage): string {
+  const role = msg.role === "assistant" ? "Aetheris" : "User";
+  let text = `${role}: ${msg.content}`;
+  if (msg.toolCalls?.length) {
+    const calls = msg.toolCalls.map((tc) => {
+      const status = tc.undone ? " [UNDONE]" : "";
+      if (tc.error) return `  → Tool "${tc.tool}" failed: ${tc.error}${status}`;
+      if (tc.result) return `  → Tool "${tc.tool}" executed: ${JSON.stringify(tc.result)}${status}`;
+      return `  → Tool "${tc.tool}" called with ${JSON.stringify(tc.params)}${status}`;
+    });
+    text += "\n" + calls.join("\n");
+  }
+  return text;
+}
+
+export function buildChatPrompt(
+  data: ScheduleData,
+  messages: ChatMessage[],
+  version?: string,
+): string {
+  const ctx = buildContext(data, "balanced");
+  const compressed = compressContext(ctx);
+  const serialized = JSON.stringify(compressed, null, 2);
+
+  const toolsDesc = buildToolSchema();
+  const systemPrompt = PromptBuilder.chatSystemPrompt(version).replace("{tools}", toolsDesc);
+
+  const sections = [systemPrompt, "", "## Current Schedule Data", "", serialized];
+
+  const profile = loadProfile();
+  const prefsText = formatPreferencesForPrompt(profile.userPreferences);
+  if (prefsText) {
+    sections.push("", prefsText);
+  }
+
+  const rejected = profile.rejectedSuggestions;
+  if (rejected.length > 0) {
+    const recent = rejected.slice(-5);
+    const lines = recent.map((r) => {
+      const reasonLabel = REASON_LABELS[r.reason] ?? r.reason;
+      const notes = r.userNotes ? ` — "${r.userNotes}"` : "";
+      return `- [${reasonLabel}] ${r.title}: ${r.detail.slice(0, 100)}${notes}`;
+    });
+    sections.push("", "## Recently Rejected Suggestions", "", "The user previously rejected these suggestions with specific reasons. Avoid repeating similar ones unless the user explicitly asks:", "", ...lines);
+  }
+
+  sections.push("", "## Conversation", "");
+  const recentMessages = messages.slice(-20);
+  for (const msg of recentMessages) {
+    sections.push(formatMessageForPrompt(msg));
+  }
+  sections.push("", "Aetheris:", "");
+  return sections.join("\n");
+}
+
+export interface ChatResult {
+  text: string;
+  toolCalls: Array<{
+    tool: string;
+    params: Record<string, unknown>;
+    result?: Record<string, unknown>;
+    error?: string;
+  }>;
+}
+
+export async function processChatMessage(
+  data: ScheduleData,
+  messages: ChatMessage[],
+  userMessage: string,
+): Promise<ChatResult> {
+  const fullMessages: ChatMessage[] = [
+    ...messages,
+    { id: "pending-user", role: "user", content: userMessage, timestamp: new Date().toISOString() },
+  ];
+
+  const version = selectPromptVersion(messages);
+  const prompt = buildChatPrompt(data, fullMessages, version);
+
+  const settings = loadSettingsSync();
+  const providerId = settings.providerId;
+  const modelName = settings.models[providerId];
+  const apiKey = settings.apiKeys[providerId] ?? "";
+
+  let provider;
+
+  if (apiKey) {
+    provider = createProviderFromSettings({
+      providerId,
+      apiKey,
+      model: modelName,
+      baseUrl: settings.baseUrls[providerId],
+    });
+  } else {
+    const fallback = resolveFallbackProvider(providerId, settings.apiKeys);
+    if (!fallback) {
+      return {
+        text: "No AI provider configured. Go to AI Settings to add an API key.",
+        toolCalls: [],
+      };
+    }
+    provider = fallback.provider;
+  }
+
+  const systemPrompt = PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema());
+  const startTime = performance.now();
+  const result = await provider.generateContent(prompt, {
+    systemPrompt,
+    temperature: 0.5,
+    maxTokens: 4096,
+  });
+  const latencyMs = Math.round(performance.now() - startTime);
+
+  recordLLMCall(
+    settings.providerId,
+    modelName ?? "unknown",
+    version,
+    prompt.slice(0, 1000),
+    result.text.slice(0, 1000),
+    latencyMs,
+    evaluateResponse(prompt, result.text, []),
+  );
+
+  const text = result.text;
+  const toolCalls = extractToolCalls(text);
+
+  const executedCalls = [];
+  for (const call of toolCalls) {
+    try {
+      const execResult = globalToolRegistry.execute(call.tool, call.params);
+      executedCalls.push({
+        tool: call.tool,
+        params: call.params,
+        result: execResult.success ? execResult.data : undefined,
+        error: execResult.success ? undefined : execResult.error,
+      });
+    } catch (err) {
+      executedCalls.push({
+        tool: call.tool,
+        params: call.params,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    text: stripToolCallsFromText(text),
+    toolCalls: executedCalls,
+  };
+}
+
+export async function* streamChatMessage(
+  data: ScheduleData,
+  messages: ChatMessage[],
+  userMessage: string,
+): AsyncIterable<string> {
+  const fullMessages: ChatMessage[] = [
+    ...messages,
+    { id: "pending-user", role: "user", content: userMessage, timestamp: new Date().toISOString() },
+  ];
+  const version = selectPromptVersion(messages);
+  const prompt = buildChatPrompt(data, fullMessages, version);
+
+  const settings = loadSettingsSync();
+  const apiKey = settings.apiKeys[settings.providerId] ?? "";
+  const providerId = settings.providerId;
+  const modelName = settings.models[providerId];
+  let provider;
+
+  if (apiKey) {
+    provider = createProviderFromSettings({
+      providerId,
+      apiKey,
+      model: modelName,
+      baseUrl: settings.baseUrls[providerId],
+    });
+  } else {
+    const fallback = resolveFallbackProvider(providerId, settings.apiKeys);
+    if (!fallback) {
+      yield "No AI provider configured. Go to AI Settings to add an API key.";
+      return;
+    }
+    provider = fallback.provider;
+  }
+
+  const systemPrompt = PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema());
+  const stream = provider.generateContentStream(prompt, {
+    systemPrompt,
+    temperature: 0.5,
+    maxTokens: 4096,
+  });
+
+  for await (const chunk of stream) {
+    yield chunk;
+  }
+}
+
+export function extractToolCalls(text: string): Array<{ tool: string; params: Record<string, unknown> }> {
+  const calls: Array<{ tool: string; params: Record<string, unknown> }> = [];
+  const toolPattern = /\[TOOL:(\w+)\]([\s\S]*?)\[\/TOOL\]/g;
+  let match;
+
+  while ((match = toolPattern.exec(text)) !== null) {
+    try {
+      const params = JSON.parse(match[2].trim());
+      calls.push({ tool: match[1], params });
+    } catch {
+      calls.push({ tool: match[1], params: { raw: match[2].trim() } });
+    }
+  }
+
+  return calls;
+}
+
+export function stripToolCallsFromText(text: string): string {
+  return text.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, "").trim();
+}
+
+export function validateTimeReferences(text: string, data: ScheduleData): string[] {
+  const warnings: string[] = [];
+  const timePattern = /\b(\d{1,2}):(\d{2})\b/g;
+  const foundTimes = new Set<string>();
+  let match;
+  while ((match = timePattern.exec(text)) !== null) {
+    const h = parseInt(match[1], 10);
+    if (h >= 0 && h <= 24) foundTimes.add(match[0]);
+  }
+
+  const knownTimes = new Set<string>();
+  for (const b of data.routine) {
+    knownTimes.add(b.start);
+    knownTimes.add(b.end);
+  }
+  for (const c of data.commitments) {
+    knownTimes.add(c.start);
+    knownTimes.add(c.end);
+  }
+
+  for (const t of foundTimes) {
+    if (t === "00:00" || t === "24:00") continue;
+    if (t.endsWith(":00") && parseInt(t, 10) >= 0 && parseInt(t, 10) <= 12) continue;
+    const exists = [...knownTimes].some((kt) => kt.startsWith(t.slice(0, 5)));
+    if (!exists) {
+      warnings.push(`Time reference "${t}" does not match any block in the schedule.`);
+    }
+  }
+
+  return warnings;
+}

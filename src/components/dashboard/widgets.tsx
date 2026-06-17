@@ -1,4 +1,4 @@
-import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target } from "lucide-react";
+import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target, AlertTriangle } from "lucide-react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
@@ -6,6 +6,8 @@ import { toast } from "@/hooks/use-toast";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
 import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
+import { useState, useEffect } from "react";
+import { subscribe as subscribeNotif, getAetherisCount } from "@/lib/notification-count";
 
 type BlockStyle = { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string; customColor?: string; blockStyle?: React.CSSProperties; chipStyle?: React.CSSProperties; dotStyle?: React.CSSProperties };
 
@@ -233,9 +235,9 @@ export function PerformanceCard() {
 
 /* ---------------- AI suggestions ---------------- */
 export function AetherisCard({ compact = false }: { compact?: boolean }) {
-  const { data, applySuggestion, deferSuggestion } = useSchedule();
   const t = useT();
-  const visibleSuggestions = compact ? data.suggestions.slice(0, 2) : data.suggestions;
+  const [count, setCount] = useState(getAetherisCount());
+  useEffect(() => subscribeNotif(setCount), []);
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />
@@ -245,46 +247,30 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
             <Sparkles className="h-4 w-4 text-primary-deep" />
           </div>
           <div>
-            <span className="text-[11px] text-muted-foreground">{data.suggestions.length} {t.common.awaitingReview}</span>
+            <div className="text-sm font-medium text-primary">{t.chronos.nav.aetheris}</div>
+            <span className="text-[11px] text-muted-foreground">
+              {count > 0
+                ? `${count} ${count === 1 ? "item" : "items"} ${t.common.awaitingReview}`
+                : t.chronos.aetheris.allQuietLead}
+            </span>
           </div>
         </div>
+        {count > 0 ? (
+          <span className="text-[10px] font-semibold rounded-full bg-secondary text-primary-deep px-2 py-0.5 num">{count}</span>
+        ) : (
+          <span className="text-[10px] rounded-full bg-emerald-500/20 text-emerald-500 px-1.5 py-0.5 flex items-center gap-1">
+            <Check className="h-3 w-3" /> Clear
+          </span>
+        )}
       </div>
 
-      {data.suggestions.length === 0 ? (
-        <p className="mt-6 text-sm text-muted-foreground italic">{t.chronos.aetheris.allQuietLead}</p>
-      ) : (
-        <ul className="mt-5 space-y-3 relative">
-          {visibleSuggestions.map((s) => (
-            <li key={s.id} className="rounded-lg border border-border bg-surface-raised p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-primary">{s.title}</div>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{s.detail}</p>
-                </div>
-                <span className={`shrink-0 text-[10px] uppercase tracking-wider px-2 py-1 rounded ${
-                  s.priority === "high" ? "bg-secondary text-primary-deep" :
-                  s.priority === "med"  ? "bg-secondary/20 text-secondary" : "bg-muted text-muted-foreground"
-                }`}>{s.impact}</span>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <button onClick={() => { applySuggestion(s.id); toast({ title: t.chronos.aetheris.applied, description: s.title }); }}
-                  className="text-xs h-8 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary-deep inline-flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5" /> {t.common.apply}
-                </button>
-                <button onClick={() => { deferSuggestion(s.id); toast({ title: t.chronos.aetheris.deferred, description: t.chronos.aetheris.deferredDesc }); }}
-                  className="text-xs h-8 px-3 rounded-md border border-border hover:bg-secondary/10 text-muted-foreground inline-flex items-center gap-1.5">
-                  <X className="h-3.5 w-3.5" /> {t.common.defer}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {compact && data.suggestions.length > visibleSuggestions.length && (
-        <div className="mt-4 pt-3 border-t border-border/60">
-          <Link to="/dashboard/aetheris" className="text-xs text-secondary hover:underline inline-flex items-center gap-1.5">
-            {t.chronos.widgets.viewAllSuggestions} <ArrowUpRight className="h-3.5 w-3.5" />
+      {count > 0 && (
+        <div className="mt-5 border-t border-border/40 pt-4">
+          <Link
+            to="/dashboard/aetheris"
+            className="text-xs text-secondary hover:underline inline-flex items-center gap-1.5 group"
+          >
+            {t.chronos.widgets.viewAllSuggestions} <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </Link>
         </div>
       )}

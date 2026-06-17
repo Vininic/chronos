@@ -51,11 +51,14 @@ function rBlock(
   return { id: uid("r"), day, start, end, kind, title, endsNextDay };
 }
 
-function sleepBlocks(prefix: string): RoutineBlock[] {
+function sleepBlocks(prefix: string, sleepStart: string, sleepEnd: string): RoutineBlock[] {
   const blocks: RoutineBlock[] = [];
+  const goesPastMidnight = sleepStart > sleepEnd;
   for (let d = 0; d < 7; d++) {
-    blocks.push(rBlock(d, "00:00", "07:00", "sleep", `${prefix} Sleep`));
-    blocks.push(rBlock(d, "22:30", "23:59", "sleep", `${prefix} Sleep`));
+    blocks.push(rBlock(d, "00:00", sleepEnd, "sleep", `${prefix}Sleep`));
+    if (goesPastMidnight) {
+      blocks.push(rBlock(d, sleepStart, "23:59", "sleep", `${prefix}Sleep`));
+    }
   }
   return blocks;
 }
@@ -67,7 +70,6 @@ function baseCategories(): { id: string; label: string; tone: string; descriptio
     { id: "ritual", label: "Ritual", tone: "primary-glow", description: "Recurring personal practice." },
     { id: "recovery", label: "Recovery", tone: "emerald", description: "Active rest, walks, breath." },
     { id: "shallow", label: "Shallow", tone: "neutral", description: "Email, admin, low-cost tasks." },
-    { id: "sleep", label: "Sleep", tone: "indigo", description: "Protected rest window." },
   ];
 }
 
@@ -94,7 +96,7 @@ const productivityTemplate: ScheduleTemplate = {
       { id: "admin", label: "Admin", tone: "slate", description: "Bureaucracy and logistics." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "22:30", "07:00"),
       rBlock(1, "07:00", "07:30", "ritual", "Morning ritual"),
       rBlock(1, "08:00", "10:00", "deep", "Focus sprint"),
       rBlock(1, "10:00", "10:30", "shallow", "Inbox sweep"),
@@ -188,7 +190,7 @@ const balancedTemplate: ScheduleTemplate = {
       { id: "creative", label: "Creative", tone: "violet", description: "Creative exploration and ideation." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "22:30", "07:00"),
       rBlock(1, "07:00", "07:30", "ritual", "Morning pages"),
       rBlock(1, "08:00", "09:30", "deep", "Focus block"),
       rBlock(1, "09:30", "10:30", "study", "Study session"),
@@ -278,7 +280,7 @@ const studentTemplate: ScheduleTemplate = {
       { id: "social", label: "Social", tone: "peach", description: "Social time and networking." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "23:00", "07:00"),
       rBlock(1, "07:00", "07:30", "ritual", "Morning routine"),
       rBlock(1, "08:00", "09:30", "class", "Lecture - CS"),
       rBlock(1, "10:00", "12:00", "study", "Study block"),
@@ -368,7 +370,7 @@ const deepWorkTemplate: ScheduleTemplate = {
       { id: "planning", label: "Planning", tone: "amber", description: "Strategic planning and review." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "22:00", "06:00"),
       rBlock(1, "06:00", "06:30", "ritual", "Morning ritual"),
       rBlock(1, "07:00", "10:00", "deep", "Deep work block I"),
       rBlock(1, "10:00", "10:30", "recovery", "Recovery"),
@@ -454,11 +456,12 @@ const recoveryTemplate: ScheduleTemplate = {
       ...baseCategories(),
       { id: "exercise", label: "Exercise", tone: "lime", description: "Physical activity and movement." },
       { id: "social", label: "Social", tone: "peach", description: "Social time and connection." },
+      { id: "wellness", label: "Wellness", tone: "rose", description: "Self-care, journaling, and relaxation." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "22:00", "08:00"),
       rBlock(1, "08:00", "08:30", "ritual", "Gentle morning"),
-      rBlock(1, "08:30", "09:00", "recovery", "Morning walk"),
+      rBlock(1, "08:30", "09:00", "wellness", "Journaling"),
       rBlock(1, "09:00", "10:00", "deep", "Focus session"),
       rBlock(1, "10:00", "10:30", "recovery", "Break"),
       rBlock(1, "10:30", "11:30", "shallow", "Light work"),
@@ -467,9 +470,9 @@ const recoveryTemplate: ScheduleTemplate = {
       rBlock(1, "13:30", "14:00", "recovery", "Stretch"),
       rBlock(1, "14:00", "15:00", "shallow", "Correspondence"),
       rBlock(1, "15:00", "16:00", "recovery", "Walk"),
-      rBlock(1, "16:00", "17:00", "meeting", "Meeting"),
+      rBlock(1, "16:00", "17:00", "wellness", "Meditation"),
       rBlock(2, "08:00", "08:30", "ritual", "Gentle morning"),
-      rBlock(2, "08:30", "09:00", "recovery", "Morning walk"),
+      rBlock(2, "08:30", "09:00", "wellness", "Journaling"),
       rBlock(2, "09:00", "10:00", "deep", "Focus session"),
       rBlock(2, "10:00", "10:30", "recovery", "Break"),
       rBlock(2, "10:30", "11:30", "shallow", "Light work"),
@@ -478,9 +481,9 @@ const recoveryTemplate: ScheduleTemplate = {
       rBlock(2, "13:30", "14:00", "recovery", "Stretch"),
       rBlock(2, "14:00", "15:00", "shallow", "Correspondence"),
       rBlock(2, "15:00", "16:00", "recovery", "Walk"),
-      rBlock(2, "16:00", "17:00", "meeting", "Meeting"),
+      rBlock(2, "16:00", "17:00", "wellness", "Meditation"),
       rBlock(3, "08:00", "08:30", "ritual", "Gentle morning"),
-      rBlock(3, "08:30", "09:00", "recovery", "Morning walk"),
+      rBlock(3, "08:30", "09:00", "wellness", "Journaling"),
       rBlock(3, "09:00", "10:00", "deep", "Focus session"),
       rBlock(3, "10:00", "10:30", "recovery", "Break"),
       rBlock(3, "10:30", "11:30", "shallow", "Light work"),
@@ -489,9 +492,9 @@ const recoveryTemplate: ScheduleTemplate = {
       rBlock(3, "13:30", "14:00", "recovery", "Stretch"),
       rBlock(3, "14:00", "15:00", "shallow", "Correspondence"),
       rBlock(3, "15:00", "16:00", "recovery", "Walk"),
-      rBlock(3, "16:00", "17:00", "meeting", "Meeting"),
+      rBlock(3, "16:00", "17:00", "wellness", "Meditation"),
       rBlock(4, "08:00", "08:30", "ritual", "Gentle morning"),
-      rBlock(4, "08:30", "09:00", "recovery", "Morning walk"),
+      rBlock(4, "08:30", "09:00", "wellness", "Journaling"),
       rBlock(4, "09:00", "10:00", "deep", "Focus session"),
       rBlock(4, "10:00", "10:30", "recovery", "Break"),
       rBlock(4, "10:30", "11:30", "shallow", "Light work"),
@@ -500,9 +503,9 @@ const recoveryTemplate: ScheduleTemplate = {
       rBlock(4, "13:30", "14:00", "recovery", "Stretch"),
       rBlock(4, "14:00", "15:00", "shallow", "Correspondence"),
       rBlock(4, "15:00", "16:00", "recovery", "Walk"),
-      rBlock(4, "16:00", "17:00", "meeting", "Meeting"),
+      rBlock(4, "16:00", "17:00", "wellness", "Meditation"),
       rBlock(5, "08:00", "08:30", "ritual", "Gentle morning"),
-      rBlock(5, "08:30", "09:00", "recovery", "Morning walk"),
+      rBlock(5, "08:30", "09:00", "wellness", "Journaling"),
       rBlock(5, "09:00", "10:00", "deep", "Focus session"),
       rBlock(5, "10:00", "10:30", "recovery", "Break"),
       rBlock(5, "10:30", "11:30", "shallow", "Light work"),
@@ -563,7 +566,7 @@ const weekendMakerTemplate: ScheduleTemplate = {
       { id: "creative", label: "Creative", tone: "violet", description: "Creative exploration." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "22:30", "07:00"),
       rBlock(1, "07:30", "08:00", "ritual", "Morning ritual"),
       rBlock(1, "08:00", "09:30", "deep", "Focus block"),
       rBlock(1, "10:00", "11:00", "meeting", "Team standup"),
@@ -661,7 +664,7 @@ const freelancerTemplate: ScheduleTemplate = {
       { id: "admin", label: "Admin", tone: "slate", description: "Business admin and invoicing." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "23:00", "08:00"),
       rBlock(1, "08:00", "08:30", "ritual", "Morning routine"),
       rBlock(1, "08:30", "09:00", "shallow", "Plan day"),
       rBlock(1, "09:00", "11:00", "deep", "Client work"),
@@ -758,7 +761,7 @@ const earlyBirdTemplate: ScheduleTemplate = {
       { id: "exercise", label: "Exercise", tone: "lime", description: "Physical activity." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "21:30", "05:00"),
       rBlock(1, "05:00", "05:30", "ritual", "Wake & stretch"),
       rBlock(1, "05:30", "07:30", "deep", "Morning power block"),
       rBlock(1, "07:30", "08:00", "family", "Family breakfast"),
@@ -872,7 +875,7 @@ const nightOwlTemplate: ScheduleTemplate = {
       { id: "coding", label: "Coding", tone: "sky", description: "Programming and technical work." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "01:00", "09:00"),
       rBlock(1, "09:00", "10:00", "ritual", "Slow morning"),
       rBlock(1, "10:00", "11:00", "shallow", "Email & planning"),
       rBlock(1, "11:00", "12:00", "meeting", "Standup"),
@@ -968,7 +971,7 @@ const shiftWorkerTemplate: ScheduleTemplate = {
       { id: "exercise", label: "Exercise", tone: "lime", description: "Fitness and movement." },
     ],
     routine: [
-      ...sleepBlocks(""),
+      ...sleepBlocks("", "23:00", "06:00"),
       rBlock(1, "06:00", "07:00", "ritual", "Morning routine"),
       rBlock(1, "07:00", "08:00", "shallow", "Plan & prep"),
       rBlock(1, "08:00", "12:00", "work", "Work shift I"),

@@ -6,6 +6,7 @@ import type {
   CategoryPreference,
   ProductivityWindow,
   GoalCompletionRecord,
+  RejectedSuggestion,
 } from "./types";
 import { EMPTY_PROFILE } from "./types";
 import { timeToMinutes } from "@/lib/schedule/types";
@@ -162,6 +163,9 @@ export function useLearningProfile(): {
   recalculatePreferences: () => void;
   recordGoalCompletion: (record: GoalCompletionRecord) => void;
   recalculateGoalPreferences: () => void;
+  addPreference: (key: string, value: string) => void;
+  addPreferences: (prefs: Record<string, string>) => void;
+  rejectSuggestion: (suggestion: Omit<RejectedSuggestion, "rejectedAt">) => void;
   resetProfile: () => void;
 } {
   const [profile, setProfile] = useState<LearningProfile>(() => loadProfile());
@@ -273,6 +277,36 @@ export function useLearningProfile(): {
     setProfile({ ...EMPTY_PROFILE, lastUpdated: new Date().toISOString() });
   }, []);
 
+  const addPreference = useCallback((key: string, value: string) => {
+    setProfile((prev) => ({
+      ...prev,
+      userPreferences: { ...prev.userPreferences, [key]: value },
+      lastUpdated: new Date().toISOString(),
+    }));
+  }, []);
+
+  const addPreferences = useCallback((prefs: Record<string, string>) => {
+    setProfile((prev) => ({
+      ...prev,
+      userPreferences: { ...prev.userPreferences, ...prefs },
+      lastUpdated: new Date().toISOString(),
+    }));
+  }, []);
+
+  const rejectSuggestion = useCallback((suggestion: Omit<RejectedSuggestion, "rejectedAt">) => {
+    setProfile((prev) => {
+      if (prev.rejectedSuggestions.some((r) => r.id === suggestion.id)) return prev;
+      return {
+        ...prev,
+        rejectedSuggestions: [
+          ...prev.rejectedSuggestions.slice(-50),
+          { ...suggestion, rejectedAt: new Date().toISOString() },
+        ],
+        lastUpdated: new Date().toISOString(),
+      };
+    });
+  }, []);
+
   return {
     profile,
     recordCompletion,
@@ -280,6 +314,9 @@ export function useLearningProfile(): {
     recalculatePreferences,
     recordGoalCompletion,
     recalculateGoalPreferences,
+    addPreference,
+    addPreferences,
+    rejectSuggestion,
     resetProfile,
   };
 }

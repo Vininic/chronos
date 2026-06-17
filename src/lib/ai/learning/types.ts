@@ -64,6 +64,18 @@ export interface LearningProfile {
   neglectedCategories: string[];
   goalCompletions: GoalCompletionRecord[];
   neglectedGoalIds: string[];
+  userPreferences: Record<string, string>;
+  rejectedSuggestions: RejectedSuggestion[];
+}
+
+export interface RejectedSuggestion {
+  id: string;
+  type: string;
+  title: string;
+  detail: string;
+  rejectedAt: string;
+  reason: "irrelevant" | "incorrect" | "too-vague" | "already-known" | "other" | "thumbs-down" | "deferred";
+  userNotes?: string;
 }
 
 export const EMPTY_PROFILE: LearningProfile = {
@@ -83,4 +95,6 @@ export const EMPTY_PROFILE: LearningProfile = {
   neglectedCategories: [],
   goalCompletions: [],
   neglectedGoalIds: [],
+  userPreferences: {},
+  rejectedSuggestions: [],
 };

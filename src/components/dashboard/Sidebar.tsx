@@ -1,24 +1,28 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, BrainCircuit, CircleHelp, Target, BarChart3, Play } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Play, Settings2, PanelLeftClose, Check } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import ProfileDialog from "./ProfileDialog";
 import { ProgressDialog } from "./ProgressDialog";
 import { BlockSessionBadge, SessionView } from "./SessionView";
 import { buildAgendaForDate } from "@/lib/schedule/store";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { subscribe, getAetherisCount } from "@/lib/notification-count";
 
 export default function Sidebar() {
   const { data, overallGoalProgress, updateRoutine, updateCommitment } = useSchedule();
   const { session } = useAuth();
   const t = useT();
   const scheduleText = useScheduleText();
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [progressOpen, setProgressOpen] = useState(false);
+const [profileOpen, setProfileOpen] = useState(false);
+const [progressOpen, setProgressOpen] = useState(false);
+const [collapsed, setCollapsed] = useState(false);
+const [aetherisCount, setAetherisCount] = useState(getAetherisCount());
+useEffect(() => subscribe(setAetherisCount), []);
 
   const now = new Date();
   const weekProgress = Math.round(((now.getDay() * 1440 + now.getHours() * 60 + now.getMinutes()) / 10080) * 100);
@@ -44,19 +48,30 @@ export default function Sidebar() {
     { to: "/dashboard/focus",    label: t.chronos.nav.focus,    icon: Brain },
     { to: "/dashboard/aetheris", label: t.chronos.nav.aetheris, icon: Sparkles },
     { to: "/dashboard/planner",  label: t.chronos.nav.planner,  icon: Wand2 },
-    { to: "/dashboard/learning", label: t.chronos.nav.learning, icon: BrainCircuit },
   ];
   const meta = [
-    { to: "/dashboard/about",    label: t.chronos.nav.about,    icon: CircleHelp },
+    { to: "/dashboard/settings/ai", label: "AI Settings",      icon: Settings2 },
+    { to: "/dashboard/about",       label: t.chronos.nav.about, icon: CircleHelp },
   ];
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();
   return (
-    <aside className="hidden lg:flex flex-col w-[260px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-      <div className="px-6 pt-7 pb-6">
-        <Logo variant="light" />
+    <aside className={`hidden lg:flex flex-col shrink-0 h-screen sticky top-0 overflow-y-auto bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out ${
+      collapsed ? "w-[72px]" : "w-[260px]"
+    }`}>
+      <div className="flex items-center justify-between px-6 pt-7 pb-6">
+        <div className={collapsed ? "hidden" : ""}>
+          <Logo variant="light" />
+        </div>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="h-7 w-7 rounded-md hover:bg-sidebar-accent/60 grid place-items-center transition-all duration-300 text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <PanelLeftClose className={`h-4 w-4 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
+        </button>
       </div>
 
-      <div className="px-4 mt-2">
+      <div className={`px-4 mt-2 ${collapsed ? "hidden" : ""}`}>
         <button onClick={() => setProgressOpen(true)} className="w-full rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-3 text-left hover:bg-sidebar-accent/60 transition-colors">
           <div className="text-[10px] uppercase tracking-[0.22em] text-secondary-soft">{t.chronos.nav.cycle} {data.meta.cycle.number} · {t.chronos.nav.week_short} {data.meta.cycle.week}</div>
           <div className="font-display text-lg text-sidebar-foreground mt-1">{scheduleText.cycleName(data.meta.cycle.name)}</div>
@@ -83,9 +98,10 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 mt-6">
-        <div className="text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mb-2">{t.chronos.nav.composition}</div>
+        <div className={`text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mb-2 ${collapsed ? "hidden" : ""}`}>{t.chronos.nav.composition}</div>
         {main.map(({ to, label, icon: Icon }) => {
-          const badge = to === "/dashboard/aetheris" && data.suggestions.length > 0 ? data.suggestions.length : undefined;
+          const badge = to === "/dashboard/aetheris" && aetherisCount > 0 ? aetherisCount : undefined;
+          const aetherisClear = to === "/dashboard/aetheris" && aetherisCount === 0;
           return (
           <NavLink
             key={to}
@@ -98,16 +114,19 @@ export default function Sidebar() {
                   : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
               }`
             }
+            title={collapsed ? label : undefined}
           >
-            <Icon className="h-4 w-4 text-secondary-soft" />
-            <span className="flex-1">{label}</span>
-            {badge ? (
+            <Icon className="h-4 w-4 text-secondary-soft shrink-0" />
+            <span className={`flex-1 ${collapsed ? "hidden" : ""}`}>{label}</span>
+            {badge && !collapsed ? (
               <span className="text-[10px] font-semibold rounded-full bg-secondary text-primary-deep px-1.5 py-0.5 num">{badge}</span>
+            ) : aetherisClear && !collapsed ? (
+              <span className="text-[10px] rounded-full bg-emerald-500/20 text-emerald-500 px-1 py-0.5 flex items-center"><Check className="h-3 w-3" /></span>
             ) : null}
           </NavLink>
         );})}
 
-        <div className="text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mt-7 mb-2">{t.chronos.nav.system}</div>
+        <div className={`text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mt-7 mb-2 ${collapsed ? "hidden" : ""}`}>{t.chronos.nav.system}</div>
         {meta.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -119,9 +138,10 @@ export default function Sidebar() {
                   : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
               }`
             }
+            title={collapsed ? label : undefined}
           >
-            <Icon className="h-4 w-4" />
-            <span>{label}</span>
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className={`${collapsed ? "hidden" : ""}`}>{label}</span>
           </NavLink>
         ))}
       </nav>
@@ -170,10 +190,10 @@ export default function Sidebar() {
       <div className="p-4">
         <button
           onClick={() => setProfileOpen(true)}
-          className="w-full rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3 hover:bg-sidebar-accent transition-colors text-left"
+          className={`w-full rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3 hover:bg-sidebar-accent transition-colors text-left ${collapsed ? "justify-center" : ""}`}
         >
           <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold shrink-0">{initial}</div>
-          <div className="min-w-0">
+          <div className={`min-w-0 ${collapsed ? "hidden" : ""}`}>
             <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
             <div className="text-[11px] text-sidebar-foreground/50 truncate">{t.common.appName}</div>
           </div>

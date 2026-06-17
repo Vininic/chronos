@@ -1,10 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ScheduleContext, AutonomyLevel } from "../context/ScheduleContext";
 import { buildSystemPrompt } from "./systemPrompt";
 import { compressContext } from "../context/serializers";
 import { validateResponseStructure, selfCorrectResponse } from "./selfCorrection";
 import type { AetherisResponse, Suggestion, RecoveryAnalysis, Insight, ActionProposal, ExecutiveSummary } from "./schemas";
 import { loadProfile } from "../learning/store";
+import type { LLMProvider } from "./provider";
+import { getApiKeyForProvider } from "../settings/store";
+import { GeminiAdapter } from "./adapters/gemini";
 
 export interface GeminiAnalysisResult {
   response: AetherisResponse;
@@ -43,7 +45,7 @@ function fallbackAnalysis(ctx: ScheduleContext, autonomy: AutonomyLevel): Gemini
       affectedGoals: [],
       affectedBlocks: [],
       affectedMetrics: [],
-      expectedImpact: "AI analysis unavailable — check your VITE_GEMINI_API_KEY environment variable",
+      expectedImpact: "AI analysis unavailable — check your API key or provider settings",
       confidence: 0,
     },
     autonomyLevel: autonomy,
@@ -55,7 +57,7 @@ function fallbackRecovery(): RecoveryAnalysis {
   return { recoveryScore: 0, sustainableScore: 0, overloadDetected: false, burnoutDetected: false, recommendations: [] };
 }
 
-function parseGeminiResponse(text: string): Record<string, unknown> {
+function parseJSONResponse(text: string): Record<string, unknown> {
   const cleaned = text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, "$1").trim();
   return JSON.parse(cleaned);
 }
@@ -145,29 +147,19 @@ function summarizeLearningProfile(): string {
   }
 }
 
-export async function callGemini(ctx: ScheduleContext, autonomy: AutonomyLevel): Promise<GeminiAnalysisResult> {
-  const apiKey = typeof import.meta !== "undefined" ? import.meta.env.VITE_GEMINI_API_KEY : undefined;
+function buildAnalysisPrompt(ctx: ScheduleContext, autonomy: AutonomyLevel): string {
+  const systemPrompt = buildSystemPrompt(autonomy);
+  const compressed = compressContext(ctx);
+  const serialized = JSON.stringify(compressed, null, 2);
+  const learningSummary = summarizeLearningProfile();
 
-  if (!apiKey) {
-    return fallbackAnalysis(ctx, autonomy);
+  const sections = [systemPrompt, "", "## Schedule Data", "", serialized];
+  if (learningSummary) {
+    sections.push("", "## Learning Profile (historical patterns)", "", learningSummary);
   }
-
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
-    const systemPrompt = buildSystemPrompt(autonomy);
-    const compressed = compressContext(ctx);
-    const serialized = JSON.stringify(compressed, null, 2);
-    const learningSummary = summarizeLearningProfile();
-
-    const sections = [systemPrompt, "", "## Schedule Data", "", serialized];
-    if (learningSummary) {
-      sections.push("", "## Learning Profile (historical patterns)", "", learningSummary);
-    }
-    sections.push("", "## Response", "");
-    sections.push("Analyze the schedule data above and return ONLY valid JSON with this structure:");
-    sections.push(`{
+  sections.push("", "## Response", "");
+  sections.push("Analyze the schedule data above and return ONLY valid JSON with this structure:");
+  sections.push(`{
   "summary": {
     "status": "healthy|attention|critical",
     "headline": "Short one-line summary of schedule health",
@@ -226,40 +218,81 @@ export async function callGemini(ctx: ScheduleContext, autonomy: AutonomyLevel):
   }
 }`);
 
-    const fullPrompt = sections.join("\n");
+  return sections.join("\n");
+}
 
-    const result = await model.generateContent(fullPrompt);
-    const text = result.response.text();
-    const parsed = parseGeminiResponse(text);
+export async function callGemini(
+  ctx: ScheduleContext,
+  autonomy: AutonomyLevel,
+  provider?: LLMProvider,
+): Promise<GeminiAnalysisResult> {
+  const fullPrompt = buildAnalysisPrompt(ctx, autonomy);
 
-    const validation = validateResponseStructure(parsed);
-    let corrected: Record<string, unknown>;
-    if (!validation.valid) {
-      corrected = selfCorrectResponse(parsed, { blockCount: ctx.blocks.length, goalCount: ctx.goals.length }) as unknown as Record<string, unknown>;
-    } else {
-      corrected = parsed;
+  try {
+    if (provider) {
+      const result = await provider.generateContent(fullPrompt, {
+        systemPrompt: buildSystemPrompt(autonomy),
+        temperature: 0.3,
+        maxTokens: 4096,
+      });
+      return processResponse(result.text, ctx, autonomy);
     }
 
-    const genAt = new Date().toISOString();
-    const response: AetherisResponse = {
-      version: 1,
-      generatedAt: genAt,
-      summary: corrected.summary as ExecutiveSummary ?? fallbackSummary(ctx),
-      insights: extractInsights(corrected),
-      suggestedActions: extractActions(corrected),
-      explainability: corrected.explainability as AetherisResponse["explainability"] ?? {
-        reasoning: [], affectedGoals: [], affectedBlocks: [], affectedMetrics: [],
-        expectedImpact: "Generated by Gemini", confidence: 0.5,
-      },
-      autonomyLevel: autonomy,
-    };
+    const apiKey = typeof import.meta !== "undefined"
+      ? import.meta.env.VITE_GEMINI_API_KEY ?? getApiKeyForProvider("gemini")
+      : getApiKeyForProvider("gemini");
 
-    return {
-      response,
-      suggestions: extractSuggestions(corrected),
-      recoveryAnalysis: extractRecovery(corrected),
-    };
+    if (!apiKey) {
+      return fallbackAnalysis(ctx, autonomy);
+    }
+
+    const geminiProvider = new GeminiAdapter({ apiKey, model: "gemini-2.0-flash" });
+    const result = await geminiProvider.generateContent(fullPrompt, {
+      systemPrompt: buildSystemPrompt(autonomy),
+      temperature: 0.3,
+      maxTokens: 4096,
+    });
+    return processResponse(result.text, ctx, autonomy);
   } catch {
     return fallbackAnalysis(ctx, autonomy);
   }
+}
+
+function processResponse(rawText: string, ctx: ScheduleContext, autonomy: AutonomyLevel): GeminiAnalysisResult {
+  const parsed = parseJSONResponse(rawText);
+  const validation = validateResponseStructure(parsed);
+
+  let corrected: Record<string, unknown>;
+  if (!validation.valid) {
+    corrected = selfCorrectResponse(parsed, {
+      blockCount: ctx.blocks.length,
+      goalCount: ctx.goals.length,
+    }) as unknown as Record<string, unknown>;
+  } else {
+    corrected = parsed;
+  }
+
+  const genAt = new Date().toISOString();
+  const response: AetherisResponse = {
+    version: 1,
+    generatedAt: genAt,
+    summary: corrected.summary as ExecutiveSummary ?? fallbackSummary(ctx),
+    insights: extractInsights(corrected),
+    suggestedActions: extractActions(corrected),
+    explainability: corrected.explainability as AetherisResponse["explainability"] ?? {
+      reasoning: [],
+      affectedGoals: [],
+      affectedBlocks: [],
+      affectedMetrics: [],
+      expectedImpact: "Generated by AI",
+      confidence: 0.5,
+    },
+    autonomyLevel: autonomy,
+  };
+
+  return {
+    response,
+    suggestions: extractSuggestions(corrected),
+    recoveryAnalysis: extractRecovery(corrected),
+  };
 }
