@@ -30,7 +30,7 @@ import { getSuggestionFeedback, recordSuggestionFeedback } from "@/lib/ai/metric
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatThread from "@/components/chat/ChatThread";
 import DemoTour from "@/components/chat/DemoTour";
-import ProactivePanel, { getProactiveCount } from "@/components/dashboard/ProactivePanel";
+import ProactivePanel, { getProactiveCount, buildDigest } from "@/components/dashboard/ProactivePanel";
 import SuggestionFeedbackDialog from "@/components/chat/SuggestionFeedbackDialog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -582,20 +582,7 @@ export default function Aetheris() {
                           <CalendarDays className="h-4 w-4 text-secondary" />
                           <span className="text-xs font-medium text-primary">{t.chronos.plannerPage.currentPlan ?? "Today's digest"}</span>
                         </div>
-                        <dl className="grid grid-cols-3 gap-2 text-center">
-                          <div>
-                            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{locale === "pt" ? "Blocos" : "Blocks"}</dt>
-                            <dd className="font-display text-lg text-primary num">{data.routine.filter((b) => b.day === new Date().getDay()).length}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{locale === "pt" ? "Compromissos" : "Tasks"}</dt>
-                            <dd className="font-display text-lg text-primary num">{data.commitments.filter((c) => c.date === new Date().toISOString().slice(0, 10)).length}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{locale === "pt" ? "Categorias" : "Categories"}</dt>
-                            <dd className="font-display text-lg text-primary num">{data.categories.length}</dd>
-                          </div>
-                        </dl>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">{buildDigest(data)}</p>
                       </div>
                     {insights.filter((i) => {
                       const isRecovery = i.type && ["overload", "burnout_risk", "sleep_debt", "context_switching", "consecutive_work"].includes(i.type);

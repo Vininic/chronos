@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Play, Settings2, PanelLeftClose, Check } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Play, Settings2, PanelLeftClose, Check, History, ScrollText } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
@@ -50,8 +50,10 @@ useEffect(() => subscribe(setAetherisCount), []);
     { to: "/dashboard/planner",  label: t.chronos.nav.planner,  icon: Wand2 },
   ];
   const meta = [
-    { to: "/dashboard/settings/ai", label: "AI Settings",      icon: Settings2 },
-    { to: "/dashboard/about",       label: t.chronos.nav.about, icon: CircleHelp },
+    { to: "/dashboard/aetheris/history", label: "Audit History", icon: ScrollText },
+    { to: "/dashboard/aetheris/metrics", label: "AI Metrics",    icon: BarChart3 },
+    { to: "/dashboard/settings/ai",      label: "AI Settings",   icon: Settings2 },
+    { to: "/dashboard/about",            label: t.chronos.nav.about, icon: CircleHelp },
   ];
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();
   return (

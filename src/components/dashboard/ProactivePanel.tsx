@@ -4,6 +4,7 @@ import type { Insight, RecoveryAnalysis } from "@/lib/ai/core/schemas";
 import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
 import type { ScheduleData } from "@/lib/schedule/types";
 import { timeToMinutes, durationMin, fmtDur } from "@/lib/schedule/types";
+import { getLatestBriefing } from "@/lib/ai/briefing/generate";
 import { useNavigate } from "react-router-dom";
 
 interface ProactivePanelProps {
@@ -42,10 +43,13 @@ export function getProactiveCount(data: ScheduleData, insights: Insight[], _reco
   return c;
 }
 
-function buildDigest(data: ScheduleData): string {
+export function buildDigest(data: ScheduleData): string {
+  const ai = getLatestBriefing();
+  if (ai) return ai;
+
   const now = new Date();
   const dayOfWeek = now.getDay();
-  const todayBlocks = data.routine.filter((b) => b.day === dayOfWeek);
+  const todayBlocks = data.routine.filter((b) => b.day === dayOfWeek).sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
   const todayCommitments = data.commitments.filter((c) => {
     if (!c.date) return false;
     const cDate = new Date(c.date + "T00:00:00");
@@ -55,7 +59,29 @@ function buildDigest(data: ScheduleData): string {
   const totalCmtMin = todayCommitments.reduce((s, c) => s + durationMin(c.start, c.end), 0);
   const blockCount = todayBlocks.length;
   const cmtCount = todayCommitments.length;
-  return `${blockCount} blocks (${fmtDur(totalMin)}), ${cmtCount} commitments (${fmtDur(totalCmtMin)})`;
+
+  // Detect back-to-back clusters
+  let clusters = 0;
+  for (let i = 1; i < todayBlocks.length; i++) {
+    const gap = timeToMinutes(todayBlocks[i].start) - timeToMinutes(todayBlocks[i - 1].end);
+    if (gap <= 15) clusters++;
+  }
+
+  // Detect large gaps (>90m)
+  const gaps: string[] = [];
+  for (let i = 1; i < todayBlocks.length; i++) {
+    const gapMin = timeToMinutes(todayBlocks[i].start) - timeToMinutes(todayBlocks[i - 1].end);
+    if (gapMin >= 90) gaps.push(fmtDur(gapMin));
+  }
+
+  const parts: string[] = [];
+  if (blockCount > 0 || cmtCount > 0) {
+    parts.push(`${blockCount} blocks (${fmtDur(totalMin)})${cmtCount > 0 ? ` + ${cmtCount} tasks (${fmtDur(totalCmtMin)})` : ""}`);
+  }
+  if (clusters > 1) parts.push(`${clusters} tight clusters`);
+  if (gaps.length > 0) parts.push(`${gaps.length} large gap${gaps.length > 1 ? "s" : ""} (${gaps.join(", ")})`);
+  if (blockCount === 0 && cmtCount === 0) parts.push("No blocks scheduled");
+  return parts.join(" · ");
 }
 
 export default function ProactivePanel({ insights, optimization, recoveryIntel, data }: ProactivePanelProps) {
@@ -98,15 +124,10 @@ export default function ProactivePanel({ insights, optimization, recoveryIntel, 
     };
   }, [lastActive]);
 
-  const hasRecoveryInsight = useMemo(
-    () => insights.some((i) => i.title.toLowerCase().includes("recovery") || i.type === "burnout_risk" || i.type === "overload"),
-    [insights]
-  );
-
   const items = useMemo(() => {
     const result: ProactiveItem[] = [];
 
-    // End-of-day digest
+    // End-of-day digest (AI-driven when briefing available)
     const digestText = buildDigest(data);
     if (digestText) {
       result.push({
@@ -160,7 +181,7 @@ export default function ProactivePanel({ insights, optimization, recoveryIntel, 
     }
 
     return result;
-  }, [data, optimization, recoveryIntel, insights, hasRecoveryInsight]);
+  }, [data, optimization, insights]);
 
   const visibleItems = items.filter((i) => !dismissedItems.has(i.id));
   const unreadCount = visibleItems.length;

@@ -22,6 +22,12 @@ function fallbackBriefing(): string {
   return `Good day! I have your schedule ready — check your agenda in the timeline above.`;
 }
 
+let latestBriefing = "";
+
+export function getLatestBriefing(): string {
+  return latestBriefing;
+}
+
 export async function generateDailyBriefing(data: ScheduleData): Promise<string> {
   const today = new Date();
   const dateStr = today.toLocaleDateString("en-US", {
@@ -63,8 +69,10 @@ export async function generateDailyBriefing(data: ScheduleData): Promise<string>
       maxTokens: 300,
     });
 
-    return result.text.trim() || fallbackBriefing();
+    latestBriefing = result.text.trim() || fallbackBriefing();
+    return latestBriefing;
   } catch {
-    return fallbackBriefing();
+    latestBriefing = fallbackBriefing();
+    return latestBriefing;
   }
 }
