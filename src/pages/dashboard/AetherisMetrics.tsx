@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { getLogs, clearLogs, type LLMCallLog } from "@/lib/ai/core/logger";
-import { getSuggestionFeedback, clearAllFeedback } from "@/lib/ai/metrics/store";
+import { getAllFeedback, clearAllFeedback } from "@/lib/ai/metrics/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +27,7 @@ function readLogs(): LLMCallLog[] {
 
 export default function AetherisMetrics() {
   const logs = useSyncExternalStore(subscribe, readLogs);
-  const feedback = getSuggestionFeedback();
+  const feedback = getAllFeedback();
 
   const totalCalls = logs.length;
   const avgLatency = totalCalls > 0
@@ -43,10 +43,9 @@ export default function AetherisMetrics() {
     versionCounts[v].latency.push(log.latencyMs);
   }
 
-  const feedbackEntries = Object.entries(feedback);
-  const totalFeedback = feedbackEntries.length;
-  const upCount = feedbackEntries.filter(([, v]) => v === "up").length;
-  const downCount = feedbackEntries.filter(([, v]) => v === "down").length;
+  const totalFeedback = feedback.length;
+  const upCount = feedback.filter((f) => f.vote === "up").length;
+  const downCount = feedback.filter((f) => f.vote === "down").length;
   const acceptanceRate = totalFeedback > 0 ? Math.round((upCount / totalFeedback) * 100) : 0;
 
   return (

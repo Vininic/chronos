@@ -91,7 +91,7 @@ export default function DashboardLayout() {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Topbar />
         <DemoBanner />
-        <main className="flex-1 chronos-surface flex flex-col" style={{ overflow: "auto hidden" }}>
+        <main className="flex-1 chronos-surface flex flex-col overflow-y-auto overflow-x-hidden">
           <div className={`flex-1 ${isAetheris ? '' : 'p-6 lg:p-8'}`}>
             <Outlet />
           </div>
