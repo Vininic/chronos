@@ -240,9 +240,7 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const [count, setCount] = useState(getAetherisCount());
   useEffect(() => subscribeNotif(setCount), []);
-  const todayIso = new Date().toISOString().slice(0, 10);
   const latestDigest = getLatestDigest();
-  const hasDigest = latestDigest && latestDigest.date === todayIso;
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />
@@ -277,8 +275,9 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
 
-      {hasDigest && (
+      {latestDigest && (
         <div className="mt-4 border-t border-border/40 pt-4">
+          <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-2">{latestDigest.date}</div>
           <DigestView digest={latestDigest} />
         </div>
       )}

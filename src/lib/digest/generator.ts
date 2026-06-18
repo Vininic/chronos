@@ -40,10 +40,6 @@ const TIMEFRAME_COLORS: Record<DigestTimeframe, DigestColor> = {
   custom: "teal",
 };
 
-function timeframeForDate(): DigestTimeframe {
-  return "daily";
-}
-
 function generateId(): string {
   return `digest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -82,12 +78,12 @@ function buildOpportunities(cards: ReportCard[]): { label: string; action?: stri
     .map((c) => ({ label: c.title, action: c.title.toLowerCase().replace(/\s+/g, "-") }));
 }
 
-export function generateDigest(data: ScheduleData): Digest {
+export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe): Digest {
   const aiSettings = loadSettingsSync();
   const mode: "auto" | "manual" = aiSettings.featureToggles.digestAuto ? "auto" : "manual";
   const today = new Date().toISOString().slice(0, 10);
-  const timeframe = timeframeForDate();
-  const color = TIMEFRAME_COLORS[timeframe];
+  const tf = timeframe ?? "daily";
+  const color = TIMEFRAME_COLORS[tf];
 
   const allCards: ReportCard[] = [];
   for (const module of MODULES) {
@@ -100,7 +96,7 @@ export function generateDigest(data: ScheduleData): Digest {
   const digest: Digest = {
     id: generateId(),
     mode,
-    timeframe,
+    timeframe: tf,
     date: today,
     generatedAt: new Date().toISOString(),
     color,
