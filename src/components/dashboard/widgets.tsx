@@ -8,7 +8,7 @@ import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { useState, useEffect } from "react";
 import { subscribe as subscribeNotif, getAetherisCount } from "@/lib/notification-count";
-import { getLatestDigest } from "@/lib/digest/store";
+import { getAllDigests, getLatestDigest } from "@/lib/digest/store";
 import { DigestView } from "@/components/digest/DigestView";
 
 type BlockStyle = { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string; customColor?: string; blockStyle?: React.CSSProperties; chipStyle?: React.CSSProperties; dotStyle?: React.CSSProperties };
@@ -240,7 +240,7 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const [count, setCount] = useState(getAetherisCount());
   useEffect(() => subscribeNotif(setCount), []);
-  const latestDigest = getLatestDigest();
+  const latestDaily = getAllDigests().findLast((d) => d.timeframe === "daily") ?? getLatestDigest();
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />
@@ -275,10 +275,10 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
 
-      {latestDigest && (
+      {latestDaily && (
         <div className="mt-4 border-t border-border/40 pt-4">
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-2">{latestDigest.date}</div>
-          <DigestView digest={latestDigest} />
+          <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60 mb-2">{latestDaily.date}</div>
+          <DigestView digest={latestDaily} />
         </div>
       )}
     </div>

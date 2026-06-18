@@ -40,13 +40,18 @@ interface ReportsPanelProps {
 }
 
 export function ReportsPanel({ data }: ReportsPanelProps) {
-  const [currentDigest, setCurrentDigest] = useState<Digest | null>(getLatestDigest());
+  const latest = getLatestDigest();
+  const [currentDigest, setCurrentDigest] = useState<Digest | null>(latest);
   const [allDigests, setAllDigests] = useState<Digest[]>(getAllDigests());
   const [showHistory, setShowHistory] = useState(false);
-  const [generateTf, setGenerateTf] = useState<DigestTimeframe>("daily");
+  const [generateTf, setGenerateTf] = useState<DigestTimeframe>(latest?.timeframe ?? "daily");
 
   const settings = loadSettingsSync();
   const isAuto = settings.featureToggles.digestAuto;
+
+  useEffect(() => {
+    if (currentDigest) setGenerateTf(currentDigest.timeframe);
+  }, [currentDigest?.id]);
 
   useEffect(() => {
     if (isAuto) {

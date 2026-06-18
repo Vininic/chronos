@@ -81,13 +81,20 @@ function buildOpportunities(cards: ReportCard[]): { label: string; action?: stri
 export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe): Digest {
   const aiSettings = loadSettingsSync();
   const mode: "auto" | "manual" = aiSettings.featureToggles.digestAuto ? "auto" : "manual";
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
   const tf = timeframe ?? "daily";
   const color = TIMEFRAME_COLORS[tf];
 
+  const date = tf === "weekly"
+    ? (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); return d.toISOString().slice(0, 10); })()
+    : tf === "monthly"
+    ? today.slice(0, 7) + "-01"
+    : today;
+
   const allCards: ReportCard[] = [];
   for (const module of MODULES) {
-    const cards = module(data);
+    const cards = module(data, tf);
     allCards.push(...cards);
   }
 
@@ -97,7 +104,7 @@ export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe):
     id: generateId(),
     mode,
     timeframe: tf,
-    date: today,
+    date,
     generatedAt: new Date().toISOString(),
     color,
     summary: buildSummary(allCards),

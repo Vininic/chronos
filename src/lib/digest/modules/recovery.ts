@@ -1,11 +1,12 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
+import { getBlocksForTimeframe } from "./helpers";
 
-export function recoveryAnalysis(data: ScheduleData): ReportCard[] {
+export function recoveryAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
-  const today = new Date().toISOString().slice(0, 10);
+  const blocks = getBlocksForTimeframe(data, timeframe);
 
-  const routineCount = data.routine.filter((b) => b.kind !== "sleep").length;
+  const routineCount = blocks.filter((b: { kind: string }) => b.kind !== "sleep").length;
   const hasSleepSchedule = data.meta.sleepSchedule && data.meta.sleepSchedule.length > 0;
 
   if (!hasSleepSchedule) {

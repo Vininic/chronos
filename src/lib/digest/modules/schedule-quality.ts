@@ -1,10 +1,13 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
 import { durationMin } from "@/lib/schedule/types";
+import { getBlocksForTimeframe } from "./helpers";
 
-export function scheduleQualityAnalysis(data: ScheduleData): ReportCard[] {
+export function scheduleQualityAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
-  const todayBlocks = data.routine.filter((b) => b.kind !== "sleep").sort((a, b) => a.start.localeCompare(b.start));
+  const todayBlocks = getBlocksForTimeframe(data, timeframe)
+    .filter((b: { kind: string }) => b.kind !== "sleep")
+    .sort((a: { start: string }, b: { start: string }) => a.start.localeCompare(b.start));
 
   let tightTransitions = 0;
   for (let i = 1; i < todayBlocks.length; i++) {

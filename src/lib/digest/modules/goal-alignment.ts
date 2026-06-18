@@ -1,7 +1,7 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
 
-export function goalAlignmentAnalysis(data: ScheduleData): ReportCard[] {
+export function goalAlignmentAnalysis(data: ScheduleData, _timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
   const goals = data.goals;
 

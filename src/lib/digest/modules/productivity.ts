@@ -1,11 +1,10 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
+import { getBlocksForTimeframe } from "./helpers";
 
-export function productivityAnalysis(data: ScheduleData): ReportCard[] {
+export function productivityAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
-  const today = new Date().toISOString().slice(0, 10);
-
-  const todayBlocks = data.routine.filter((b) => b.kind !== "sleep");
+  const todayBlocks = getBlocksForTimeframe(data, timeframe).filter((b: { kind: string }) => b.kind !== "sleep");
   const morningBlocks = todayBlocks.filter((b) => {
     const h = parseInt(b.start.split(":")[0], 10);
     return h >= 5 && h < 12;

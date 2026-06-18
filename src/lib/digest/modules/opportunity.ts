@@ -1,10 +1,13 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
+import { getBlocksForTimeframe } from "./helpers";
 
-export function opportunityAnalysis(data: ScheduleData): ReportCard[] {
+export function opportunityAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
 
-  const todayBlocks = data.routine.filter((b) => b.kind !== "sleep").sort((a, b) => a.start.localeCompare(b.start));
+  const todayBlocks = getBlocksForTimeframe(data, timeframe)
+    .filter((b: { kind: string }) => b.kind !== "sleep")
+    .sort((a: { start: string }, b: { start: string }) => a.start.localeCompare(b.start));
   const deepBlocks = todayBlocks.filter((b) => b.kind === "deep");
 
   if (deepBlocks.length > 0) {

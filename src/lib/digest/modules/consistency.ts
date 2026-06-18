@@ -1,7 +1,7 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
 
-export function consistencyAnalysis(data: ScheduleData): ReportCard[] {
+export function consistencyAnalysis(data: ScheduleData, _timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
   const goals = data.goals;
   const today = new Date().toISOString().slice(0, 10);

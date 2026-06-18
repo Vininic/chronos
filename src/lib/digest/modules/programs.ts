@@ -1,8 +1,10 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard } from "../types";
+import type { ReportCard, DigestTimeframe } from "../types";
+import { getBlocksForTimeframe } from "./helpers";
 
-export function programsAnalysis(data: ScheduleData): ReportCard[] {
+export function programsAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
+  const blocks = getBlocksForTimeframe(data, timeframe);
 
   const programs = data.categories.filter((c) => {
     const ws = (c as unknown as { workspace?: { structure?: { preset?: string } } }).workspace;
@@ -14,7 +16,7 @@ export function programsAnalysis(data: ScheduleData): ReportCard[] {
   for (const prog of programs) {
     const ws = (prog as unknown as { workspace?: { structure?: { preset?: string } } }).workspace;
     const preset = ws?.structure?.preset;
-    const progBlocks = data.routine.filter((b) => b.kind === prog.id);
+    const progBlocks = blocks.filter((b: { kind: string }) => b.kind === prog.id);
 
     if (progBlocks.length === 0) {
       cards.push({
