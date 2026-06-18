@@ -15,6 +15,7 @@ export interface AISettings {
     learning: boolean;
     autoSuggestions: boolean;
     digestAuto: boolean;
+    aiReports: boolean;
   };
 }
 
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: AISettings = {
     learning: true,
     autoSuggestions: true,
     digestAuto: true,
+    aiReports: false,
   },
 };
 

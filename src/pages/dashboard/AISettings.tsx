@@ -258,6 +258,14 @@ export default function AISettings() {
             checked={settings.featureToggles.digestAuto}
             onChange={(v) => setFeatureToggle("digestAuto", v)}
           />
+          <Separator />
+          <FeatureToggle
+            id="ai-reports"
+            label="AI-Powered Reports"
+            description="Use AI to analyze your schedule and generate contextual reports. Falls back to structural analysis if no AI provider is configured."
+            checked={settings.featureToggles.aiReports}
+            onChange={(v) => setFeatureToggle("aiReports", v)}
+          />
         </CardContent>
       </Card>
 

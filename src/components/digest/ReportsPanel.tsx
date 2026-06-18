@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { Digest, DigestTimeframe } from "@/lib/digest/types";
 import { getAllDigests, getLatestDigest } from "@/lib/digest/store";
 import { generateDigest } from "@/lib/digest/generator";
 import { DigestView } from "./DigestView";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, RotateCcw, History, CalendarRange } from "lucide-react";
+import { CalendarDays, RotateCcw, History, CalendarRange, Sparkles } from "lucide-react";
 import { loadSettingsSync } from "@/lib/ai/settings/store";
 
 const TIMEFRAME_OPTIONS: { key: DigestTimeframe; label: string }[] = [
@@ -46,6 +46,7 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
   const [allDigests, setAllDigests] = useState<Digest[]>(getAllDigests());
   const [showHistory, setShowHistory] = useState(false);
   const [generateTf, setGenerateTf] = useState<DigestTimeframe>(latestDaily?.timeframe ?? "daily");
+  const [generating, setGenerating] = useState(false);
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10);
   });
@@ -53,31 +54,34 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
 
   const settings = loadSettingsSync();
   const isAuto = settings.featureToggles.digestAuto;
+  const useAI = settings.featureToggles.aiReports;
 
   useEffect(() => {
     if (currentDigest) setGenerateTf(currentDigest.timeframe);
   }, [currentDigest?.id]);
 
+  const tryGenerate = useCallback(async (tf?: DigestTimeframe) => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const finalTf = tf ?? generateTf;
+      const isCustom = finalTf === "custom";
+      const digest = await generateDigest(data, finalTf, isCustom ? { start: customStart, end: customEnd } : undefined);
+      setCurrentDigest(digest);
+      setAllDigests(getAllDigests());
+    } finally {
+      setGenerating(false);
+    }
+  }, [data, generateTf, customStart, customEnd, generating]);
+
   useEffect(() => {
     if (isAuto) {
       const existing = getLatestDigest();
       if (!existing || existing.date !== new Date().toISOString().slice(0, 10)) {
-        const digest = generateDigest(data);
-        setCurrentDigest(digest);
-        setAllDigests(getAllDigests());
-      } else {
-        setCurrentDigest(existing);
+        tryGenerate("daily");
       }
     }
   }, [isAuto, data.meta.version, data.routine.length, data.commitments.length]);
-
-  const handleGenerate = (tf?: DigestTimeframe) => {
-    const finalTf = tf ?? generateTf;
-    const isCustom = finalTf === "custom";
-    const digest = generateDigest(data, finalTf, isCustom ? { start: customStart, end: customEnd } : undefined);
-    setCurrentDigest(digest);
-    setAllDigests(getAllDigests());
-  };
 
   if (showHistory) {
     return (
@@ -118,9 +122,12 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-          {currentDigest ? TIMEFRAME_LABELS[currentDigest.timeframe] : "Reports"}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {currentDigest ? TIMEFRAME_LABELS[currentDigest.timeframe] : "Reports"}
+          </span>
+          {useAI && <Sparkles className="h-3 w-3 text-secondary" />}
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowHistory(true)}
@@ -132,27 +139,26 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
         </div>
       </div>
 
-      {(isAuto || currentDigest) && (
-        <div className="flex gap-1">
-          {TIMEFRAME_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => {
-                setGenerateTf(opt.key);
-                if (opt.key !== "custom") handleGenerate(opt.key);
-              }}
-              className={`flex-1 text-[9px] py-1.5 rounded-md border transition-colors ${
-                generateTf === opt.key
-                  ? "border-secondary/40 bg-secondary/10 text-secondary font-medium"
-                  : "border-border text-muted-foreground hover:text-primary hover:bg-secondary/5"
-              }`}
-            >
-              {opt.key === "custom" ? <CalendarRange className="h-3 w-3 inline mr-0.5" /> : null}
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex gap-1">
+        {TIMEFRAME_OPTIONS.map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => {
+              setGenerateTf(opt.key);
+              if (opt.key !== "custom") tryGenerate(opt.key);
+            }}
+            disabled={generating}
+            className={`flex-1 text-[9px] py-1.5 rounded-md border transition-colors ${
+              generateTf === opt.key
+                ? "border-secondary/40 bg-secondary/10 text-secondary font-medium"
+                : "border-border text-muted-foreground hover:text-primary hover:bg-secondary/5"
+            } disabled:opacity-50`}
+          >
+            {opt.key === "custom" ? <CalendarRange className="h-3 w-3 inline mr-0.5" /> : null}
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       {generateTf === "custom" && (
         <div className="flex items-center gap-2">
@@ -169,22 +175,19 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
             onChange={(e) => setCustomEnd(e.target.value)}
             className="flex-1 h-7 text-[10px] bg-transparent border border-border rounded px-1.5 text-primary"
           />
-          <Button onClick={() => handleGenerate("custom")} size="sm" className="h-7 text-[9px] px-2">
-            Go
+          <Button onClick={() => tryGenerate("custom")} disabled={generating} size="sm" className="h-7 text-[9px] px-2">
+            {generating ? "..." : "Go"}
           </Button>
         </div>
       )}
 
-      {currentDigest ? (
+      {generating ? (
+        <p className="text-xs text-muted-foreground text-center py-4">Generating{useAI ? " with AI" : ""}...</p>
+      ) : currentDigest ? (
         <DigestView digest={currentDigest} />
-      ) : isAuto ? (
-        <p className="text-xs text-muted-foreground text-center py-4">
-          No digest generated yet. Auto-generation runs on schedule changes.
-        </p>
       ) : (
-        <Button onClick={() => handleGenerate()} size="sm" className="w-full h-8 text-xs">
-          <RotateCcw className="h-3 w-3 mr-1.5" />
-          Generate
+        <Button onClick={() => tryGenerate()} disabled={generating} size="sm" className="w-full h-8 text-xs">
+          {generating ? "..." : <><RotateCcw className="h-3 w-3 mr-1.5" /> Generate</>}
         </Button>
       )}
     </div>

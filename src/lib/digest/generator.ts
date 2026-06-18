@@ -1,7 +1,11 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { Digest, DigestTimeframe, DigestColor, ReportCard } from "./types";
-import { addDigest, getLatestDigest } from "./store";
+import type { Digest, DigestTimeframe, DigestColor, ReportCard, ReportCardKind, ReportCardSeverity } from "./types";
+import type { Insight } from "@/lib/ai/core/schemas";
+import { addDigest } from "./store";
 import { loadSettingsSync } from "@/lib/ai/settings/store";
+import { buildContext } from "@/lib/ai/context/buildContext";
+import { callGemini } from "@/lib/ai/core/gemini";
+
 import { recoveryAnalysis } from "./modules/recovery";
 import { productivityAnalysis } from "./modules/productivity";
 import { scheduleQualityAnalysis } from "./modules/schedule-quality";
@@ -11,7 +15,7 @@ import { programsAnalysis } from "./modules/programs";
 import { burnoutAnalysis } from "./modules/burnout";
 import { opportunityAnalysis } from "./modules/opportunity";
 
-const MODULES = [
+const HEURISTIC_MODULES = [
   recoveryAnalysis,
   productivityAnalysis,
   scheduleQualityAnalysis,
@@ -21,6 +25,25 @@ const MODULES = [
   burnoutAnalysis,
   opportunityAnalysis,
 ] as const;
+
+const INSIGHT_TYPE_TO_KIND: Record<string, ReportCardKind> = {
+  overload: "recovery",
+  burnout_risk: "burnout",
+  sleep_debt: "recovery",
+  context_switching: "schedule-quality",
+  consecutive_work: "burnout",
+  goal_neglected: "goal-alignment",
+  goal_conflict: "goal-alignment",
+  weekly_imbalance: "productivity",
+  optimization: "opportunity",
+  recommendation: "opportunity",
+};
+
+const SEVERITY_MAP: Record<string, ReportCardSeverity> = {
+  info: "insight",
+  warning: "warning",
+  critical: "warning",
+};
 
 const CARD_ORDER: Record<string, number> = {
   burnout: 1,
@@ -46,29 +69,16 @@ function generateId(): string {
 
 function buildSummary(cards: ReportCard[]): string {
   if (cards.length === 0) return "No significant findings for this period.";
-
-  const warnings = cards.filter((c) => c.severity === "warning");
-  const opportunities = cards.filter((c) => c.severity === "opportunity");
-  const insights = cards.filter((c) => c.severity === "insight" || c.severity === "trend");
-
-  const parts: string[] = [];
-  if (warnings.length > 0) {
-    parts.push(`${warnings.length} warning${warnings.length > 1 ? "s" : ""} identified.`);
-  }
-  if (opportunities.length > 0) {
-    parts.push(`${opportunities.length} improvement opportunit${opportunities.length > 1 ? "ies" : "y"} found.`);
-  }
-  if (insights.length > 0) {
-    parts.push(`${insights.length} observation${insights.length > 1 ? "s" : ""} available.`);
-  }
-
   const topCard = cards[0];
-  return `${topCard.title}. ${topCard.body.slice(0, 120)}${topCard.body.length > 120 ? "..." : ""} ${parts.join(" ")}`;
+  const count = cards.length;
+  return `${topCard.title}. ${topCard.body.slice(0, 120)}${topCard.body.length > 120 ? "..." : ""} (${count} observation${count > 1 ? "s" : ""})`;
 }
 
 function buildRecommendations(cards: ReportCard[]): string[] {
-  const actionable = cards.filter((c) => c.actionable && c.severity !== "insight");
-  return actionable.slice(0, 3).map((c) => c.body.split(".")[0] + ".");
+  return cards
+    .filter((c) => c.actionable && c.severity !== "insight")
+    .slice(0, 3)
+    .map((c) => c.body.split(".")[0] + ".");
 }
 
 function buildOpportunities(cards: ReportCard[]): { label: string; action?: string }[] {
@@ -78,9 +88,47 @@ function buildOpportunities(cards: ReportCard[]): { label: string; action?: stri
     .map((c) => ({ label: c.title, action: c.title.toLowerCase().replace(/\s+/g, "-") }));
 }
 
-export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe, customDate?: { start: string; end: string }): Digest {
-  const aiSettings = loadSettingsSync();
-  const mode: "auto" | "manual" = aiSettings.featureToggles.digestAuto ? "auto" : "manual";
+function insightToReportCard(insight: Insight): ReportCard {
+  const kind = INSIGHT_TYPE_TO_KIND[insight.type] ?? "opportunity";
+  const severity = SEVERITY_MAP[insight.severity] ?? "insight";
+  return {
+    kind,
+    severity,
+    title: insight.title,
+    body: insight.detail,
+    detail: insight.suggestion,
+    actionable: !!insight.suggestion && insight.severity !== "info",
+  };
+}
+
+async function aiCards(data: ScheduleData): Promise<ReportCard[] | null> {
+  try {
+    const ctx = buildContext(data, "balanced");
+    const result = await callGemini(ctx, "balanced");
+    const insights = result.response.insights;
+    if (!insights || insights.length === 0) return null;
+    return insights.map(insightToReportCard);
+  } catch {
+    return null;
+  }
+}
+
+function heuristicCards(data: ScheduleData, tf: DigestTimeframe): ReportCard[] {
+  const allCards: ReportCard[] = [];
+  for (const module of HEURISTIC_MODULES) {
+    allCards.push(...module(data, tf));
+  }
+  allCards.sort((a, b) => (CARD_ORDER[a.kind] ?? 99) - (CARD_ORDER[b.kind] ?? 99));
+  return allCards;
+}
+
+export async function generateDigest(
+  data: ScheduleData,
+  timeframe?: DigestTimeframe,
+  customDate?: { start: string; end: string },
+): Promise<Digest> {
+  const settings = loadSettingsSync();
+  const mode: "auto" | "manual" = settings.featureToggles.digestAuto ? "auto" : "manual";
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const tf = timeframe ?? "daily";
@@ -94,13 +142,18 @@ export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe, 
     ? today.slice(0, 7) + "-01"
     : today;
 
-  const allCards: ReportCard[] = [];
-  for (const module of MODULES) {
-    const cards = module(data, tf);
-    allCards.push(...cards);
-  }
+  let allCards: ReportCard[];
 
-  allCards.sort((a, b) => (CARD_ORDER[a.kind] ?? 99) - (CARD_ORDER[b.kind] ?? 99));
+  if (settings.featureToggles.aiReports) {
+    const ai = await aiCards(data);
+    if (ai && ai.length > 0) {
+      allCards = ai;
+    } else {
+      allCards = heuristicCards(data, tf);
+    }
+  } else {
+    allCards = heuristicCards(data, tf);
+  }
 
   const digest: Digest = {
     id: generateId(),
