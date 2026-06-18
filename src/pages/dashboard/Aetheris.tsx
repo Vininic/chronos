@@ -17,7 +17,7 @@ import { loadSettingsSync } from "@/lib/ai/settings/store";
 import {
   Sparkles, Brain, Coffee, Target, AlertTriangle, Check, ChevronDown, ChevronUp,
   Loader2, MessageSquare, Send, BarChart3, Plus, Trash2, PanelRightOpen, PanelRightClose,
-  Clock, ListTodo, History, Undo2, ThumbsUp, ThumbsDown, Bell, CalendarDays,
+  Clock, ListTodo, History, Undo2, ThumbsUp, ThumbsDown, Bell, CalendarDays, FileText,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { ScheduleData } from "@/lib/schedule/types";
@@ -31,6 +31,7 @@ import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatThread from "@/components/chat/ChatThread";
 import DemoTour from "@/components/chat/DemoTour";
 import ProactivePanel, { getProactiveCount, buildDigest } from "@/components/dashboard/ProactivePanel";
+import { ReportsPanel } from "@/components/digest/ReportsPanel";
 import SuggestionFeedbackDialog from "@/components/chat/SuggestionFeedbackDialog";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { setAetherisCount } from "@/lib/notification-count";
 
-type TabView = "insights" | "optimize" | "proactive" | "learning";
+type TabView = "insights" | "optimize" | "proactive" | "learning" | "reports";
 
 export default function Aetheris() {
   const { data, replace, applySuggestion, deferSuggestion } = useSchedule();
@@ -411,6 +412,7 @@ export default function Aetheris() {
     { key: "optimize", label: "Optimize", icon: Target, count: optimization.conflicts.length + optimization.idleGaps.length },
     { key: "proactive", label: "Proactive", icon: Bell, count: proactiveCount },
     { key: "learning", label: "Learning", icon: MessageSquare, count: 0 },
+    { key: "reports", label: "Reports", icon: FileText, count: 0 },
   ];
 
   return (
@@ -771,6 +773,9 @@ export default function Aetheris() {
             )}
             {tab === "learning" && (
               <LearningInsights profile={profile} />
+            )}
+            {tab === "reports" && (
+              <ReportsPanel data={data} />
             )}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Play, Settings2, PanelLeftClose, Check, History, ScrollText } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Play, Settings2, PanelLeftClose, Check, History, ScrollText, FileText } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
