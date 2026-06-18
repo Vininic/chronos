@@ -716,7 +716,7 @@ export default function Aetheris() {
                   <MetricBox label="Frag." value={`${Math.round(optimization.focusFragmentation * 100)}%`} />
                   <MetricBox label="Consist." value={`${Math.round(optimization.routineConsistency * 100)}%`} />
                 </div>
-                <div className="space-y-3" style={{ maxHeight: "60vh", overflow: "hidden auto" }}>
+                <div className="space-y-3">
                 {optimization.conflicts.length > 0 && (
                   <div className="pt-2 border-t border-border/40">
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Conflict details</div>
