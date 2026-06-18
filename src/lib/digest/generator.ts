@@ -1,6 +1,7 @@
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { Digest, DigestTimeframe, DigestColor, ReportCard } from "./types";
-import { addDigest, getDigestMode, getLatestDigest } from "./store";
+import { addDigest, getLatestDigest } from "./store";
+import { loadSettingsSync } from "@/lib/ai/settings/store";
 import { recoveryAnalysis } from "./modules/recovery";
 import { productivityAnalysis } from "./modules/productivity";
 import { scheduleQualityAnalysis } from "./modules/schedule-quality";
@@ -82,7 +83,8 @@ function buildOpportunities(cards: ReportCard[]): { label: string; action?: stri
 }
 
 export function generateDigest(data: ScheduleData): Digest {
-  const mode = getDigestMode();
+  const aiSettings = loadSettingsSync();
+  const mode: "auto" | "manual" = aiSettings.featureToggles.digestAuto ? "auto" : "manual";
   const today = new Date().toISOString().slice(0, 10);
   const timeframe = timeframeForDate();
   const color = TIMEFRAME_COLORS[timeframe];

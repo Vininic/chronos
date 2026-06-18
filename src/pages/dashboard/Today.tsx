@@ -11,13 +11,16 @@ import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { setDragCommitmentInfo } from "@/lib/dragStore";
 import { WORKSPACE_PRESETS } from "@/workspaces/presets";
 import { TemplateEditor } from "@/components/dashboard/TemplateEditor";
+import { getLatestDigest } from "@/lib/digest/store";
+import { DigestView } from "@/components/digest/DigestView";
+import { Link } from "react-router-dom";
 
 
 function formatClock(time: string, bcp47: string) {
@@ -241,6 +244,24 @@ export default function Today() {
           <AetherisCard compact />
         </section>
       </div>
+
+      {(() => {
+        const latest = getLatestDigest();
+        if (!latest || latest.date !== todayIso) return null;
+        return (
+          <div className="mt-10 border-t border-border/30 pt-5">
+            <div className="flex items-center gap-2 mb-4">
+              <FileText className="h-4 w-4 text-secondary" />
+              <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Daily Digest</div>
+              <span className="text-xs text-muted-foreground">· {latest.date}</span>
+              <Link to="/dashboard/aetheris" className="ml-auto text-[10px] text-secondary hover:text-secondary/80 transition-colors">
+                View in Reports
+              </Link>
+            </div>
+            <DigestView digest={latest} />
+          </div>
+        );
+      })()}
 
       <div className="mt-10 border-t border-border/30 pt-5">
         <BlockTypeGallery

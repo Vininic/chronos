@@ -250,6 +250,14 @@ export default function AISettings() {
             checked={settings.featureToggles.autoSuggestions}
             onChange={(v) => setFeatureToggle("autoSuggestions", v)}
           />
+          <Separator />
+          <FeatureToggle
+            id="digest-auto"
+            label="Digest Generation"
+            description="Automatically generate daily reports. When off, generate manually from the Reports panel."
+            checked={settings.featureToggles.digestAuto}
+            onChange={(v) => setFeatureToggle("digestAuto", v)}
+          />
         </CardContent>
       </Card>
 
