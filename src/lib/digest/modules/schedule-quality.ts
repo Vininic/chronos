@@ -1,7 +1,7 @@
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { ReportCard, DigestTimeframe } from "../types";
 import { durationMin } from "@/lib/schedule/types";
-import { getBlocksForTimeframe } from "./helpers";
+import { getBlocksForTimeframe, dailyAvg } from "./helpers";
 
 export function scheduleQualityAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
@@ -17,16 +17,26 @@ export function scheduleQualityAnalysis(data: ScheduleData, timeframe: DigestTim
     if (gap > 0 && gap < 15) tightTransitions++;
   }
 
-  if (tightTransitions > 2) {
+  const avgTight = dailyAvg(blocks as { day: number }[], timeframe) > 0
+    ? tightTransitions / Math.max(dailyAvg(blocks as { day: number }[], timeframe), 1)
+    : 0;
+
+  if (timeframe === "daily" && tightTransitions > 3) {
     cards.push({
       kind: "schedule-quality",
       severity: "warning",
-      title: timeframe === "daily"
-        ? "Today has frequent tight transitions"
-        : "Frequent tight transitions detected",
+      title: "Today has frequent tight transitions",
+      body: `${tightTransitions} blocks have less than 15 minutes between them today. Tight transitions reduce focus and increase stress.`,
+      actionable: true,
+    });
+  } else if (tightTransitions > 3 * Math.max(dailyAvg(blocks as { day: number }[], timeframe), 1)) {
+    cards.push({
+      kind: "schedule-quality",
+      severity: "trend",
+      title: "Frequent tight transitions across the schedule",
       body: timeframe === "weekly"
-        ? `${tightTransitions} tight transitions across the week. Consider adding 15-minute buffers between consecutive blocks to reduce cognitive load.`
-        : `${tightTransitions} blocks have less than 15 minutes between them. Tight transitions reduce focus and increase stress.`,
+        ? `${tightTransitions} tight transitions across the week — averaging ${Math.round(avgTight)} per day. Adding 15-minute buffers between blocks can help.`
+        : `${tightTransitions} blocks have tight transitions. Consider adding short buffers.`,
       actionable: true,
     });
   }
@@ -37,21 +47,22 @@ export function scheduleQualityAnalysis(data: ScheduleData, timeframe: DigestTim
       contextSwitches++;
     }
   }
+  const avgSwitches = contextSwitches / Math.max(dailyAvg(blocks as { day: number }[], timeframe), 1);
 
-  if (timeframe === "weekly" && contextSwitches > 20) {
+  if (avgSwitches > 4 && timeframe === "daily") {
     cards.push({
       kind: "schedule-quality",
       severity: "trend",
-      title: "High weekly context switch count",
-      body: `${contextSwitches} context switches detected across the week. Frequent task switching reduces overall productivity by up to 40%. Consider batching similar activities.`,
+      title: "High number of context switches today",
+      body: `${Math.round(avgSwitches)} context switches detected. Switching between different types of work more than 4 times a day can reduce overall productivity.`,
       actionable: true,
     });
-  } else if (contextSwitches > 4 && timeframe !== "weekly") {
+  } else if (avgSwitches > 4) {
     cards.push({
       kind: "schedule-quality",
       severity: "trend",
-      title: "High number of context switches",
-      body: `${contextSwitches} context switches detected. Switching between different types of work more than 4 times a day can reduce overall productivity by up to 40%.`,
+      title: `Averaging ${Math.round(avgSwitches)} context switches per day`,
+      body: `High context switching (${Math.round(avgSwitches)}/day) fragments focus. Consider batching similar activity types together.`,
       actionable: true,
     });
   }
@@ -70,15 +81,22 @@ export function scheduleQualityAnalysis(data: ScheduleData, timeframe: DigestTim
     }
   }
 
-  const totalScheduled = blocks.reduce((s: number, b: { start: string; end: string }) => s + durationMin(b.start, b.end), 0);
-  if (totalScheduled > 600) {
+  const totalDaily = dailyAvg(blocks as { start: string; end: string; day: number }[], timeframe);
+  const totalMinsPerDay = blocks.reduce((s: number, b: { start: string; end: string }) => s + durationMin(b.start, b.end), 0) / Math.max(dailyAvg(blocks as { day: number }[], timeframe), 1);
+
+  if (totalMinsPerDay > 600) {
     cards.push({
       kind: "schedule-quality",
       severity: "warning",
-      title: timeframe === "daily" ? "Today is overloaded" : "Schedule may be overloaded",
-      body: timeframe === "weekly"
-        ? `Total scheduled time this week is ${Math.round(totalScheduled / 60)} hours across all days.`
-        : `Total scheduled time is ${Math.round(totalScheduled / 60)} hours, which exceeds the recommended 8-10 hour productive ceiling.`,
+      title: "Daily schedule exceeds productive ceiling",
+      body: `Average ${Math.round(totalMinsPerDay / 60)} hours scheduled per day — above the recommended 8-10 hour productive ceiling.`,
+    });
+  } else if (totalMinsPerDay < 120 && totalDaily >= 2) {
+    cards.push({
+      kind: "schedule-quality",
+      severity: "insight",
+      title: "Light schedule",
+      body: `Averaging ${Math.round(totalMinsPerDay / 60)} hours scheduled per day. There may be room for more focused work.`,
     });
   }
 

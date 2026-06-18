@@ -6,30 +6,19 @@ export function burnoutAnalysis(data: ScheduleData, timeframe: DigestTimeframe):
   const cards: ReportCard[] = [];
   const blocks = getBlocksForTimeframe(data, timeframe);
 
-  const blockCount = blocks.filter((b: { kind: string }) => b.kind !== "sleep").length;
+  const nonSleep = blocks.filter((b: { kind: string; day: number }) => b.kind !== "sleep");
+  const daysWithBlocks = new Set(nonSleep.map((b: { day: number }) => b.day)).size || 1;
+  const avgDaily = nonSleep.length / daysWithBlocks;
+
   const compositionScore = data.ledger.compositionScore;
   const hasSleepSchedule = data.meta.sleepSchedule && data.meta.sleepSchedule.length > 0;
 
   let riskFactors = 0;
   const signals: string[] = [];
 
-  if (timeframe === "daily") {
-    const threshold = 10;
-    if (blockCount > threshold) {
-      riskFactors++;
-      signals.push(`high daily block count (${blockCount})`);
-    }
-  } else if (timeframe === "weekly") {
-    const avgDaily = Math.round(blockCount / 7);
-    if (avgDaily > 8) {
-      riskFactors++;
-      signals.push(`average ${avgDaily} blocks/day across the week`);
-    }
-  } else {
-    if (blockCount > 60) {
-      riskFactors++;
-      signals.push(`high monthly volume (${blockCount} blocks)`);
-    }
+  if (avgDaily > 10) {
+    riskFactors++;
+    signals.push(`averaging ${Math.round(avgDaily)} blocks/day`);
   }
 
   if (compositionScore < 0.25) {
@@ -53,7 +42,7 @@ export function burnoutAnalysis(data: ScheduleData, timeframe: DigestTimeframe):
       const secondAvg = secondHalf.reduce((s: number, snap: { numerator: number; denominator: number }) => s + (snap.denominator > 0 ? snap.numerator / snap.denominator : 0), 0) / secondHalf.length;
       if (secondAvg < firstAvg - 0.15) {
         riskFactors++;
-        signals.push("declining completion rate over time");
+        signals.push("declining completion rate");
       }
     }
   }
@@ -63,7 +52,7 @@ export function burnoutAnalysis(data: ScheduleData, timeframe: DigestTimeframe):
       kind: "burnout",
       severity: "warning",
       title: "Potential burnout risk detected",
-      body: `${riskFactors} risk factor${riskFactors > 1 ? "s" : ""} identified: ${signals.join(", ")}. ${timeframe === "monthly" ? "These patterns sustained over time increase burnout probability." : "Dense schedules without adequate recovery increase burnout probability."}`,
+      body: `${riskFactors} risk factor${riskFactors > 1 ? "s" : ""} identified: ${signals.join(", ")}. ${timeframe === "monthly" ? "These patterns sustained over time increase burnout probability." : "Reviewing workload balance could help prevent long-term fatigue."}`,
       actionable: true,
     });
   } else if (riskFactors === 0) {

@@ -1,11 +1,11 @@
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { ReportCard, DigestTimeframe } from "../types";
-import { getBlocksForTimeframe, getTodayBlocks } from "./helpers";
+import { getBlocksForTimeframe, dailyAvg } from "./helpers";
 
 export function recoveryAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
   const cards: ReportCard[] = [];
   const blocks = getBlocksForTimeframe(data, timeframe);
-  const nonSleep = blocks.filter((b: { kind: string }) => b.kind !== "sleep");
+  const nonSleep = blocks.filter((b: { kind: string; day: number }) => b.kind !== "sleep");
   const hasSleepSchedule = data.meta.sleepSchedule && data.meta.sleepSchedule.length > 0;
 
   if (!hasSleepSchedule) {
@@ -19,18 +19,66 @@ export function recoveryAnalysis(data: ScheduleData, timeframe: DigestTimeframe)
     return cards;
   }
 
+  const avgDailyBlocks = dailyAvg(nonSleep, timeframe);
   const score = data.ledger.compositionScore;
 
   if (timeframe === "daily") {
-    const todayBlocks = getTodayBlocks(data).filter((b: { kind: string }) => b.kind !== "sleep");
-    const label = todayBlocks.length === 0 ? "No non-sleep blocks scheduled for today" : `${todayBlocks.length} blocks scheduled today`;
+    const todayBlocks = nonSleep;
+    if (todayBlocks.length > 10) {
+      cards.push({
+        kind: "recovery",
+        severity: "insight",
+        title: "Today is densely packed",
+        body: `${todayBlocks.length} non-sleep blocks today. Consider whether all are essential or if some can be moved.`,
+      });
+    } else if (todayBlocks.length > 0) {
+      cards.push({
+        kind: "recovery",
+        severity: "insight",
+        title: `Today has ${todayBlocks.length} blocks scheduled`,
+        body: todayBlocks.length <= 6
+          ? "Today's schedule has room for adequate recovery between activities."
+          : "Today is moderately busy. Recovery windows should be respected.",
+      });
+    }
+  }
+
+  if (avgDailyBlocks > 10) {
     cards.push({
       kind: "recovery",
-      severity: "insight",
-      title: `Today's recovery outlook: ${label}`,
-      body: todayBlocks.length > 6
-        ? `With ${todayBlocks.length} blocks today, recovery windows are limited. Consider reviewing block density.`
-        : `Today's schedule has ${todayBlocks.length} blocks, which allows for adequate recovery between activities.`,
+      severity: "warning",
+      title: timeframe === "weekly"
+        ? `Averaging ${Math.round(avgDailyBlocks)} blocks per day this week`
+        : timeframe === "monthly"
+        ? `Averaging ${Math.round(avgDailyBlocks)} blocks per day this month`
+        : "Above-average block density",
+      body: `You average ${Math.round(avgDailyBlocks)} non-sleep blocks per day. Schedules with more than 10 daily blocks tend to reduce recovery windows.`,
+      actionable: true,
+    });
+  } else if (avgDailyBlocks <= 6 && avgDailyBlocks > 0) {
+    cards.push({
+      kind: "recovery",
+      severity: "trend",
+      title: timeframe === "daily" ? "Today's schedule leaves room for recovery" : "Block density is sustainable",
+      body: avgDailyBlocks > 0
+        ? `Averaging ${Math.round(avgDailyBlocks)} non-sleep blocks per day — well within a sustainable range.`
+        : timeLabel(timeframe) + " schedule leaves room for recovery.",
+    });
+  }
+
+  if (score < 0.3) {
+    cards.push({
+      kind: "recovery",
+      severity: "warning",
+      title: "Low composition score may signal fatigue",
+      body: `Your schedule composition score is ${Math.round(score * 100)}%. ${score < 0.2 ? "This is critically low — consider reviewing schedule density." : "When schedules are this dense, recovery may be insufficient."}`,
+    });
+  } else if (score > 0.7) {
+    cards.push({
+      kind: "recovery",
+      severity: "trend",
+      title: "Schedule composition is healthy",
+      body: `Your composition score of ${Math.round(score * 100)}% suggests a well-balanced schedule. Recovery indicators are positive.`,
     });
   }
 
@@ -42,42 +90,21 @@ export function recoveryAnalysis(data: ScheduleData, timeframe: DigestTimeframe)
       const last = sorted[sorted.length - 1];
       const firstRatio = first.denominator > 0 ? first.numerator / first.denominator : 0;
       const lastRatio = last.denominator > 0 ? last.numerator / last.denominator : 0;
-      if (lastRatio < firstRatio) {
+      if (lastRatio < firstRatio - 0.1) {
         cards.push({
           kind: "recovery",
           severity: "warning",
           title: "Goal completion rate declining over the month",
-          body: `Completion ratio dropped from ${Math.round(firstRatio * 100)}% to ${Math.round(lastRatio * 100)}%. This may indicate accumulated fatigue or unsustainable workload.`,
+          body: `Completion ratio dropped from ${Math.round(firstRatio * 100)}% to ${Math.round(lastRatio * 100)}%. This may signal accumulated fatigue.`,
           actionable: true,
         });
       }
     }
   }
 
-  if (score < 0.3) {
-    cards.push({
-      kind: "recovery",
-      severity: "warning",
-      title: timeframe === "daily" ? "Today's schedule is densely packed" : "Low composition score may signal fatigue",
-      body: `Your schedule composition score is ${Math.round(score * 100)}%. ${score < 0.2 ? "This is critically low — consider reducing block count." : "When schedules are this dense, recovery may be insufficient."}`,
-    });
-  } else if (score > 0.7) {
-    cards.push({
-      kind: "recovery",
-      severity: "trend",
-      title: timeframe === "daily" ? "Today's schedule looks well-balanced" : "Schedule composition is healthy",
-      body: `Your composition score of ${Math.round(score * 100)}% suggests a well-balanced schedule. Recovery indicators are positive across ${timeframe === "weekly" ? "the week" : "this period"}.`,
-    });
-  }
-
-  if (nonSleep.length > 8) {
-    cards.push({
-      kind: "recovery",
-      severity: "warning",
-      title: timeframe === "weekly" ? "Weekly block count is high" : "High block density may reduce recovery",
-      body: `${nonSleep.length} non-sleep blocks are scheduled. ${timeframe === "weekly" ? "Across the full week, this averages " + Math.round(nonSleep.length / 7) + " blocks per day." : "High block counts with tight transitions can increase cognitive fatigue."}`,
-    });
-  }
-
   return cards;
+}
+
+function timeLabel(tf: DigestTimeframe): string {
+  return tf === "daily" ? "Today's" : tf === "weekly" ? "This week's" : "Current";
 }
