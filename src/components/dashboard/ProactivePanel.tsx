@@ -4,7 +4,7 @@ import type { Insight, RecoveryAnalysis } from "@/lib/ai/core/schemas";
 import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
 import type { ScheduleData } from "@/lib/schedule/types";
 import { timeToMinutes, durationMin, fmtDur } from "@/lib/schedule/types";
-import { getLatestBriefing } from "@/lib/ai/briefing/generate";
+import { getLatestBriefing } from "@/lib/notification-count";
 import { useNavigate } from "react-router-dom";
 
 interface ProactivePanelProps {
