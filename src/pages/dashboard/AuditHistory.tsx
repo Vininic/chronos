@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Undo2, Trash2, Clock, History } from "lucide-react";
 
+let _snapshot: AuditEntry[] = [];
+
 function subscribeAuditLog(cb: () => void): () => void {
   const handler = (): void => cb();
   window.addEventListener("storage", handler);
@@ -25,7 +27,14 @@ function subscribeAuditLog(cb: () => void): () => void {
 }
 
 function readAuditLog(): AuditEntry[] {
-  return getAuditLog();
+  const next = getAuditLog();
+  if (
+    next.length !== _snapshot.length ||
+    next.some((e, i) => e !== _snapshot[i])
+  ) {
+    _snapshot = next;
+  }
+  return _snapshot;
 }
 
 export default function AuditHistory() {
