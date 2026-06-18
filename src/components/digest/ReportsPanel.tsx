@@ -5,13 +5,14 @@ import { getAllDigests, getLatestDigest } from "@/lib/digest/store";
 import { generateDigest } from "@/lib/digest/generator";
 import { DigestView } from "./DigestView";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, RotateCcw, History } from "lucide-react";
+import { CalendarDays, RotateCcw, History, CalendarRange } from "lucide-react";
 import { loadSettingsSync } from "@/lib/ai/settings/store";
 
 const TIMEFRAME_OPTIONS: { key: DigestTimeframe; label: string }[] = [
   { key: "daily", label: "Daily" },
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
+  { key: "custom", label: "Custom" },
 ];
 
 const TIMEFRAME_LABELS: Record<string, string> = {
@@ -40,11 +41,15 @@ interface ReportsPanelProps {
 }
 
 export function ReportsPanel({ data }: ReportsPanelProps) {
-  const latest = getLatestDigest();
-  const [currentDigest, setCurrentDigest] = useState<Digest | null>(latest);
+  const latestDaily = getAllDigests().find((d) => d.timeframe === "daily") ?? getLatestDigest();
+  const [currentDigest, setCurrentDigest] = useState<Digest | null>(latestDaily);
   const [allDigests, setAllDigests] = useState<Digest[]>(getAllDigests());
   const [showHistory, setShowHistory] = useState(false);
-  const [generateTf, setGenerateTf] = useState<DigestTimeframe>(latest?.timeframe ?? "daily");
+  const [generateTf, setGenerateTf] = useState<DigestTimeframe>(latestDaily?.timeframe ?? "daily");
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10);
+  });
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
 
   const settings = loadSettingsSync();
   const isAuto = settings.featureToggles.digestAuto;
@@ -67,7 +72,9 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
   }, [isAuto, data.meta.version, data.routine.length, data.commitments.length]);
 
   const handleGenerate = (tf?: DigestTimeframe) => {
-    const digest = generateDigest(data, tf ?? generateTf);
+    const finalTf = tf ?? generateTf;
+    const isCustom = finalTf === "custom";
+    const digest = generateDigest(data, finalTf, isCustom ? { start: customStart, end: customEnd } : undefined);
     setCurrentDigest(digest);
     setAllDigests(getAllDigests());
   };
@@ -96,7 +103,7 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
               >
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full shrink-0 ${HISTORY_DOT[d.color]}`} />
-                  <span className="text-xs font-medium text-primary">{d.date}</span>
+                  <span className="text-xs font-medium text-primary">{d.date.length > 12 ? d.date.slice(0, 10) : d.date}</span>
                   <span className="text-[9px] text-muted-foreground/60">{TIMEFRAME_LABELS[d.timeframe] ?? d.timeframe}</span>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1 line-clamp-1">{d.summary}</p>
@@ -130,16 +137,41 @@ export function ReportsPanel({ data }: ReportsPanelProps) {
           {TIMEFRAME_OPTIONS.map((opt) => (
             <button
               key={opt.key}
-              onClick={() => handleGenerate(opt.key)}
+              onClick={() => {
+                setGenerateTf(opt.key);
+                if (opt.key !== "custom") handleGenerate(opt.key);
+              }}
               className={`flex-1 text-[9px] py-1.5 rounded-md border transition-colors ${
                 generateTf === opt.key
                   ? "border-secondary/40 bg-secondary/10 text-secondary font-medium"
                   : "border-border text-muted-foreground hover:text-primary hover:bg-secondary/5"
               }`}
             >
+              {opt.key === "custom" ? <CalendarRange className="h-3 w-3 inline mr-0.5" /> : null}
               {opt.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {generateTf === "custom" && (
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="flex-1 h-7 text-[10px] bg-transparent border border-border rounded px-1.5 text-primary"
+          />
+          <span className="text-[9px] text-muted-foreground">to</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="flex-1 h-7 text-[10px] bg-transparent border border-border rounded px-1.5 text-primary"
+          />
+          <Button onClick={() => handleGenerate("custom")} size="sm" className="h-7 text-[9px] px-2">
+            Go
+          </Button>
         </div>
       )}
 

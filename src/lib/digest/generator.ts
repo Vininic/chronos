@@ -78,7 +78,7 @@ function buildOpportunities(cards: ReportCard[]): { label: string; action?: stri
     .map((c) => ({ label: c.title, action: c.title.toLowerCase().replace(/\s+/g, "-") }));
 }
 
-export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe): Digest {
+export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe, customDate?: { start: string; end: string }): Digest {
   const aiSettings = loadSettingsSync();
   const mode: "auto" | "manual" = aiSettings.featureToggles.digestAuto ? "auto" : "manual";
   const now = new Date();
@@ -86,7 +86,9 @@ export function generateDigest(data: ScheduleData, timeframe?: DigestTimeframe):
   const tf = timeframe ?? "daily";
   const color = TIMEFRAME_COLORS[tf];
 
-  const date = tf === "weekly"
+  const date = tf === "custom" && customDate
+    ? customDate.start + " -- " + customDate.end
+    : tf === "weekly"
     ? (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); return d.toISOString().slice(0, 10); })()
     : tf === "monthly"
     ? today.slice(0, 7) + "-01"
