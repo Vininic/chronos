@@ -541,11 +541,11 @@ export default function Aetheris() {
       <DemoTour />
 
       {/* Right sidebar */}
-      <div className={`overflow-hidden transition-all duration-300 ease-in-out hidden lg:block ${
+      <div className={`overflow-x-hidden transition-all duration-300 ease-in-out hidden lg:block ${
         showSidebar ? "w-80 opacity-100 border-l border-border" : "w-0 opacity-0"
       }`}>
-          <div className="w-80 shrink-0 overflow-hidden bg-background h-full min-w-0">
-          <div className="p-4" style={{ overflow: "hidden auto" }}>
+          <div className="w-80 shrink-0 overflow-x-hidden bg-background h-full min-w-0">
+          <div className="p-4 overflow-y-auto overflow-x-hidden">
             {/* Tab bar */}
             <div className="flex flex-wrap gap-1 mb-4">
               {tabs.map((tabDef) => (
@@ -709,7 +709,7 @@ export default function Aetheris() {
               </div>
             )}
             {tab === "optimize" && (
-              <div className="space-y-3" style={{ overflow: "hidden" }}>
+              <div className="space-y-3 overflow-x-hidden">
                 <div className="grid grid-cols-2 gap-2">
                   <MetricBox label="Conflicts" value={optimization.conflicts.length} />
                   <MetricBox label="Gaps" value={optimization.idleGaps.length} />
