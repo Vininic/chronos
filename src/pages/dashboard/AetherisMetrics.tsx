@@ -7,13 +7,22 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart3, Clock, Zap, ThumbsUp, ThumbsDown, Trash2 } from "lucide-react";
 
+let _logSnapshot: LLMCallLog[] = [];
+
 function subscribe(cb: () => void): () => void {
   window.addEventListener("storage", cb);
   return () => window.removeEventListener("storage", cb);
 }
 
 function readLogs(): LLMCallLog[] {
-  return getLogs();
+  const next = getLogs();
+  if (
+    next.length !== _logSnapshot.length ||
+    next.some((e, i) => e !== _logSnapshot[i])
+  ) {
+    _logSnapshot = next;
+  }
+  return _logSnapshot;
 }
 
 export default function AetherisMetrics() {
