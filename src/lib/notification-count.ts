@@ -16,15 +16,4 @@ export function subscribe(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-// Briefing cache — written by generateDailyBriefing, read by digest card
-let _latestBriefing = "";
 
-export function setLatestBriefing(text: string) {
-  _latestBriefing = text;
-  _count = 0;
-  listeners.forEach((fn) => fn(0));
-}
-
-export function getLatestBriefing(): string {
-  return _latestBriefing;
-}

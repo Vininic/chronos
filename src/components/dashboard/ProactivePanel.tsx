@@ -4,7 +4,6 @@ import type { Insight, RecoveryAnalysis } from "@/lib/ai/core/schemas";
 import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
 import type { ScheduleData } from "@/lib/schedule/types";
 import { timeToMinutes, durationMin, fmtDur } from "@/lib/schedule/types";
-import { getLatestBriefing } from "@/lib/notification-count";
 import { useNavigate } from "react-router-dom";
 
 interface ProactivePanelProps {
@@ -44,9 +43,6 @@ export function getProactiveCount(data: ScheduleData, insights: Insight[], _reco
 }
 
 export function buildDigest(data: ScheduleData): string {
-  const ai = getLatestBriefing();
-  if (ai) return ai;
-
   const now = new Date();
   const dayOfWeek = now.getDay();
   const todayBlocks = data.routine.filter((b) => b.day === dayOfWeek).sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));

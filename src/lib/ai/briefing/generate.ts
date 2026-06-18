@@ -18,8 +18,6 @@ Schedule:
 
 Briefing:`;
 
-import { setLatestBriefing } from "@/lib/notification-count";
-
 function fallbackBriefing(): string {
   return `Good day! I have your schedule ready — check your agenda in the timeline above.`;
 }
@@ -65,12 +63,8 @@ export async function generateDailyBriefing(data: ScheduleData): Promise<string>
       maxTokens: 300,
     });
 
-    const text = result.text.trim() || fallbackBriefing();
-    setLatestBriefing(text);
-    return text;
+    return result.text.trim() || fallbackBriefing();
   } catch {
-    const fb = fallbackBriefing();
-    setLatestBriefing(fb);
-    return fb;
+    return fallbackBriefing();
   }
 }
