@@ -20,8 +20,8 @@ export function productivityAnalysis(data: ScheduleData, timeframe: DigestTimefr
       cards.push({
         kind: "productivity",
         severity: "insight",
-        title: `Deep work spans ${daysWithDeep} day${daysWithDeep > 1 ? "s" : ""} this week`,
-        body: `Deep work sessions are concentrated on ${daysWithDeep} day${daysWithDeep > 1 ? "s" : ""}. Spreading them more evenly could improve weekly output consistency.`,
+        title: `Deep work on ${daysWithDeep} day${daysWithDeep > 1 ? "s" : ""} this week`,
+        body: `Deep work sessions are scheduled on ${daysWithDeep} day${daysWithDeep > 1 ? "s" : ""} of the week.`,
       });
     }
     const totalMorning = morning.length;
@@ -30,9 +30,16 @@ export function productivityAnalysis(data: ScheduleData, timeframe: DigestTimefr
     if (totalMorning > totalEvening + totalAfternoon) {
       cards.push({
         kind: "productivity",
-        severity: "trend",
-        title: "Mornings are the most productive this week",
-        body: `${totalMorning} blocks are scheduled before noon this week — mornings dominate your schedule.`,
+        severity: "insight",
+        title: "Most blocks are in the morning this week",
+        body: `${totalMorning} blocks before noon, ${totalAfternoon} in the afternoon, ${totalEvening} in the evening.`,
+      });
+    } else if (totalEvening > totalMorning + totalAfternoon) {
+      cards.push({
+        kind: "productivity",
+        severity: "insight",
+        title: "Most blocks are in the evening this week",
+        body: `${totalEvening} blocks after 6 PM, ${totalMorning} in the morning, ${totalAfternoon} in the afternoon.`,
       });
     }
   } else if (timeframe === "monthly") {
@@ -42,54 +49,27 @@ export function productivityAnalysis(data: ScheduleData, timeframe: DigestTimefr
       const avg = scheduledHours.reduce((s: number, v: number) => s + v, 0) / scheduledHours.length;
       cards.push({
         kind: "productivity",
-        severity: avg > 8 ? "warning" : "trend",
-        title: avg > 8 ? "Monthly workload above recommended ceiling" : "Monthly workload is within healthy range",
-        body: avg > 8
-          ? `Average ${Math.round(avg)} hours scheduled per day this month exceeds the 8-hour productive ceiling.`
-          : `Average ${Math.round(avg)} hours per day this month — sustainable for long-term productivity.`,
+        severity: "insight",
+        title: `Averaging ${Math.round(avg)} scheduled hours per day`,
+        body: `Across ${scheduledHours.length} tracked day${scheduledHours.length > 1 ? "s" : ""} this month.`,
       });
     }
-    if (deepAll.length > 10) {
-      cards.push({
-        kind: "productivity",
-        severity: "trend",
-        title: "Strong deep work volume this month",
-        body: `${deepAll.length} deep work sessions scheduled across the month. Consistent deep work is a strong productivity driver.`,
-      });
-    }
-  } else {
-    if (morning.length > afternoon.length && morning.length > evening.length) {
+    if (deepAll.length > 0) {
       cards.push({
         kind: "productivity",
         severity: "insight",
-        title: "Most blocks are in the morning",
-        body: `${morning.length} blocks are scheduled before noon. Morning-oriented schedules typically have higher completion rates.`,
-      });
-    } else if (evening.length > morning.length) {
-      cards.push({
-        kind: "productivity",
-        severity: "trend",
-        title: "Most blocks are in the evening",
-        body: `${evening.length} blocks are scheduled after 6 PM. Evening hours often have lower completion rates.`,
+        title: `${deepAll.length} deep work sessions this month`,
+        body: deepAll.length > 10 ? "Consistent deep work is scheduled throughout the month." : "Deep work sessions appear in the current schedule.",
       });
     }
-  }
-
-  const deepBlocks = allBlocks.filter((b: { kind: string }) => b.kind === "deep");
-  if (deepBlocks.length > 0) {
-    const deepAfterNoon = deepBlocks.filter((b: { start: string }) => {
-      const h = parseInt(b.start.split(":")[0], 10);
-      return h >= 12;
+  } else {
+    const total = allBlocks.length;
+    cards.push({
+      kind: "productivity",
+      severity: "insight",
+      title: `${total} block${total > 1 ? "s" : ""} scheduled today`,
+      body: `${morning.length} in the morning, ${afternoon.length} in the afternoon, ${evening.length} in the evening.`,
     });
-    if (deepAfterNoon.length > 0) {
-      cards.push({
-        kind: "productivity",
-        severity: "opportunity",
-        title: "Deep work placed in suboptimal hours",
-        body: `${deepAfterNoon.length} deep work session${deepAfterNoon.length > 1 ? "s are" : " is"} scheduled after noon. Deep concentration typically peaks in late morning.`,
-        actionable: true,
-      });
-    }
   }
 
   return cards;

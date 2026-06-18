@@ -32,9 +32,9 @@ export function programsAnalysis(data: ScheduleData, timeframe: DigestTimeframe)
   if (programs.length > 2) {
     cards.push({
       kind: "programs",
-      severity: "warning",
+      severity: "insight",
       title: `${programs.length} structured programs active`,
-      body: `Running ${programs.length} structured programs simultaneously may lead to overload. Consider focusing on fewer programs ${timeframe === "monthly" ? "over the coming month" : "for better adherence"}.`,
+      body: `${programs.length} programs with workspace presets are configured.`,
     });
   }
 
@@ -44,8 +44,8 @@ export function programsAnalysis(data: ScheduleData, timeframe: DigestTimeframe)
       cards.push({
         kind: "programs",
         severity: "insight",
-        title: "High program engagement this month",
-        body: `${scheduledBlocks.length} program-specific blocks scheduled this month. Consistent program engagement is a strong indicator of structured progress.`,
+        title: `${scheduledBlocks.length} program blocks this month`,
+        body: `${scheduledBlocks.length} blocks matching program categories are scheduled.`,
       });
     }
   }

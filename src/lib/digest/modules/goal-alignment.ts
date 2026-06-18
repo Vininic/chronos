@@ -24,7 +24,7 @@ export function goalAlignmentAnalysis(data: ScheduleData, timeframe: DigestTimef
       kind: "goal-alignment",
       severity: "insight",
       title: `${highPriority.length} high-priority goal${highPriority.length > 1 ? "s" : ""} tracked`,
-      body: timeoutLabel(timeframe) + `Your top priority goal${highPriority.length > 1 ? "s" : ""} ${highPriority.length > 1 ? "are" : "is"} ${goalNames}. ${timeframe === "daily" ? "Review whether today's schedule allocates time toward these." : timeframe === "weekly" ? "Check that your weekly routine includes blocks for these priorities." : "Track progress on these goals across the month."}`,
+      body: timeoutLabel(timeframe) + `Your top priority goal${highPriority.length > 1 ? "s" : ""} ${highPriority.length > 1 ? "are" : "is"} ${goalNames}.`,
     });
   }
 
@@ -44,10 +44,9 @@ export function goalAlignmentAnalysis(data: ScheduleData, timeframe: DigestTimef
       if (entry.last < entry.first && entry.last < 0.5) {
         cards.push({
           kind: "goal-alignment",
-          severity: "warning",
+          severity: "insight",
           title: `Goal "${entry.label}" progress declined`,
-          body: `Progress on "${entry.label}" dropped from ${Math.round(entry.first * 100)}% to ${Math.round(entry.last * 100)}% this month. Consider reviewing your approach or adjusting the target.`,
-          actionable: true,
+          body: `Progress on "${entry.label}" went from ${Math.round(entry.first * 100)}% to ${Math.round(entry.last * 100)}% this month.`,
         });
       }
     }

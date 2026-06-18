@@ -18,10 +18,10 @@ export function consistencyAnalysis(data: ScheduleData, timeframe: DigestTimefra
     cards.push({
       kind: "consistency",
       severity: "trend",
-      title: `${weakGoals.length} goal${weakGoals.length > 1 ? "s" : ""} showing inconsistency`,
+      title: `${weakGoals.length} goal${weakGoals.length > 1 ? "s" : ""} with no active streak`,
       body: weakGoals.length <= 2
-        ? `${names} ${weakGoals.length > 1 ? "have" : "has"} no active streak. Consistency drives long-term progress.`
-        : `${weakGoals.length} goals have no active streak. Consider reducing goal count or adjusting targets.`,
+        ? `${names} ${weakGoals.length > 1 ? "have" : "has"} no active streak.`
+        : `${weakGoals.length} goals have no active streak.`,
       actionable: true,
     });
   }
@@ -35,17 +35,16 @@ export function consistencyAnalysis(data: ScheduleData, timeframe: DigestTimefra
       if (consistencyRate < 60) {
         cards.push({
           kind: "consistency",
-          severity: "warning",
+          severity: "insight",
           title: `Monthly consistency rate: ${consistencyRate}%`,
-          body: `Only ${doneSnapshots} out of ${totalSnapshots} tracked goal periods were completed this month. Consistency below 60% suggests goals may need adjustment.`,
-          actionable: true,
+          body: `${doneSnapshots} of ${totalSnapshots} tracked goal periods completed this month.`,
         });
       } else if (consistencyRate >= 80) {
         cards.push({
           kind: "consistency",
-          severity: "trend",
-          title: `Strong monthly consistency: ${consistencyRate}%`,
-          body: `${doneSnapshots} out of ${totalSnapshots} goal periods completed. Your consistency this month is excellent.`,
+          severity: "insight",
+          title: `Monthly consistency rate: ${consistencyRate}%`,
+          body: `${doneSnapshots} of ${totalSnapshots} goal periods completed.`,
         });
       }
     }
