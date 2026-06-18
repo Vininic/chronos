@@ -541,11 +541,11 @@ export default function Aetheris() {
       <DemoTour />
 
       {/* Right sidebar */}
-      <div className={`overflow-x-hidden transition-all duration-300 ease-in-out hidden lg:block ${
+      <div className={`overflow-hidden transition-all duration-300 ease-in-out hidden lg:block ${
         showSidebar ? "w-80 opacity-100 border-l border-border" : "w-0 opacity-0"
       }`}>
-          <div className="w-80 shrink-0 bg-background h-full min-w-0 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">
+          <div className="w-80 shrink-0 bg-background h-full min-w-0">
+          <div className="p-4 overflow-y-auto overflow-x-hidden" style={{ maxHeight: "calc(100vh - 80px)" }}>
             {/* Tab bar */}
             <div className="flex flex-wrap gap-1 mb-4">
               {tabs.map((tabDef) => (
