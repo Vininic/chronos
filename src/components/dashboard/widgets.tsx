@@ -8,6 +8,8 @@ import { useFmtDur, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { useState, useEffect } from "react";
 import { subscribe as subscribeNotif, getAetherisCount } from "@/lib/notification-count";
+import { getLatestDigest } from "@/lib/digest/store";
+import { DigestView } from "@/components/digest/DigestView";
 
 type BlockStyle = { dot: string; chip: string; icon: React.ComponentType<{ className?: string }>; blockBg: string; blockBorder: string; customColor?: string; blockStyle?: React.CSSProperties; chipStyle?: React.CSSProperties; dotStyle?: React.CSSProperties };
 
@@ -238,6 +240,9 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const [count, setCount] = useState(getAetherisCount());
   useEffect(() => subscribeNotif(setCount), []);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const latestDigest = getLatestDigest();
+  const hasDigest = latestDigest && latestDigest.date === todayIso;
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />
@@ -255,23 +260,26 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
             </span>
           </div>
         </div>
-        {count > 0 ? (
-          <span className="text-[10px] font-semibold rounded-full bg-secondary text-primary-deep px-2 py-0.5 num">{count}</span>
-        ) : (
-          <span className="text-[10px] rounded-full bg-emerald-500/20 text-emerald-500 px-1.5 py-0.5 flex items-center gap-1">
-            <Check className="h-3 w-3" /> Clear
-          </span>
-        )}
-      </div>
-
-      {count > 0 && (
-        <div className="mt-5 border-t border-border/40 pt-4">
+        <div className="flex items-center gap-2">
+          {count > 0 ? (
+            <span className="text-[10px] font-semibold rounded-full bg-secondary text-primary-deep px-2 py-0.5 num">{count}</span>
+          ) : (
+            <span className="text-[10px] rounded-full bg-emerald-500/20 text-emerald-500 px-1.5 py-0.5 flex items-center gap-1">
+              <Check className="h-3 w-3" /> Clear
+            </span>
+          )}
           <Link
             to="/dashboard/aetheris"
-            className="text-xs text-secondary hover:underline inline-flex items-center gap-1.5 group"
+            className="text-[10px] text-secondary hover:text-secondary/80 transition-colors flex items-center gap-1"
           >
-            {t.chronos.widgets.viewAllSuggestions} <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            {t.chronos.widgets.viewAllSuggestions} <ArrowUpRight className="h-3 w-3" />
           </Link>
+        </div>
+      </div>
+
+      {hasDigest && (
+        <div className="mt-4 border-t border-border/40 pt-4">
+          <DigestView digest={latestDigest} />
         </div>
       )}
     </div>
