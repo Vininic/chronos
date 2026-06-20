@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { useTimer } from "@/lib/timer/TimerContext";
-import { Clock, Trophy, ChevronDown, ChevronRight, Play, CheckCircle2 } from "lucide-react";
+import { Clock, Trophy, ChevronDown, ChevronRight, Play, CheckCircle2, Circle } from "lucide-react";
 
 type SessionState = "preview" | "active" | "completed";
 
@@ -83,7 +83,7 @@ function buildDisplayItems(structure: WorkspaceStructure, runtime: WorkspaceRunt
   });
 }
 
-function useTimer(startedAt: number | null) {
+function useElapsed(startedAt: number | null) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (startedAt == null) return;
@@ -178,7 +178,7 @@ function ActiveView({
 
   const r = runtime as Record<string, unknown>;
   const startedAt = (r._sessionStartedAt as number) ?? null;
-  const elapsed = useTimer(startedAt);
+  const elapsed = useElapsed(startedAt);
 
   const currentExercise = nextPath
     ? displayItems.find((item) => item.sets.some((s) => s.key === nextPath.join("/")))
@@ -440,7 +440,7 @@ function CompletedView({
   }
   const r = runtime as Record<string, unknown>;
   const startedAt = (r._sessionStartedAt as number) ?? null;
-  const elapsed = useTimer(startedAt);
+  const elapsed = useElapsed(startedAt);
   const itemLabelPlural = structure.levels[1]?.labelPlural?.toLowerCase() ?? "items";
 
   return (
@@ -562,17 +562,18 @@ export function BlockSessionBadge({
   const { done, total } = calcProgress(runtime, structure);
   const state = detectState(structure, runtime);
 
-  const dotColor =
-    state === "completed" ? "bg-green-500" :
-    state === "active"    ? "bg-secondary" :
-                            "bg-muted-foreground/25";
-
-  const showCount = total > 0 && (state === "active" || state === "completed");
+  // ○ not started · ▶ active · ✓ completed
+  const StateIcon = state === "completed" ? CheckCircle2 : state === "active" ? Play : Circle;
+  const iconColor =
+    state === "completed" ? "text-green-500" :
+    state === "active"    ? "text-secondary" :
+                            "text-muted-foreground/40";
+  const showCount = total > 0 && state === "active";
 
   if (tier === "micro") {
     return (
       <span className="inline-flex items-center gap-1 leading-none">
-        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+        <StateIcon className={`h-2.5 w-2.5 shrink-0 ${iconColor}`} />
         <span className="text-[9px] font-medium text-primary/70 truncate max-w-[4rem]">{tplName}</span>
       </span>
     );
@@ -581,7 +582,7 @@ export function BlockSessionBadge({
   if (tier === "compact") {
     return (
       <span className="inline-flex items-center gap-1 leading-none">
-        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+        <StateIcon className={`h-2.5 w-2.5 shrink-0 ${iconColor}`} />
         <span className="text-[9px] font-medium text-primary/70 truncate max-w-[5rem]">{tplName}</span>
         {showCount && (
           <span className="text-[9px] text-muted-foreground/50 num">{done}/{total}</span>
@@ -591,13 +592,11 @@ export function BlockSessionBadge({
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded bg-muted/30 px-1.5 py-0.5 leading-none min-w-0">
-      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+    <span className="inline-flex items-center gap-1.5 rounded-md bg-muted/30 px-1.5 py-0.5 leading-none min-w-0">
+      <StateIcon className={`h-3 w-3 shrink-0 ${iconColor}`} />
       <span className="text-[10px] font-medium text-primary/80 truncate max-w-[6rem]">{tplName}</span>
       {showCount && (
-        <span className="text-[10px] text-muted-foreground/50 num ml-auto shrink-0">
-          {state === "completed" ? "✓" : `${done}/${total}`}
-        </span>
+        <span className="text-[10px] text-muted-foreground/50 num ml-auto shrink-0">{done}/{total}</span>
       )}
     </span>
   );

@@ -11,12 +11,21 @@ import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler, Dumbbell, BookOpen, GraduationCap, ClipboardList, Brain, ListChecks, Wrench, Box } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { setDragCommitmentInfo } from "@/lib/dragStore";
 import { WORKSPACE_PRESETS } from "@/workspaces/presets";
+
+const PRESET_ICON: Record<string, typeof Dumbbell> = {
+  "dumbbell": Dumbbell,
+  "book-open": BookOpen,
+  "graduation-cap": GraduationCap,
+  "clipboard-list": ClipboardList,
+  "brain": Brain,
+  "list-checks": ListChecks,
+};
 import { TemplateEditor } from "@/components/dashboard/TemplateEditor";
 
 
@@ -1138,24 +1147,27 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                     {isPt ? "Escolha um tipo:" : "Choose a type:"}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    {WORKSPACE_PRESETS.map((p) => (
+                    {WORKSPACE_PRESETS.map((p) => {
+                      const Ic = PRESET_ICON[p.icon] ?? Box;
+                      return (
                       <button
                         key={p.id}
                         onClick={() => { onUpdate(cat.id, { workspace: p.create() }); }}
                         className="flex items-start gap-2.5 rounded-lg border border-border/50 p-2.5 text-left hover:border-secondary/40 hover:bg-muted/20 transition-colors"
                       >
-                        <span className="text-base leading-none shrink-0 mt-0.5">{p.icon}</span>
+                        <Ic className="h-4 w-4 text-secondary shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <div className="text-xs font-medium text-primary">{p.label}</div>
                           <div className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-2">{p.description}</div>
                         </div>
                       </button>
-                    ))}
+                      );
+                    })}
                     <button
                       onClick={() => { onUpdate(cat.id, { workspace: { levels: [{ key: "item", label: "Item", labelPlural: "Items", fields: [], tracking: { type: "boolean", default: false, label: "Done" } }], display: { summary: "", nextStep: "", progress: "boolean" }, templates: [{ name: "Default", children: [] }] } }); }}
                       className="flex items-center justify-center gap-2.5 rounded-lg border border-dashed border-border/50 p-2.5 hover:border-secondary/40 hover:bg-muted/20 transition-colors col-span-2"
                     >
-                      <span className="text-base leading-none shrink-0 mt-0.5">🛠️</span>
+                      <Wrench className="h-4 w-4 text-secondary shrink-0 mt-0.5" />
                       <div className="min-w-0">
                         <div className="text-xs font-medium text-primary">{isPt ? "Personalizado" : "Custom"}</div>
                         <div className="text-[10px] text-muted-foreground/60 leading-snug">{isPt ? "Crie seu próprio" : "Create your own"}</div>

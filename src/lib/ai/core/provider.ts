@@ -1,4 +1,4 @@
-export type ProviderId = "gemini" | "openai" | "anthropic" | "ollama" | "openrouter";
+export type ProviderId = "gemini" | "gemini-local" | "openai" | "anthropic" | "ollama" | "openrouter";
 
 export interface ToolDefinition {
   name: string;

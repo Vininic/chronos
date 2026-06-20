@@ -15,6 +15,8 @@ export interface AiBlock {
   inProgress: boolean;
   complete: boolean;
   source: "routine" | "commitment";
+  day?: number;
+  isFocus?: boolean;
 }
 
 export interface AiSleepBlock {

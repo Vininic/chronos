@@ -18,6 +18,7 @@ export function stripPreferenceTags(text: string): string {
 }
 
 export function formatPreferencesForPrompt(prefs: Record<string, string>): string {
+  if (!prefs || typeof prefs !== "object") return "";
   const entries = Object.entries(prefs);
   if (entries.length === 0) return "";
   const lines = entries.map(([key, value]) => `- ${key}: ${value}`);

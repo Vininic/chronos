@@ -11,13 +11,15 @@ export interface CompressedContext {
   programs: string;
   notes: string;
   metrics: string;
+  focus: string;
   autonomy: string;
 }
 
 function compressBlock(b: AiBlock): string {
   const p = b.hasProgram ? `${b.programName ?? "?"} ${b.programProgress.done}/${b.programProgress.total}` : "";
   const s = b.complete ? "[x]" : b.inProgress ? "[>]" : "[ ]";
-  return `${s} ${b.start}-${b.end} ${b.durationMin}min ${b.category} "${b.title}"${p ? ` {${p}}` : ""}`;
+  const f = b.isFocus ? " «focus»" : "";
+  return `${s} ${b.start}-${b.end} ${b.durationMin}min ${b.category} "${b.title}"${p ? ` {${p}}` : ""}${f}`;
 }
 
 function compressGoal(g: AiGoal): string {
@@ -39,6 +41,9 @@ function compressNote(n: AiNote): string {
 }
 
 export function compressContext(ctx: ScheduleContext): CompressedContext {
+  const focusBlocks = ctx.blocks.filter((b) => b.isFocus);
+  const focusMin = focusBlocks.reduce((s, b) => s + b.durationMin, 0);
+  const focusDone = focusBlocks.filter((b) => b.complete).length;
   return {
     owner: ctx.owner,
     cycle: `${ctx.cycle.name} #${ctx.cycle.number} w${ctx.cycle.week}`,
@@ -50,6 +55,9 @@ export function compressContext(ctx: ScheduleContext): CompressedContext {
     programs: ctx.programs.map((p) => `${p.categoryLabel} / ${p.templateName} ${p.done}/${p.total}`).join("\n"),
     notes: ctx.notes.map(compressNote).join("\n"),
     metrics: `focus ${Math.round(ctx.metrics.focusTimeMin / 60 * 10) / 10}h recovery ${Math.round(ctx.metrics.recoveryTimeMin / 60 * 10) / 10}h overload ${Math.round(ctx.metrics.overloadScore * 100)}%`,
+    focus: focusBlocks.length
+      ? `${focusBlocks.length} focus blocks · ${Math.round(focusMin / 60 * 10) / 10}h · ${focusDone}/${focusBlocks.length} complete — these are the user's declared priority. Weight focus-block protection, timing and completion above other categories in your analysis and suggestions.`
+      : "No focus categories set — suggest the user designate one to anchor their deep work.",
     autonomy: ctx.autonomy,
   };
 }

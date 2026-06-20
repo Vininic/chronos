@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { TreeNode, WorkspaceStructure } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, Copy, Pencil } from "lucide-react";
 
@@ -118,7 +119,7 @@ export function TemplateEditor({
                       />
                     ) : (
                       <span
-                        className="flex-1 text-sm font-medium text-primary min-w-0 truncate cursor-text"
+                        className="flex-1 text-sm font-medium text-primary min-w-0 truncate cursor-text hover:underline hover:decoration-dotted underline-offset-2 decoration-muted-foreground/40"
                         title="Click to rename"
                         onClick={() => { setRenamingTemplate(i); setRenameTemplateValue(tpl.name); }}
                       >
@@ -349,7 +350,7 @@ export function TemplateEditor({
               />
             ) : (
               <div
-                className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 py-0.5 border-b border-border/10 mb-1 cursor-text"
+                className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-1 py-0.5 border-b border-border/10 mb-1 cursor-text hover:underline hover:decoration-dotted underline-offset-2 decoration-muted-foreground/40"
                 title="Click to rename"
                 onClick={() => { setRenamingGroup(gi); setRenameGroupValue(group.name); }}
               >
@@ -385,7 +386,7 @@ export function TemplateEditor({
                       />
                     ) : (
                       <span
-                        className="text-secondary font-medium min-w-0 flex-1 truncate cursor-text"
+                        className="text-secondary font-medium min-w-0 flex-1 truncate cursor-text hover:underline hover:decoration-dotted underline-offset-2 decoration-muted-foreground/40"
                         title="Click to rename"
                         onClick={() => { setRenamingItem({ gi, ii }); setRenameValue(item.name); }}
                       >
@@ -414,7 +415,7 @@ export function TemplateEditor({
                 <input
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
-                  placeholder={`e.g. Bench Press`}
+                  placeholder={`New ${itemLabel.toLowerCase()}`}
                   className="w-full h-7 rounded border border-input bg-card text-xs px-2 outline-none focus:border-primary/50"
                   autoFocus
                   onKeyDown={(e) => { if (e.key === "Enter" && newItemName.trim()) addItem(); if (e.key === "Escape") setAddFormGroup(null); }}
@@ -423,20 +424,21 @@ export function TemplateEditor({
                   {existingGroups.length > 1 && (
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-[9px] text-muted-foreground shrink-0">{groupLabel}:</span>
-                      <select
-                        value={addFormGroup}
-                        onChange={(e) => setAddFormGroup(e.target.value)}
-                        className="h-6 max-w-[100px] rounded border border-input bg-card text-[10px] px-1 outline-none truncate"
-                      >
-                        {existingGroups.map((g) => (
-                          <option key={g} value={g}>{g}</option>
-                        ))}
-                      </select>
+                      <Select value={addFormGroup ?? undefined} onValueChange={setAddFormGroup}>
+                        <SelectTrigger className="h-6 max-w-[130px] text-[10px] px-2 gap-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {existingGroups.map((g) => (
+                            <SelectItem key={g} value={g} className="text-xs">{g}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
                   {hasSets && (
                     <div className="flex items-center gap-1">
-                      <span className="text-[9px] text-muted-foreground shrink-0">Sets:</span>
+                      <span className="text-[9px] text-muted-foreground shrink-0">{(levels[2]?.labelPlural ?? "Sets")}:</span>
                       <input
                         type="number"
                         min={1}

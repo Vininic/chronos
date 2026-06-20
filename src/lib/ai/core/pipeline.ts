@@ -131,30 +131,11 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
     });
   }
 
-  // Recovery nudges: low recovery score → critical alert
-  if (aiResult.recoveryAnalysis.recoveryScore < 30) {
-    allInsights.push({
-      type: "recovery",
-      severity: "critical",
-      title: "Recovery score critically low",
-      detail: `Your recovery score is ${aiResult.recoveryAnalysis.recoveryScore}. Consider adding rest blocks or reducing intensity.`,
-      suggestion: aiResult.recoveryAnalysis.recommendations[0] ?? "Take a lighter day to recover.",
-      confidence: 0.85,
-    });
-  } else if (aiResult.recoveryAnalysis.recoveryScore < 50) {
-    allInsights.push({
-      type: "recovery",
-      severity: "warning",
-      title: "Recovery could be better",
-      detail: `Your recovery score is ${aiResult.recoveryAnalysis.recoveryScore}. A recovery block today could help.`,
-      suggestion: aiResult.recoveryAnalysis.recommendations[0] ?? "Schedule a recovery block.",
-      confidence: 0.8,
-    });
-  }
-
+  // Recovery is surfaced via recoveryIntelligence in the sidebar, not as duplicate insight cards.
+  // Only surface burnout as a separate insight (distinct from the recovery score card).
   if (aiResult.recoveryAnalysis.burnoutDetected) {
     allInsights.push({
-      type: "recovery",
+      type: "burnout",
       severity: "critical",
       title: "Burnout risk detected",
       detail: "The schedule shows signs of burnout risk. Consider reducing block density and adding recovery time.",

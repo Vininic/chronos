@@ -9,28 +9,28 @@ export interface AISettings {
   apiKeys: Partial<Record<ProviderId, string>>;
   models: Partial<Record<ProviderId, string>>;
   baseUrls: Partial<Record<ProviderId, string>>;
+  autonomy: "conservative" | "balanced" | "aggressive";
   featureToggles: {
     proactiveMode: boolean;
     functionCalling: boolean;
     learning: boolean;
     autoSuggestions: boolean;
     digestAuto: boolean;
-    aiReports: boolean;
   };
 }
 
 const DEFAULT_SETTINGS: AISettings = {
-  providerId: "gemini" as ProviderId,
+  providerId: "gemini-local" as ProviderId,
   apiKeys: {},
   models: {},
   baseUrls: {},
+  autonomy: "balanced",
   featureToggles: {
     proactiveMode: true,
     functionCalling: true,
     learning: true,
     autoSuggestions: true,
     digestAuto: true,
-    aiReports: false,
   },
 };
 
@@ -39,6 +39,9 @@ function loadSettings(): AISettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AISettings>;
+      if (parsed.providerId === "gemini" && !parsed.apiKeys?.gemini) {
+        parsed.providerId = "gemini-local";
+      }
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
@@ -104,6 +107,10 @@ export function useAISettings() {
     }));
   }, []);
 
+  const setAutonomy = useCallback((autonomy: AISettings["autonomy"]) => {
+    setSettings((prev) => ({ ...prev, autonomy }));
+  }, []);
+
   const resetSettings = useCallback(() => {
     setSettings({ ...DEFAULT_SETTINGS });
   }, []);
@@ -140,6 +147,7 @@ export function useAISettings() {
     setModel,
     setBaseUrl,
     setFeatureToggle,
+    setAutonomy,
     resetSettings,
     clearChatHistory,
     resetLearningProfile,
@@ -153,13 +161,15 @@ export function loadSettingsSync(): AISettings {
 }
 
 export function getApiKeyForProvider(providerId: ProviderId): string {
+  if (providerId === "gemini-local" && typeof import.meta !== "undefined") {
+    return import.meta.env.VITE_GEMINI_API_KEY ?? "";
+  }
   const settings = loadSettings();
   return settings.apiKeys[providerId] ?? "";
 }
 
 export function isProviderConfigured(providerId: ProviderId): boolean {
-  const settings = loadSettings();
   const registered = getRegisteredProviders().find((p) => p.id === providerId);
   if (!registered?.requiresApiKey) return true;
-  return !!settings.apiKeys[providerId];
+  return !!getApiKeyForProvider(providerId);
 }

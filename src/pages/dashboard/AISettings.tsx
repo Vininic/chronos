@@ -121,7 +121,7 @@ export default function AISettings() {
             )}
           </div>
 
-          {currentProviderInfo?.requiresApiKey && (
+              {currentProviderInfo?.requiresApiKey && (
             <div className="grid gap-2">
               <Label>API Key</Label>
               <div className="flex gap-2">
@@ -151,6 +151,14 @@ export default function AISettings() {
                   <AlertCircle className="h-3 w-3" /> {connectionError}
                 </p>
               )}
+            </div>
+          )}
+          {settings.providerId === "gemini-local" && import.meta.env.VITE_GEMINI_API_KEY && (
+            <div className="rounded bg-secondary/5 border border-secondary/10 px-2.5 py-2">
+              <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                Using default key from environment — ready to use.
+              </p>
             </div>
           )}
 
@@ -258,14 +266,12 @@ export default function AISettings() {
             checked={settings.featureToggles.digestAuto}
             onChange={(v) => setFeatureToggle("digestAuto", v)}
           />
-          <Separator />
-          <FeatureToggle
-            id="ai-reports"
-            label="AI-Powered Reports"
-            description="Use AI to analyze your schedule and generate contextual reports. Falls back to structural analysis if no AI provider is configured."
-            checked={settings.featureToggles.aiReports}
-            onChange={(v) => setFeatureToggle("aiReports", v)}
-          />
+          <div className="pt-2 px-1">
+            <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
+              Reports are generated using AI when a provider is configured, or structural analysis as fallback.
+              Each report is labeled accordingly. Configure a provider above to enable AI-powered reports.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

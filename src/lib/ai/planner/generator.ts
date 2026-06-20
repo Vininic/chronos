@@ -32,9 +32,12 @@ function rBlock(
 
 function sleepBlocks(sleepStart: string, sleepEnd: string): RoutineBlock[] {
   const blocks: RoutineBlock[] = [];
+  const goesPastMidnight = sleepStart > sleepEnd;
   for (let d = 0; d < 7; d++) {
     blocks.push(rBlock(d, "00:00", sleepEnd, "sleep", "Sleep"));
-    blocks.push(rBlock(d, sleepStart, "23:59", "sleep", "Sleep"));
+    if (goesPastMidnight) {
+      blocks.push(rBlock(d, sleepStart, "23:59", "sleep", "Sleep"));
+    }
   }
   return blocks;
 }
@@ -94,6 +97,29 @@ function minutesToTime(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+// Shift all non-sleep blocks by the delta between template workday start and user's start.
+// Drops any block that would fall outside the user's awake window after shifting.
+function shiftBlocksToWorkWindow(
+  blocks: RoutineBlock[],
+  templateStart: string,
+  userStart: string,
+  sleepEnd: string,
+  sleepStart: string,
+): RoutineBlock[] {
+  const shiftMin = timeToMinutes(userStart) - timeToMinutes(templateStart);
+  if (shiftMin === 0) return blocks;
+  const wakeMin = timeToMinutes(sleepEnd);
+  const sleepMin = timeToMinutes(sleepStart);
+  return blocks.reduce<RoutineBlock[]>((acc, b) => {
+    const newStart = timeToMinutes(b.start) + shiftMin;
+    const newEnd = timeToMinutes(b.end) + shiftMin;
+    if (newStart >= wakeMin && newEnd <= sleepMin) {
+      acc.push({ ...b, start: minutesToTime(newStart), end: minutesToTime(newEnd) });
+    }
+    return acc;
+  }, []);
 }
 
 function weekMinutes(start: string, end: string): number {
@@ -251,8 +277,16 @@ function buildScheduleData(archetype: Archetype, prefs: PlannerPreferences): Sch
   const sleepRoutine = sleepBlocks(prefs.sleepStart, prefs.sleepEnd);
 
   const existingNonSleep = base.routine.filter((b: RoutineBlock) => b.kind !== "sleep");
+  const templateWorkdayStart = base.meta.workdayStart ?? "07:00";
+  const alignedBlocks = shiftBlocksToWorkWindow(
+    existingNonSleep,
+    templateWorkdayStart,
+    prefs.workHoursStart,
+    prefs.sleepEnd,
+    prefs.sleepStart,
+  );
 
-  const routine = [...sleepRoutine, ...existingNonSleep];
+  const routine = [...sleepRoutine, ...alignedBlocks];
 
   const totalMinutes = archetype.focusRatio > 0 ? Math.round(weekMinutes(prefs.workHoursStart, prefs.workHoursEnd) * archetype.focusRatio) : 0;
   const estimatedFocusHours = Math.round(totalMinutes / 60);

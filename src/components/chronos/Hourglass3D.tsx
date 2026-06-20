@@ -105,7 +105,12 @@ const GRAIN_COUNT = 700;
 const FALL_COUNT = 32;
 const GRAIN_SCALE = 0.0078;
 
-function Sand() {
+function Sand({ progress, running = true }: { progress?: number; running?: boolean }) {
+  // Driven mode (progress != null) reflects an external timer; refs let useFrame read the latest value.
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
+  const runningRef = useRef(running);
+  runningRef.current = running;
   // pileSrcRef = draining pile, pileDstRef = receiving pile
   const pileSrcRef = useRef<THREE.InstancedMesh>(null!);
   const pileDstRef = useRef<THREE.InstancedMesh>(null!);
@@ -241,6 +246,20 @@ function Sand() {
       swayGroup.current.rotation.y = Math.sin(t * 0.15) * 0.2;
     }
 
+    // ── Driven mode: the sand level mirrors an external progress value (1 = full top, 0 = drained). ──
+    if (progressRef.current != null) {
+      const p = Math.min(1, Math.max(0, progressRef.current));
+      flipGroup.current.rotation.x = 0; // upright; never auto-flips while driven
+      placePile(NECK_Y + 0.02, p, 1, pileSrcRef);     // top (draining) pile
+      placePile(BOT_Y + 0.04, 1 - p, 1, pileDstRef);  // bottom (receiving) pile
+      const flowing = runningRef.current && p > 0.001 && p < 0.999;
+      if (flowing) placeFalling(t, true);
+      if (fallingRef.current) fallingRef.current.visible = flowing;
+      if (streamDownRef.current) streamDownRef.current.visible = flowing;
+      if (streamUpRef.current) streamUpRef.current.visible = false;
+      return;
+    }
+
     if (phase.current === "pouring") {
       pourT.current = Math.min(1, pourT.current + delta / POUR_DURATION);
 
@@ -373,9 +392,9 @@ function Sand() {
   );
 }
 
-interface Props { className?: string; compact?: boolean; }
+interface Props { className?: string; compact?: boolean; progress?: number; running?: boolean; quiet?: boolean; }
 
-export default function Hourglass3D({ className, compact = false }: Props) {
+export default function Hourglass3D({ className, compact = false, progress, running = true, quiet = false }: Props) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -385,7 +404,7 @@ export default function Hourglass3D({ className, compact = false }: Props) {
 
   return (
     <div className={`${className ?? ""} relative h-full w-full`}>
-      {!ready && (
+      {!ready && !quiet && (
         <div className="absolute inset-0 z-10 grid place-items-center bg-midnight/70 backdrop-blur-sm transition-opacity duration-300">
           <div className="flex flex-col items-center gap-3 text-primary-foreground/85">
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-secondary/30 border-t-secondary" />
@@ -406,7 +425,7 @@ export default function Hourglass3D({ className, compact = false }: Props) {
             <directionalLight position={[3, 5, 3]} intensity={1.25} castShadow />
             <directionalLight position={[-3, 2, -2]} intensity={0.36} color="#D8B06A" />
             <pointLight position={[0, 0, 2.5]} intensity={0.28} color="#E6C87C" />
-            <Sand />
+            <Sand progress={progress} running={running} />
             {!compact && (
               <ContactShadows position={[0, BOT_Y - 0.22, 0]} opacity={0.24} scale={5} blur={2.2} far={2} />
             )}

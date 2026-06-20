@@ -59,3 +59,15 @@ export function clearDigests(): void {
   store.digests = [];
   save(store);
 }
+
+export function removeDigest(id: string): void {
+  const store = load();
+  store.digests = store.digests.filter((d) => d.id !== id);
+  save(store);
+}
+
+export function clearDigestsForDate(date: string): void {
+  const store = load();
+  store.digests = store.digests.filter((d) => d.date !== date);
+  save(store);
+}

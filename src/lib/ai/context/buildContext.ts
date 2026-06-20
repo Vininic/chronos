@@ -80,6 +80,8 @@ export function buildContext(
       inProgress,
       complete: progress.total > 0 && progress.done >= progress.total,
       source: "routine",
+      day: r.day,
+      isFocus: focusedCategories.has(r.kind),
     });
   }
 
@@ -107,6 +109,7 @@ export function buildContext(
       inProgress,
       complete: progress.total > 0 && progress.done >= progress.total,
       source: "commitment",
+      isFocus: focusedCategories.has(c.kind),
     });
   }
 

@@ -5,6 +5,7 @@ import type { LearningProfile } from "@/lib/ai/learning/types";
 import { DAY_LABELS } from "@/lib/schedule/types";
 import { generateProposals } from "./generator";
 import { loadProfile } from "@/lib/ai/learning/store";
+import { getApiKeyForProvider } from "@/lib/ai/settings/store";
 
 const TONES = [
   "bronze", "midnight", "primary-glow", "emerald", "neutral", "indigo",
@@ -95,9 +96,10 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
     }
   }
 
-  // Add sleep blocks for each day
+  // Add sleep blocks for each day (two-block pattern: early-morning + evening)
   const sleepStart = blueprint.meta.sleepStart;
   const sleepEnd = blueprint.meta.sleepEnd;
+  const goesPastMidnight = sleepStart > sleepEnd;
   for (let d = 0; d < 7; d++) {
     routine.push({
       id: uid("r"),
@@ -107,14 +109,16 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
       kind: "sleep",
       title: "Sleep",
     });
-    routine.push({
-      id: uid("r"),
-      day: d,
-      start: sleepStart,
-      end: "24:00",
-      kind: "sleep",
-      title: "Sleep",
-    });
+    if (goesPastMidnight) {
+      routine.push({
+        id: uid("r"),
+        day: d,
+        start: sleepStart,
+        end: "23:59",
+        kind: "sleep",
+        title: "Sleep",
+      });
+    }
   }
 
   const schedule: ScheduleData = {
@@ -206,10 +210,11 @@ ${learningSummary ? `\n## Learning Profile\n${learningSummary}` : ""}
 3. Create blocks for Monday through Friday (days 1-5). Days 0 (Sunday) and 6 (Saturday) should be lighter.
 4. Follow the focus style: ${focusDescriptions[prefs.focusPreference]}
 5. Follow the recovery priority: ${recoveryDescriptions[prefs.recoveryPriority]}
-6. Blocks should not overlap with sleep (${prefs.sleepStart} to ${prefs.sleepEnd})
-7. Each block must have a meaningful, human-readable title
-8. Distribute work blocks between ${prefs.workHoursStart} and ${prefs.workHoursEnd}
-9. Keep early mornings and late evenings for rituals, recovery, or creative work
+6. SLEEP BOUNDARY: The user is awake between ${prefs.sleepEnd} and ${prefs.sleepStart}. ALL blocks must start and end within this window. Never schedule blocks before ${prefs.sleepEnd} or after ${prefs.sleepStart}. Do NOT include sleep blocks in the days array — they are added automatically.
+7. Each block must have a meaningful, human-readable title.
+8. Core work blocks belong between ${prefs.workHoursStart} and ${prefs.workHoursEnd}.
+9. Ritual and recovery blocks may appear just after wake (${prefs.sleepEnd}) or before sleep (${prefs.sleepStart}).
+10. Block times must be valid HH:MM strings. End time must always be later than start time within the same day.
 
 Return ONLY valid JSON with this exact structure (no markdown, no code fences):
 {
@@ -307,7 +312,7 @@ export async function generateGeminiProposals(
   prefs: PlannerPreferences,
   learningProfile?: LearningProfile,
 ): Promise<PlannerProposal[]> {
-  const apiKey = typeof import.meta !== "undefined" ? import.meta.env.VITE_GEMINI_API_KEY : undefined;
+  const apiKey = getApiKeyForProvider("gemini-local") || getApiKeyForProvider("gemini");
 
   if (!apiKey) {
     return fallbackProposals(prefs, learningProfile);
@@ -315,7 +320,7 @@ export async function generateGeminiProposals(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
 
     const learningSummary = summarizeLearningProfileLight();
     const prompt = buildGeminiPrompt(prefs, learningSummary);

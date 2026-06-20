@@ -46,6 +46,10 @@ export function optimizeSchedule(ctx: ScheduleContext): OptimizationResult {
   };
 }
 
+function timesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return parseMin(aStart) < parseMin(bEnd) && parseMin(bStart) < parseMin(aEnd);
+}
+
 function detectConflicts(ctx: ScheduleContext): ConflictDetected[] {
   const conflicts: ConflictDetected[] = [];
 
@@ -53,23 +57,14 @@ function detectConflicts(ctx: ScheduleContext): ConflictDetected[] {
     for (let j = i + 1; j < ctx.blocks.length; j++) {
       const a = ctx.blocks[i];
       const b = ctx.blocks[j];
-      if (parseMin(a.start) < parseMin(b.end) && parseMin(b.start) < parseMin(a.end)) {
+      // Only compare blocks that share the same weekday (routine blocks with no day are skipped)
+      if (a.day === undefined || b.day === undefined) continue;
+      if (a.day !== b.day) continue;
+      if (timesOverlap(a.start, a.end, b.start, b.end)) {
         conflicts.push({
           type: "overlap",
           blockIds: [a.id, b.id],
-          detail: `"${a.title}" and "${b.title}" overlap (${a.start}-${a.end} vs ${b.start}-${b.end})`,
-        });
-      }
-    }
-  }
-
-  for (const s of ctx.sleep.blocks) {
-    for (const b of ctx.blocks) {
-      if (parseMin(b.start) < parseMin(s.end) && parseMin(s.start) < parseMin(b.end)) {
-        conflicts.push({
-          type: "sleep_overlap",
-          blockIds: [b.id, s.id],
-          detail: `"${b.title}" overlaps with sleep (${s.start}-${s.end})`,
+          detail: `"${a.title}" and "${b.title}" overlap on day ${a.day} (${a.start}–${a.end} vs ${b.start}–${b.end})`,
         });
       }
     }

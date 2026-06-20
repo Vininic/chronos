@@ -167,7 +167,7 @@ export function registerBlockTools(
     },
   });
 
-  globalToolRegistry.register<string, void>({
+  globalToolRegistry.register<string, null | { title: string; start: string; end: string; category: string; blockId: string }>({
     name: "deleteBlock",
     description: "Delete a block by ID",
     category: "block",
@@ -181,7 +181,12 @@ export function registerBlockTools(
       if (!allSafetyChecksPass(checks)) {
         throw new Error(checks.find((c) => !c.passed)!.detail);
       }
+      const block = ctx.blocks.find((b) => b.id === blockId);
       mutators.removeRoutine(blockId);
+      if (block) {
+        return { title: block.title, start: block.start, end: block.end, category: block.category, blockId };
+      }
+      return null;
     },
   });
 }

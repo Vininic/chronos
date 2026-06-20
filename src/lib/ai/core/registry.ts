@@ -18,11 +18,19 @@ export interface ProviderRegistration {
 }
 
 const PROVIDER_REGISTRY = new Map<ProviderId, ProviderRegistration>([
+  ["gemini-local", {
+    id: "gemini-local",
+    name: "Gemini (Local)",
+    adapter: GeminiAdapter,
+    defaultModel: "gemini-3.1-flash-lite",
+    requiresApiKey: false,
+    capabilities: { streaming: true, functionCalling: true },
+  }],
   ["gemini", {
     id: "gemini",
     name: "Gemini",
     adapter: GeminiAdapter,
-    defaultModel: "gemini-2.0-flash",
+    defaultModel: "gemini-3.1-flash-lite",
     requiresApiKey: true,
     capabilities: { streaming: true, functionCalling: true },
   }],
@@ -90,7 +98,7 @@ export function createProviderFromSettings(settings: {
   return createProvider(settings.providerId, config);
 }
 
-const FALLBACK_PROVIDER_CHAIN: ProviderId[] = ["gemini", "openrouter", "openai", "anthropic", "ollama"];
+const FALLBACK_PROVIDER_CHAIN: ProviderId[] = ["gemini-local", "gemini", "openrouter", "openai", "anthropic", "ollama"];
 
 export function resolveFallbackProvider(
   preferredId: ProviderId,

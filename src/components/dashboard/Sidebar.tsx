@@ -1,20 +1,18 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Play, Settings2, PanelLeftClose, Check, History, ScrollText, FileText } from "lucide-react";
+import { LayoutDashboard, Calendar, Brain, Sparkles, Wand2, CircleHelp, Target, BarChart3, Settings2, PanelLeftClose, Check, History, ScrollText, FileText } from "lucide-react";
 import Logo from "@/components/chronos/Logo";
 import { useSchedule } from "@/lib/schedule/store";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import ProfileDialog from "./ProfileDialog";
 import { ProgressDialog } from "./ProgressDialog";
-import { BlockSessionBadge, SessionView } from "./SessionView";
-import { buildAgendaForDate } from "@/lib/schedule/store";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { TimerCard } from "./TimerCard";
 import { subscribe, getAetherisCount } from "@/lib/notification-count";
 
 export default function Sidebar() {
-  const { data, overallGoalProgress, updateRoutine, updateCommitment } = useSchedule();
+  const { data, overallGoalProgress } = useSchedule();
   const { session } = useAuth();
   const t = useT();
   const scheduleText = useScheduleText();
@@ -26,21 +24,6 @@ useEffect(() => subscribe(setAetherisCount), []);
 
   const now = new Date();
   const weekProgress = Math.round(((now.getDay() * 1440 + now.getHours() * 60 + now.getMinutes()) / 10080) * 100);
-
-  const [sessionOpen, setSessionOpen] = useState(false);
-
-  const activeSession = useMemo(() => {
-    const agenda = buildAgendaForDate(data, now);
-    const item = agenda.find((a) => {
-      const cat = data.categories.find((c) => c.id === a.kind);
-      return cat?.workspace && a.workspace?._sessionStarted && !a.workspace?._sessionEnded;
-    });
-    if (item) {
-      const cat = data.categories.find((c) => c.id === item.kind);
-      return cat?.workspace ? { item, cat } : null;
-    }
-    return null;
-  }, [data, now]);
 
   const main = [
     { to: "/dashboard",          label: t.chronos.nav.today,    icon: LayoutDashboard },
@@ -148,44 +131,9 @@ useEffect(() => subscribe(setAetherisCount), []);
         ))}
       </nav>
 
-      {activeSession && (
-        <div className="px-4 mb-2">
-          <button
-            onClick={() => setSessionOpen(true)}
-            className="w-full rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 p-2.5 flex items-center gap-2.5 hover:bg-sidebar-accent/60 transition-colors text-left"
-          >
-            <div className="relative h-9 w-9 rounded-full bg-sidebar-accent grid place-items-center shrink-0 overflow-hidden"
-                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9'%3E%3Cpath d='M1 0v9M0 1h9' stroke='%23ffffff' stroke-opacity='0.08' stroke-width='0.5'/%3E%3C/svg%3E")`, backgroundSize: '9px 9px' }}>
-              <Play className="h-4 w-4 text-secondary relative z-10" />
-              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-green-500 animate-pulse ring-2 ring-sidebar-accent" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-secondary-soft mb-0.5">{activeSession.cat.label}</div>
-              <BlockSessionBadge structure={activeSession.cat.workspace!} runtime={activeSession.item.workspace ?? {}} tier="micro" />
-            </div>
-          </button>
-          <Dialog open={sessionOpen} onOpenChange={setSessionOpen}>
-            <DialogContent className="max-w-lg overflow-y-auto max-h-[80vh]">
-              <DialogHeader>
-                <DialogTitle>{activeSession.cat.label}</DialogTitle>
-              </DialogHeader>
-              {activeSession.cat.workspace && (
-                <SessionView
-                  structure={activeSession.cat.workspace}
-                  runtime={activeSession.item.workspace ?? {}}
-                  onChange={(r) => {
-                    const id = activeSession.item.sourceId ?? activeSession.item.id;
-                    if (activeSession.item.source === "routine") {
-                      updateRoutine(id, { workspace: r });
-                    } else {
-                      updateCommitment(id, { workspace: r });
-                    }
-                  }}
-                  onClose={() => setSessionOpen(false)}
-                />
-              )}
-            </DialogContent>
-          </Dialog>
+      {!collapsed && (
+        <div className="px-4 mb-3">
+          <TimerCard />
         </div>
       )}
 

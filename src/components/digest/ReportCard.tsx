@@ -57,9 +57,6 @@ export function ReportCardView({ card, color }: { card: ReportCard; color: Diges
             </div>
             <p className="text-xs font-medium text-primary mt-0.5">{card.title}</p>
             <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{card.body}</p>
-            {card.detail && (
-              <p className="text-[10px] text-muted-foreground/60 mt-1 italic">{card.detail}</p>
-            )}
           </div>
         </div>
       </div>

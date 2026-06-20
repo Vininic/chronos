@@ -3,7 +3,7 @@ import { buildContext } from "../context/buildContext";
 import { compressContext } from "../context/serializers";
 import type { ChatMessage } from "./store";
 import { createProviderFromSettings, resolveFallbackProvider } from "../core/registry";
-import { loadSettingsSync } from "../settings/store";
+import { loadSettingsSync, getApiKeyForProvider } from "../settings/store";
 import { globalToolRegistry, type ToolDefinition } from "../tools/registry";
 import { PromptBuilder } from "../prompts/builder";
 import { recordLLMCall } from "../core/logger";
@@ -123,6 +123,7 @@ export function buildChatPrompt(
   messages: ChatMessage[],
   version?: string,
 ): string {
+  if (!data || !messages) return "Chat unavailable.";
   const ctx = buildContext(data, "balanced");
   const compressed = compressContext(ctx);
   const serialized = JSON.stringify(compressed, null, 2);
@@ -139,7 +140,7 @@ export function buildChatPrompt(
   }
 
   const rejected = profile.rejectedSuggestions;
-  if (rejected.length > 0) {
+  if (rejected && rejected.length > 0) {
     const recent = rejected.slice(-5);
     const lines = recent.map((r) => {
       const reasonLabel = REASON_LABELS[r.reason] ?? r.reason;
@@ -184,7 +185,7 @@ export async function processChatMessage(
   const settings = loadSettingsSync();
   const providerId = settings.providerId;
   const modelName = settings.models[providerId];
-  const apiKey = settings.apiKeys[providerId] ?? "";
+  const apiKey = settings.apiKeys[providerId] || getApiKeyForProvider(providerId);
 
   let provider;
 
@@ -253,10 +254,17 @@ export async function processChatMessage(
   };
 }
 
+const AUTONOMY_INSTRUCTIONS: Record<string, string> = {
+  conservative: "\n\n## Autonomy: Mild\nYou are in MILD mode. Always describe planned changes in an 'Actions:' section and wait for the user's explicit confirmation before calling any write tools (createBlock, deleteBlock, updateBlock, moveBlock, etc.). Never act on your own.",
+  balanced: "\n\n## Autonomy: Balanced\nYou are in BALANCED mode. For low-risk additions or time adjustments, proceed with write tools directly. For deletions or major restructuring, describe the changes in an 'Actions:' section and ask for confirmation first.",
+  aggressive: "\n\n## Autonomy: Aggressive\nYou are in AGGRESSIVE mode. Execute all schedule changes immediately using the available write tools — do not ask for confirmation. After executing, briefly confirm what was done.",
+};
+
 export async function* streamChatMessage(
   data: ScheduleData,
   messages: ChatMessage[],
   userMessage: string,
+  autonomy?: "conservative" | "balanced" | "aggressive",
 ): AsyncIterable<string> {
   const fullMessages: ChatMessage[] = [
     ...messages,
@@ -266,7 +274,8 @@ export async function* streamChatMessage(
   const prompt = buildChatPrompt(data, fullMessages, version);
 
   const settings = loadSettingsSync();
-  const apiKey = settings.apiKeys[settings.providerId] ?? "";
+  const resolvedAutonomy = autonomy ?? settings.autonomy ?? "balanced";
+  const apiKey = settings.apiKeys[settings.providerId] || getApiKeyForProvider(settings.providerId);
   const providerId = settings.providerId;
   const modelName = settings.models[providerId];
   let provider;
@@ -287,15 +296,26 @@ export async function* streamChatMessage(
     provider = fallback.provider;
   }
 
-  const systemPrompt = PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema());
-  const stream = provider.generateContentStream(prompt, {
-    systemPrompt,
-    temperature: 0.5,
-    maxTokens: 4096,
-  });
+  const systemPrompt =
+    PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema()) +
+    (AUTONOMY_INSTRUCTIONS[resolvedAutonomy] ?? "");
+  try {
+    const stream = provider.generateContentStream(prompt, {
+      systemPrompt,
+      temperature: 0.5,
+      maxTokens: 4096,
+    });
 
-  for await (const chunk of stream) {
-    yield chunk;
+    for await (const chunk of stream) {
+      yield chunk;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("429") || msg.includes("quota") || msg.includes("Quota exceeded") || msg.includes("rate_limit") || msg.includes("RESOURCE_EXHAUSTED")) {
+      yield "I'm sorry, but the AI service is currently unavailable because the API quota has been exceeded. Please wait a while and try again, or configure a different AI provider in Settings.";
+    } else {
+      yield "I'm sorry, I encountered an error while processing your request. Please try again.";
+    }
   }
 }
 

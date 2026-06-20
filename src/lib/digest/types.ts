@@ -28,6 +28,7 @@ export interface Digest {
   date: string;
   generatedAt: string;
   color: DigestColor;
+  generatedBy: "ai" | "heuristic";
   summary: string;
   cards: ReportCard[];
   recommendations: string[];

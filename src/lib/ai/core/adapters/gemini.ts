@@ -4,8 +4,8 @@ import type { LLMProvider, LLMProviderConfig, GenerateOptions, GenerateResult, P
 export class GeminiAdapter implements LLMProvider {
   readonly id: ProviderId = "gemini";
   readonly displayName = "Gemini";
-  readonly models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"];
-  readonly defaultModel = "gemini-2.0-flash";
+  readonly models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-3.1-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"];
+  readonly defaultModel = "gemini-3.1-flash-lite";
   readonly supportsStreaming = true;
   readonly supportsFunctionCalling = true;
   readonly requiresApiKey = true;

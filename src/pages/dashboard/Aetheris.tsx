@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { generateDailyBriefing } from "@/lib/ai/briefing/generate";
 import { isNewDay, setLastVisitDate } from "@/lib/ai/briefing/store";
@@ -13,16 +14,15 @@ import { useChatStore, type ChatMessage } from "@/lib/ai/chat/store";
 import { streamChatMessage, extractToolCalls, stripToolCallsFromText } from "@/lib/ai/chat/service";
 import { globalToolRegistry, registerAllTools } from "@/lib/ai/tools";
 import { getProviderRegistration } from "@/lib/ai/core/registry";
-import { loadSettingsSync } from "@/lib/ai/settings/store";
+import { loadSettingsSync, useAISettings } from "@/lib/ai/settings/store";
 import {
-  Sparkles, Brain, Coffee, Target, AlertTriangle, Check, ChevronDown, ChevronUp,
-  Loader2, MessageSquare, Send, BarChart3, Plus, Trash2, PanelRightOpen, PanelRightClose,
-  Clock, ListTodo, History, Undo2, ThumbsUp, ThumbsDown, Bell, CalendarDays, FileText,
+  Sparkles, Brain, Coffee, Target, AlertTriangle, ChevronDown, ChevronUp,
+  Loader2, MessageSquare, Send, Plus, Trash2, PanelRightOpen, PanelRightClose,
+  Clock, ThumbsUp, ThumbsDown, CalendarDays, FileText, Zap, SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { ScheduleData } from "@/lib/schedule/types";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
-import LearningInsights from "@/components/planner/LearningInsights";
 import { useLearningProfile } from "@/lib/ai/learning/store";
 import type { RejectedSuggestion } from "@/lib/ai/learning/types";
 import { extractPreferences, stripPreferenceTags } from "@/lib/ai/memory";
@@ -30,7 +30,8 @@ import { getSuggestionFeedback, recordSuggestionFeedback } from "@/lib/ai/metric
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatThread from "@/components/chat/ChatThread";
 import DemoTour from "@/components/chat/DemoTour";
-import ProactivePanel, { getProactiveCount, buildDigest } from "@/components/dashboard/ProactivePanel";
+import { buildDigest } from "@/components/dashboard/ProactivePanel";
+import { getLatestDigest } from "@/lib/digest/store";
 import { ReportsPanel } from "@/components/digest/ReportsPanel";
 import SuggestionFeedbackDialog from "@/components/chat/SuggestionFeedbackDialog";
 import {
@@ -39,13 +40,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { setAetherisCount } from "@/lib/notification-count";
 
-type TabView = "insights" | "optimize" | "proactive" | "learning" | "reports";
+type TabView = "today" | "analysis" | "reports";
 
 export default function Aetheris() {
   const { data, replace, applySuggestion, deferSuggestion } = useSchedule();
-  const { profile, addPreferences, rejectSuggestion } = useLearningProfile();
+  const { addPreferences, rejectSuggestion } = useLearningProfile();
+  const { settings, setAutonomy, setFeatureToggle } = useAISettings();
   const t = useT();
   const { locale } = useI18n();
+  const navigate = useNavigate();
 
   const {
     sessions, activeSessionId, activeSession,
@@ -58,7 +61,7 @@ export default function Aetheris() {
   const [input, setInput] = useState("");
   const [expandedRecovery, setExpandedRecovery] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [tab, setTab] = useState<TabView>("insights");
+  const [tab, setTab] = useState<TabView>("today");
   const [feedbackTarget, setFeedbackTarget] = useState<Suggestion | null>(null);
 
   const [pipeline, setPipeline] = useState<AetherisPipelineResult | null>(null);
@@ -212,10 +215,13 @@ export default function Aetheris() {
     }
   }, [pipeline]);
 
-  // Sync notification count to sidebar badge
+  // Sync notification count to sidebar badge.
+  // Recovery is surfaced via the Today tab card, not as a duplicate insight count.
   useEffect(() => {
     if (!pipeline) return;
-    setAetherisCount(pipeline.response.insights.length + pipeline.suggestions.length);
+    const recoveryBonus = pipeline.recoveryIntelligence.recoveryScore < 50 ? 1 : 0;
+    const nonRecoveryInsights = pipeline.response.insights.filter(i => i.type !== "recovery").length;
+    setAetherisCount(recoveryBonus + nonRecoveryInsights + pipeline.suggestions.length);
   }, [pipeline]);
 
   // Ensure a session exists
@@ -238,6 +244,22 @@ export default function Aetheris() {
     }
   }, [activeSessionId, data.routine.length]);
 
+  // Proactive mode — when pipeline surfaces critical insights, push a nudge to chat
+  const proactiveSentIds = useRef(new Set<string>());
+  useEffect(() => {
+    if (!settings.featureToggles.proactiveMode || !pipeline || !activeSessionId) return;
+    const critical = pipeline.response.insights.filter(i => i.severity === "critical");
+    if (critical.length === 0) return;
+    const unseen = critical.filter(i => !proactiveSentIds.current.has(i.title + i.type));
+    if (unseen.length === 0) return;
+    for (const ins of unseen) proactiveSentIds.current.add(ins.title + ins.type);
+    const lines = unseen.map(i => `• **${i.title}** — ${i.detail}`).join("\n");
+    addMessage(activeSessionId, {
+      role: "assistant",
+      content: `Proactive analysis found ${unseen.length} critical issue${unseen.length > 1 ? "s" : ""} in your schedule:\n\n${lines}\n\nWould you like me to address any of these?`,
+    });
+  }, [pipeline, settings.featureToggles.proactiveMode, activeSessionId]);
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading || !activeSessionId) return;
@@ -251,13 +273,15 @@ export default function Aetheris() {
     let fullResponse = "";
 
     try {
-      const stream = streamChatMessage(data, activeSession.messages, text);
+      const stream = streamChatMessage(data, activeSession.messages, text, settings.autonomy);
       for await (const chunk of stream) {
         fullResponse += chunk;
         setStreamingText(fullResponse);
       }
-    } catch {
-      fullResponse = "Sorry, I encountered an error. Please check your AI provider configuration in Settings.";
+    } catch (err) {
+      console.error("Chat stream error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      fullResponse = `Sorry, I encountered an error: ${msg}`;
     }
 
     // Parse and execute tool calls from the response text
@@ -394,10 +418,6 @@ export default function Aetheris() {
   const suggestions = pipeline?.suggestions ?? [];
   const optimization = pipeline?.optimization ?? { conflicts: [], idleGaps: [], focusFragmentation: 0, routineConsistency: 0, timeAllocation: [], compositionScore: 0, scheduledHours: [] };
   const recoveryIntel = pipeline?.recoveryIntelligence ?? { recoveryScore: 0, sustainableScore: 0, recommendations: [] };
-  const summary = pipeline?.response?.summary ?? { status: "unknown" as const, headline: "", keyMetrics: {} };
-  const explainability = pipeline?.response?.explainability ?? { reasoning: [], affectedGoals: [], affectedBlocks: [], affectedMetrics: [], expectedImpact: "", confidence: 0 };
-
-  const proactiveCount = useMemo(() => getProactiveCount(data, insights, recoveryIntel, optimization), [data, insights, recoveryIntel, optimization]);
 
   const providerInfo = useMemo(() => {
     const s = loadSettingsSync();
@@ -407,21 +427,19 @@ export default function Aetheris() {
     return `Powered by ${name}${model ? " · " + model : ""} · AI can make mistakes`;
   }, []);
 
+  const todayCount = (recoveryIntel.recoveryScore < 50 ? 1 : 0) + insights.filter(i => i.severity === "critical" && i.type !== "recovery").length;
   const tabs: { key: TabView; label: string; icon: typeof Brain; count: number }[] = [
-    { key: "insights", label: "Insights", icon: Brain, count: insights.length + suggestions.length },
-    { key: "optimize", label: "Optimize", icon: Target, count: optimization.conflicts.length + optimization.idleGaps.length },
-    { key: "proactive", label: "Proactive", icon: Bell, count: proactiveCount },
-    { key: "learning", label: "Learning", icon: MessageSquare, count: 0 },
+    { key: "today", label: "Today", icon: CalendarDays, count: todayCount },
+    { key: "analysis", label: "Analysis", icon: Brain, count: insights.length + suggestions.length },
     { key: "reports", label: "Reports", icon: FileText, count: 0 },
   ];
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{__html:`@keyframes alert-blink{0%,100%{opacity:1}50%{opacity:0.3;background-color:rgba(239,68,68,0.08)}}.animate-alert-blink{animation:alert-blink 0.4s ease-in-out 3}`}} />
-      <style>{`html,body{overflow-x:hidden;width:100%;}`}</style>
+      <style dangerouslySetInnerHTML={{__html:`@keyframes alert-blink{0%,100%{opacity:1}50%{opacity:0.3;background-color:rgba(239,68,68,0.08)}}.animate-alert-blink{animation:alert-blink 0.4s ease-in-out 3}html,body{overflow-x:hidden;width:100%}`}} />
       <div className="flex h-full bg-background overflow-hidden">
       {/* Chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Top bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-1 min-w-0">
@@ -476,37 +494,106 @@ export default function Aetheris() {
           </div>
         </div>
 
-        {/* Messages */}
-        {activeSession && activeSession.messages.length === 0 && !loading ? (
-          <WelcomeScreen onPromptClick={handleExamplePrompt} />
-        ) : (
-          <ChatThread
-            messages={activeSession?.messages ?? []}
-            loading={loading}
-            streamingText={streamingText}
-            onUndo={handleUndo}
-          />
-        )}
+        {/* Messages — scrollable */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+          {activeSession && activeSession.messages.length === 0 && !loading ? (
+            <WelcomeScreen onPromptClick={handleExamplePrompt} />
+          ) : (
+            <ChatThread
+              messages={activeSession?.messages ?? []}
+              loading={loading}
+              streamingText={streamingText}
+              onUndo={handleUndo}
+              data={data}
+            />
+          )}
+        </div>
 
-        {/* Input */}
-        <div className="px-4 pb-3 pt-2">
+        {/* Input — always visible at bottom */}
+        <div className="shrink-0 border-t border-border bg-background px-4 pb-3 pt-2">
           <div className="rounded-2xl border border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
-            <div className="flex gap-1.5 px-3 pt-2 pb-1 overflow-x-auto">
-              {[
-                { icon: Brain, label: "Analyze", prompt: "Analyze my schedule for this week." },
-                { icon: Coffee, label: "Recovery", prompt: "What's my recovery score?" },
-                { icon: Target, label: "Optimize", prompt: "Help me optimize my day." },
-                { icon: Sparkles, label: "Suggest", prompt: "Suggest blocks I should add to my schedule." },
-              ].map((chip) => (
-                <button
-                  key={chip.label}
-                  onClick={() => setInput(chip.prompt)}
-                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary px-2 py-1 rounded-full border border-border/50 hover:border-secondary/30 transition-colors shrink-0"
-                >
-                  <chip.icon className="h-3 w-3" />
-                  {chip.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+              <div className="flex gap-1.5 overflow-x-auto min-w-0">
+                {[
+                  { icon: Brain, label: "Analyze", prompt: "Analyze my schedule for this week." },
+                  { icon: Coffee, label: "Recovery", prompt: "What's my recovery score?" },
+                  { icon: Target, label: "Optimize", prompt: "Help me optimize my day." },
+                  { icon: Sparkles, label: "Suggest", prompt: "Suggest blocks I should add to my schedule." },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    onClick={() => setInput(chip.prompt)}
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary px-2 py-1 rounded-full border border-border/50 hover:border-secondary/30 transition-colors shrink-0"
+                  >
+                    <chip.icon className="h-3 w-3" />
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* AI Behavior bubble — top-right of input bubble */}
+              <div className="ml-auto shrink-0">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      title="AI Behavior"
+                      className={`relative h-6 w-6 rounded-full grid place-items-center transition-colors ${
+                        settings.autonomy !== "balanced" || settings.featureToggles.proactiveMode
+                          ? "bg-secondary/15 text-secondary hover:bg-secondary/20"
+                          : "bg-secondary/5 text-muted-foreground/60 hover:bg-secondary/10 hover:text-muted-foreground"
+                      }`}
+                    >
+                      <SlidersHorizontal className="h-3 w-3" />
+                      {settings.featureToggles.proactiveMode && (
+                        <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-secondary" />
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 p-0" onCloseAutoFocus={(e) => e.preventDefault()}>
+                    <div className="px-3 pt-3 pb-1">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium mb-2">AI Behavior</p>
+                      <div className="space-y-0.5">
+                        {(["conservative", "balanced", "aggressive"] as const).map((level, i) => {
+                          const labels = ["Mild", "Balanced", "Aggressive"];
+                          const descs  = ["Suggests only — always asks", "Acts on low-risk, asks for deletions", "Acts freely — no confirmation"];
+                          const active = settings.autonomy === level;
+                          return (
+                            <button
+                              key={level}
+                              onClick={() => setAutonomy(level)}
+                              className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left transition-colors ${
+                                active ? "bg-secondary/15" : "hover:bg-secondary/5"
+                              }`}
+                            >
+                              <span className={`h-2 w-2 rounded-full shrink-0 border-2 transition-colors ${active ? "border-secondary bg-secondary" : "border-muted-foreground/30"}`} />
+                              <div className="min-w-0">
+                                <div className={`text-xs font-medium leading-none ${active ? "text-secondary" : "text-primary/80"}`}>{labels[i]}</div>
+                                <div className="text-[10px] text-muted-foreground/50 mt-0.5 leading-none">{descs[i]}</div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <button
+                      onClick={() => setFeatureToggle("proactiveMode", !settings.featureToggles.proactiveMode)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-secondary/5 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Zap className={`h-3.5 w-3.5 shrink-0 ${settings.featureToggles.proactiveMode ? "text-secondary" : "text-muted-foreground/40"}`} />
+                        <div className="text-left">
+                          <div className="text-xs font-medium text-primary/80">Proactive Mode</div>
+                          <div className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">Push schedule insights automatically</div>
+                        </div>
+                      </div>
+                      <div className={`h-4 w-7 rounded-full relative transition-colors shrink-0 ml-2 ${settings.featureToggles.proactiveMode ? "bg-secondary" : "bg-muted-foreground/20"}`}>
+                        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-background shadow-sm transition-all ${settings.featureToggles.proactiveMode ? "left-3.5" : "left-0.5"}`} />
+                      </div>
+                    </button>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
             <div className="flex items-center gap-2 px-3 py-3">
               <input
@@ -546,10 +633,10 @@ export default function Aetheris() {
       <div className={`overflow-hidden transition-all duration-300 ease-in-out hidden lg:block ${
         showSidebar ? "w-80 opacity-100 border-l border-border" : "w-0 opacity-0"
       }`}>
-          <div className="w-80 shrink-0 bg-background h-full min-w-0">
-          <div className="p-4 overflow-y-auto overflow-x-hidden" style={{ maxHeight: "calc(100vh - 80px)" }}>
+          <div className="w-80 shrink-0 bg-background min-w-0 overflow-y-auto max-h-full">
+          <div className="p-4">
             {/* Tab bar */}
-            <div className="flex flex-wrap gap-1 mb-4">
+            <div className="flex gap-1 mb-4">
               {tabs.map((tabDef) => (
                 <button
                   key={tabDef.key}
@@ -569,137 +656,80 @@ export default function Aetheris() {
               ))}
             </div>
 
-            {/* Tab panels */}
-            {tab === "insights" && (
+            {/* Today: digest + recovery warning + critical alerts + stats */}
+            {tab === "today" && (
               <div className="space-y-3">
                 {pipelineLoading ? (
                   <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-secondary" /></div>
-                ) : insights.length === 0 && suggestions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-4">No issues detected</p>
                 ) : (
                   <>
-                    {/* Today's digest */}
-                    <div className="border border-border rounded-lg p-3 bg-gradient-to-br from-secondary/5 to-transparent">
-                        <div className="flex items-center gap-2 mb-2">
-                          <CalendarDays className="h-4 w-4 text-secondary" />
-                          <span className="text-xs font-medium text-primary">{t.chronos.plannerPage.currentPlan ?? "Today's digest"}</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed">{buildDigest(data)}</p>
-                      </div>
-                    {insights.filter((i) => {
-                      const isRecovery = i.type && ["overload", "burnout_risk", "sleep_debt", "context_switching", "consecutive_work"].includes(i.type);
-                      const titleHasRecovery = i.title.toLowerCase().includes("recovery");
-                      return !isRecovery && !titleHasRecovery;
-                    }).slice(0, 5).map((ins) => (
-                      <InsightCard key={ins.title + ins.detail} insight={ins} blinking={blinkingIds.includes(ins.title + ins.detail)} />
-                    ))}
-                    {suggestions.length > 0 && (
-                      <div className="pt-2 border-t border-border/40">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Suggestions</div>
-                        {suggestions.slice(0, 5).map((s) => {
-                    const vote = getSuggestionFeedback(s.id);
-                    return (
-                      <div key={s.id} className="border border-border rounded-lg p-3 relative">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-xs font-medium text-primary truncate">{s.title}</div>
-                          {s.priority && (
-                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                              s.priority === "high"
-                                ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                                : s.priority === "med"
-                                ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
-                                : "bg-muted text-muted-foreground border border-border/50"
-                            }`}>
-                              {s.priority === "high" ? "Sure" : s.priority === "med" ? "Fair" : "Unsure"}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-1">{s.detail}</p>
-                        {explainability.reasoning.length > (recoveryIntel.recoveryScore < 50 ? 1 : 0) && (
-                          <p className="text-[10px] italic text-muted-foreground/60 mt-1.5 leading-relaxed">
-                            {explainability.reasoning.slice(recoveryIntel.recoveryScore < 50 ? 1 : 0, recoveryIntel.recoveryScore < 50 ? 2 : 1).join(" ")}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-border/40">
-                          <button
-                            onClick={() => recordSuggestionFeedback(s.id, "up")}
-                            className={`flex items-center gap-1 text-[10px] transition-colors ${
-                              vote === "up" ? "text-emerald-500" : "text-muted-foreground/50 hover:text-emerald-500"
-                            }`}
-                          >
-                            <ThumbsUp className="h-3 w-3" />
-                          </button>
-                          <div className="relative">
-                            <button
-                              onClick={() => setFeedbackTarget(s)}
-                              className={`flex items-center gap-1 text-[10px] transition-colors ${
-                                vote === "down" ? "text-red-500" : "text-muted-foreground/50 hover:text-red-500"
-                              }`}
-                            >
-                              <ThumbsDown className="h-3 w-3" />
-                            </button>
-                            {feedbackTarget?.id === s.id && (
-                              <SuggestionFeedbackDialog
-                                onSubmit={(reason, notes) => {
-                                  recordSuggestionFeedback(s.id, "down");
-                                  rejectSuggestion({ id: s.id, type: s.type, title: s.title, detail: s.detail, reason: reason as RejectedSuggestion["reason"], userNotes: notes || undefined });
-                                  setFeedbackTarget(null);
-                                }}
-                                onCancel={() => setFeedbackTarget(null)}
-                              />
+                    {(() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const stored = getLatestDigest();
+                      const todayDigest = stored?.date === today ? stored : null;
+                      const digestText = todayDigest?.summary ?? buildDigest(data);
+                      return (
+                        <div
+                          className="border border-border rounded-lg p-3 bg-gradient-to-br from-secondary/5 to-transparent cursor-pointer hover:from-secondary/10 transition-colors"
+                          onClick={() => setTab("reports")}
+                          title="View full digest in Reports"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <CalendarDays className="h-4 w-4 text-secondary" />
+                            <span className="text-xs font-medium text-primary">Today's digest</span>
+                            {todayDigest && (
+                              <span className="ml-auto text-[9px] text-secondary/60 flex items-center gap-0.5">
+                                <Sparkles className="h-2.5 w-2.5" />
+                                {todayDigest.generatedBy === "ai" ? "AI" : "Structural"}
+                              </span>
                             )}
                           </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">{digestText}</p>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })()}
+                    {recoveryIntel.recoveryScore < 50 && (
+                      <div className="border border-red-400/50 rounded-lg p-3">
+                        <button
+                          onClick={() => setExpandedRecovery(!expandedRecovery)}
+                          className="w-full flex items-center justify-between text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                            <span className="text-[11px] font-medium text-primary">
+                              {locale === "pt" ? "Pontuação de recuperação criticamente baixa" : "Recovery score critically low"}
+                            </span>
+                          </div>
+                          <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${expandedRecovery ? "rotate-180" : ""}`} />
+                        </button>
+                        {expandedRecovery && (
+                          <p className="text-[11px] text-muted-foreground mt-1.5 pt-1.5 border-t border-red-400/20">
+                            {recoveryIntel.recommendations[0] ?? (locale === "pt" ? "Considere adicionar blocos de descanso ou reduzir a intensidade." : "Consider adding rest blocks or reducing intensity.")}
+                          </p>
+                        )}
                       </div>
                     )}
-                    {/* Reasoning + Recovery */}
-                    <div className="pt-2 border-t border-border/40 mt-2">
-                      <div className="text-[10px] uppercase tracking-wider text-secondary mb-2 px-0.5">Reasoning</div>
-                      <ul className="space-y-1">
-                        {recoveryIntel.recoveryScore < 50 && (
-                          <li className="border border-red-400/50 rounded-lg p-3 animate-[glow_2s_ease-in-out_3]">
-                            <button
-                              onClick={() => setExpandedRecovery(!expandedRecovery)}
-                              className="w-full flex items-center justify-between text-left"
-                            >
-                              <span className="text-[11px] font-medium text-primary">{locale === "pt" ? "Pontuação de recuperação criticamente baixa" : "Recovery score critically low"}</span>
-                              <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${expandedRecovery ? "rotate-180" : ""}`} />
-                            </button>
-                            {expandedRecovery && (
-                              <>
-                                <div className="mt-1.5 pt-1.5 border-t border-red-400/20" />
-                                <p className="text-[11px] text-muted-foreground mt-1.5">{recoveryIntel.recommendations[0] ?? (locale === "pt" ? "Considere adicionar blocos de descanso ou reduzir a intensidade." : "Your recovery score is 0. Consider adding rest blocks or reducing intensity.")}</p>
-                              </>
-                            )}
-                          </li>
-                        )}
-                        {explainability.reasoning.map((r: string, i: number) => {
-                          if (recoveryIntel.recoveryScore < 50 && i === 0) return null;
-                          return (
-                          <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                            <span className="mt-1.5 h-1 w-1 rounded-full bg-secondary/40 shrink-0" />
-                            {r}
-                          </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                    {/* Schedule stats */}
-                    <div className="border-t border-border/40 mt-3" />
+                    {insights
+                      .filter(i => i.severity === "critical" && i.type !== "recovery")
+                      .slice(0, 3)
+                      .map((ins) => (
+                        <InsightCard key={ins.title + ins.detail} insight={ins} blinking={blinkingIds.includes(ins.title + ins.detail)} />
+                      ))
+                    }
+                    {insights.filter(i => i.severity === "critical" && i.type !== "recovery").length === 0 && recoveryIntel.recoveryScore >= 50 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">No critical issues today</p>
+                    )}
                     <div className="border border-border rounded-lg p-3">
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Schedule</div>
                       <dl className="space-y-1.5 text-xs">
-                        {[
+                        {([
                           ["Blocks", data.routine.length],
                           ["Commitments", data.commitments.length],
                           ["Categories", data.categories.length],
                           ["Score", `${data.ledger.compositionScore}/100`],
                           ["Cycle", data.meta.cycle.name],
-                        ].map(([l, v]) => (
-                          <div key={l as string} className="flex items-center justify-between">
+                        ] as [string, string | number][]).map(([l, v]) => (
+                          <div key={l} className="flex items-center justify-between">
                             <dt className="text-muted-foreground">{l}</dt>
                             <dd className="text-primary font-medium num">{v}</dd>
                           </div>
@@ -710,79 +740,162 @@ export default function Aetheris() {
                 )}
               </div>
             )}
-            {tab === "optimize" && (
+
+            {/* Analysis: metrics + non-critical insights + suggestions + conflicts/gaps */}
+            {tab === "analysis" && (
               <div className="space-y-3 overflow-x-hidden">
-                <div className="grid grid-cols-2 gap-2">
-                  <MetricBox label="Conflicts" value={optimization.conflicts.length} />
-                  <MetricBox label="Gaps" value={optimization.idleGaps.length} />
-                  <MetricBox label="Frag." value={`${Math.round(optimization.focusFragmentation * 100)}%`} />
-                  <MetricBox label="Consist." value={`${Math.round(optimization.routineConsistency * 100)}%`} />
-                </div>
-                <div className="space-y-3">
-                {optimization.conflicts.length > 0 && (
-                  <div className="pt-2 border-t border-border/40">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Conflict details</div>
-                    <div className="space-y-2">
-                    {optimization.conflicts.map((c, i) => (
-                      <div key={i} className="border border-border rounded-lg p-2.5 mb-2 last:mb-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
-                            <span className="text-[11px] font-medium text-primary truncate">
-                              {c.type === "sleep_overlap" ? "Sleep overlap" : "Overlap"}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => window.location.href = "/dashboard"}
-                            className="text-[9px] text-secondary/70 hover:text-secondary underline underline-offset-2 shrink-0"
-                          >
-                            View
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed break-words">{c.detail}</p>
-                      </div>
-                    ))}
+                {pipelineLoading ? (
+                  <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-secondary" /></div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <MetricBox label="Conflicts" value={optimization.conflicts.length} />
+                      <MetricBox label="Gaps" value={optimization.idleGaps.length} />
+                      <MetricBox label="Frag." value={`${Math.round(optimization.focusFragmentation * 100)}%`} />
+                      <MetricBox label="Consist." value={`${Math.round(optimization.routineConsistency * 100)}%`} />
                     </div>
-                  </div>
-                )}
-                {optimization.idleGaps.length > 0 && (
-                  <div className="pt-2 border-t border-border/40">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Idle gaps</div>
-                    {optimization.idleGaps.slice(0, 3).map((g, i) => (
-                      <div key={i} className="border border-border rounded-lg p-2.5 mb-2 last:mb-0">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
-                          <span className="text-[11px] text-primary font-medium">{g.start}–{g.end}</span>
-                          <span className="text-[9px] text-muted-foreground/50 num">({Math.round(g.durationMin)}m)</span>
-                        </div>
-                        {g.suggestion && <p className="text-[10px] text-muted-foreground mt-1 break-words">{g.suggestion}</p>}
+                    {insights
+                      .filter(i => i.severity !== "critical" && i.type !== "recovery")
+                      .slice(0, 5)
+                      .map((ins) => (
+                        <InsightCard key={ins.title + ins.detail} insight={ins} blinking={false} />
+                      ))
+                    }
+                    {suggestions.length > 0 && (
+                      <div className="pt-2 border-t border-border/40">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Suggestions</div>
+                        {suggestions.slice(0, 5).map((s) => {
+                          const vote = getSuggestionFeedback(s.id);
+                          return (
+                            <div key={s.id} className="border border-border rounded-lg p-3 mb-2 last:mb-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs font-medium text-primary truncate">{s.title}</div>
+                                {s.priority && (
+                                  <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                                    s.priority === "high"
+                                      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                      : s.priority === "med"
+                                      ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+                                      : "bg-muted text-muted-foreground border border-border/50"
+                                  }`}>
+                                    {s.priority === "high" ? "Sure" : s.priority === "med" ? "Fair" : "Unsure"}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-1">{s.detail}</p>
+                              <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-border/40">
+                                <button
+                                  onClick={() => {
+                                    setInput(`Please apply this suggestion: "${s.title}" — ${s.detail}`);
+                                    // Scroll focus back to chat input area
+                                    const inputEl = document.querySelector<HTMLInputElement>('input[placeholder*="Aetheris"]');
+                                    inputEl?.focus();
+                                  }}
+                                  className="flex items-center gap-1 text-[10px] text-secondary/70 hover:text-secondary transition-colors mr-auto"
+                                  title="Ask Aetheris to apply this"
+                                >
+                                  <Send className="h-3 w-3" />
+                                  Apply
+                                </button>
+                                <button
+                                  onClick={() => recordSuggestionFeedback(s.id, "up")}
+                                  className={`flex items-center gap-1 text-[10px] transition-colors ${
+                                    vote === "up" ? "text-emerald-500" : "text-muted-foreground/50 hover:text-emerald-500"
+                                  }`}
+                                >
+                                  <ThumbsUp className="h-3 w-3" />
+                                </button>
+                                <div className="relative">
+                                  <button
+                                    onClick={() => setFeedbackTarget(s)}
+                                    className={`flex items-center gap-1 text-[10px] transition-colors ${
+                                      vote === "down" ? "text-red-500" : "text-muted-foreground/50 hover:text-red-500"
+                                    }`}
+                                  >
+                                    <ThumbsDown className="h-3 w-3" />
+                                  </button>
+                                  {feedbackTarget?.id === s.id && (
+                                    <SuggestionFeedbackDialog
+                                      onSubmit={(reason, notes) => {
+                                        recordSuggestionFeedback(s.id, "down");
+                                        rejectSuggestion({ id: s.id, type: s.type, title: s.title, detail: s.detail, reason: reason as RejectedSuggestion["reason"], userNotes: notes || undefined });
+                                        setFeedbackTarget(null);
+                                      }}
+                                      onCancel={() => setFeedbackTarget(null)}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                    {optimization.conflicts.length > 0 && (
+                      <div className="pt-2 border-t border-border/40">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Conflicts</div>
+                        <div className="space-y-2">
+                          {optimization.conflicts.map((c, i) => (
+                            <div key={i} className="border border-border rounded-lg p-2.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                                  <span className="text-[11px] font-medium text-primary truncate">
+                                    {c.type === "sleep_overlap" ? "Sleep overlap" : "Overlap"}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => navigate("/dashboard")}
+                                  className="text-[9px] text-secondary/70 hover:text-secondary underline underline-offset-2 shrink-0"
+                                >
+                                  View
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed break-words">{c.detail}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {optimization.idleGaps.length > 0 && (
+                      <div className="pt-2 border-t border-border/40">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Idle gaps</div>
+                        {optimization.idleGaps.slice(0, 3).map((g, i) => (
+                          <div key={i} className="border border-border rounded-lg p-2.5 mb-2 last:mb-0">
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="text-[11px] text-primary font-medium">{g.start}–{g.end}</span>
+                              <span className="text-[9px] text-muted-foreground/50 num">({Math.round(g.durationMin)}m)</span>
+                            </div>
+                            {g.suggestion && <p className="text-[10px] text-muted-foreground mt-1 break-words">{g.suggestion}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {insights.length === 0 && suggestions.length === 0 && optimization.conflicts.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-4">No issues detected</p>
+                    )}
+                  </>
                 )}
               </div>
-              </div>
             )}
-            {tab === "proactive" && (
-              <ProactivePanel
-                insights={insights}
-                optimization={optimization}
-                recoveryIntel={recoveryIntel}
-                data={data}
-              />
-            )}
-            {tab === "learning" && (
-              <LearningInsights profile={profile} />
-            )}
+
             {tab === "reports" && (
-              <ReportsPanel data={data} />
+              <ReportsPanel
+                data={data}
+                onSendToChat={(prompt) => {
+                  setInput(prompt);
+                  const inputEl = document.querySelector<HTMLInputElement>('input[placeholder*="Aetheris"]');
+                  inputEl?.focus();
+                }}
+              />
             )}
           </div>
         </div>
       </div>
     </div>
-    </>
-  );
+  </>
+    )
 }
 
 function InsightCard({ insight, blinking }: { insight: Insight; blinking?: boolean }) {

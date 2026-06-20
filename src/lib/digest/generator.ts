@@ -76,9 +76,9 @@ function buildSummary(cards: ReportCard[]): string {
 
 function buildRecommendations(cards: ReportCard[]): string[] {
   return cards
-    .filter((c) => c.actionable && c.severity !== "insight")
+    .filter((c) => c.actionable && c.detail)
     .slice(0, 3)
-    .map((c) => c.body.split(".")[0] + ".");
+    .map((c) => c.detail!);
 }
 
 function buildOpportunities(cards: ReportCard[]): { label: string; action?: string }[] {
@@ -101,10 +101,20 @@ function insightToReportCard(insight: Insight): ReportCard {
   };
 }
 
-async function aiCards(data: ScheduleData): Promise<ReportCard[] | null> {
+const TIMEFRAME_SCOPE: Record<string, string> = {
+  daily: "This is a DAILY digest. Focus on today's block completion, immediate energy management, and same-day recovery needs. Highlight acute issues only.",
+  weekly: "This is a WEEKLY review. Focus on 7-day patterns, consistency across days, weekly focus/recovery balance, and habit trends. Avoid day-level micro-issues.",
+  monthly: "This is a MONTHLY review. Focus on long-term trajectory, habit formation progress, burnout risk accumulation, and strategic category balance. Think in trends, not events.",
+  custom: "This is a CUSTOM RANGE digest. Analyze the overall pattern across the specified date range, noting recurring issues and systemic imbalances.",
+};
+
+async function aiCards(data: ScheduleData, tf: string): Promise<ReportCard[] | null> {
   try {
-    const ctx = buildContext(data, "balanced");
-    const result = await callGemini(ctx, "balanced");
+    const settings = loadSettingsSync();
+    const autonomy = settings.autonomy ?? "balanced";
+    const ctx = buildContext(data, autonomy);
+    const scope = TIMEFRAME_SCOPE[tf] ?? TIMEFRAME_SCOPE.daily;
+    const result = await callGemini(ctx, autonomy, undefined, scope);
     const insights = result.response.insights;
     if (!insights || insights.length === 0) return null;
     return insights.map(insightToReportCard);
@@ -143,14 +153,12 @@ export async function generateDigest(
     : today;
 
   let allCards: ReportCard[];
+  let generatedBy: "ai" | "heuristic" = "heuristic";
 
-  if (settings.featureToggles.aiReports) {
-    const ai = await aiCards(data);
-    if (ai && ai.length > 0) {
-      allCards = ai;
-    } else {
-      allCards = heuristicCards(data, tf);
-    }
+  const ai = await aiCards(data, tf);
+  if (ai && ai.length > 0) {
+    allCards = ai;
+    generatedBy = "ai";
   } else {
     allCards = heuristicCards(data, tf);
   }
@@ -162,6 +170,7 @@ export async function generateDigest(
     date,
     generatedAt: new Date().toISOString(),
     color,
+    generatedBy,
     summary: buildSummary(allCards),
     cards: allCards,
     recommendations: buildRecommendations(allCards),

@@ -147,7 +147,7 @@ function summarizeLearningProfile(): string {
   }
 }
 
-function buildAnalysisPrompt(ctx: ScheduleContext, autonomy: AutonomyLevel): string {
+function buildAnalysisPrompt(ctx: ScheduleContext, autonomy: AutonomyLevel, promptSuffix?: string): string {
   const systemPrompt = buildSystemPrompt(autonomy);
   const compressed = compressContext(ctx);
   const serialized = JSON.stringify(compressed, null, 2);
@@ -156,6 +156,9 @@ function buildAnalysisPrompt(ctx: ScheduleContext, autonomy: AutonomyLevel): str
   const sections = [systemPrompt, "", "## Schedule Data", "", serialized];
   if (learningSummary) {
     sections.push("", "## Learning Profile (historical patterns)", "", learningSummary);
+  }
+  if (promptSuffix) {
+    sections.push("", "## Analysis Scope", "", promptSuffix);
   }
   sections.push("", "## Response", "");
   sections.push("Analyze the schedule data above and return ONLY valid JSON with this structure:");
@@ -225,8 +228,9 @@ export async function callGemini(
   ctx: ScheduleContext,
   autonomy: AutonomyLevel,
   provider?: LLMProvider,
+  promptSuffix?: string,
 ): Promise<GeminiAnalysisResult> {
-  const fullPrompt = buildAnalysisPrompt(ctx, autonomy);
+  const fullPrompt = buildAnalysisPrompt(ctx, autonomy, promptSuffix);
 
   try {
     if (provider) {
@@ -238,15 +242,13 @@ export async function callGemini(
       return processResponse(result.text, ctx, autonomy);
     }
 
-    const apiKey = typeof import.meta !== "undefined"
-      ? import.meta.env.VITE_GEMINI_API_KEY ?? getApiKeyForProvider("gemini")
-      : getApiKeyForProvider("gemini");
+    const apiKey = getApiKeyForProvider("gemini-local") || getApiKeyForProvider("gemini");
 
     if (!apiKey) {
       return fallbackAnalysis(ctx, autonomy);
     }
 
-    const geminiProvider = new GeminiAdapter({ apiKey, model: "gemini-2.0-flash" });
+    const geminiProvider = new GeminiAdapter({ apiKey, model: "gemini-3.1-flash-lite" });
     const result = await geminiProvider.generateContent(fullPrompt, {
       systemPrompt: buildSystemPrompt(autonomy),
       temperature: 0.3,
