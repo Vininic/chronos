@@ -1,6 +1,6 @@
 import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target, AlertTriangle } from "lucide-react";
 import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
-import { BlockKind, durationMin, timeToMinutes } from "@/lib/schedule/types";
+import { BlockKind, RoutineBlock, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
@@ -286,55 +286,54 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
 }
 
 /* ---------------- Weekly routine planner ---------------- */
-export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
+
+function minsToTime(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function WeeklyRoutine({ editable = false, onBlockClick }: { editable?: boolean; onBlockClick?: (b: RoutineBlock) => void }) {
   const { data, removeRoutine } = useSchedule();
   const t = useT();
   const scheduleText = useScheduleText();
-  const days = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun
-  const startHour = 7;
-  const endHour = 19;
-  const totalHours = endHour - startHour;
-  const rowHeight = 36;
+  const days = [1, 2, 3, 4, 5, 6, 0];
+  const todayDow = new Date().getDay();
+
+  // Dynamic window derived from user's sleep schedule
+  const startHour = Math.max(0, Math.floor(timeToMinutes(data.meta.sleepWindow?.end ?? "06:30") / 60));
+  const endHour = Math.min(24, Math.ceil(timeToMinutes(data.meta.sleepWindow?.start ?? "23:00") / 60));
+  const totalHours = Math.max(1, endHour - startHour);
+  const rowHeight = 30;
   const gridHeight = totalHours * rowHeight;
-  const tickHours = [7, 9, 11, 13, 15, 17, 19];
+
+  const tickHours: number[] = [];
+  for (let h = startHour; h <= endHour; h += 2) tickHours.push(h);
+
+  // Expand crossday blocks into two visible segments
   const routineSegments = data.routine.flatMap((block) => {
     const spans = block.endsNextDay ?? block.end <= block.start;
-    if (!spans) {
-      return [{ ...block, renderDay: block.day, renderStart: block.start, renderEnd: block.end, derived: false }];
-    }
+    if (!spans) return [{ ...block, renderDay: block.day, renderStart: block.start, renderEnd: block.end }];
     return [
-      { ...block, renderDay: block.day, renderStart: block.start, renderEnd: "24:00", derived: true },
-      { ...block, renderDay: (block.day + 1) % 7, renderStart: "00:00", renderEnd: block.end, derived: true },
+      { ...block, renderDay: block.day, renderStart: block.start, renderEnd: "23:59" },
+      { ...block, renderDay: (block.day + 1) % 7, renderStart: "00:00", renderEnd: block.end },
     ];
   });
 
   const freeSlotsForDay = (day: number) => {
     const dayBlocks = routineSegments
-      .filter((b) => b.renderDay === day)
-      .slice()
+      .filter((b) => b.renderDay === day && b.kind !== "sleep")
       .sort((a, b) => a.renderStart.localeCompare(b.renderStart));
     const slots: { start: string; end: string }[] = [];
     let cursor = startHour * 60;
     const dayEnd = endHour * 60;
-
     for (const block of dayBlocks) {
-      const originalStart = timeToMinutes(block.renderStart);
-      if (originalStart - cursor >= 15) {
-        slots.push({
-          start: `${String(Math.floor(cursor / 60)).padStart(2, "0")}:${String(cursor % 60).padStart(2, "0")}`,
-          end: `${String(Math.floor(originalStart / 60)).padStart(2, "0")}:${String(originalStart % 60).padStart(2, "0")}`,
-        });
-      }
-      cursor = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.renderEnd)));
+      const bs = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.renderStart)));
+      const be = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.renderEnd === "23:59" ? "24:00" : block.renderEnd)));
+      if (bs - cursor >= 15) slots.push({ start: minsToTime(cursor), end: minsToTime(bs) });
+      cursor = Math.max(cursor, be);
     }
-
-    if (dayEnd - cursor >= 15) {
-      slots.push({
-        start: `${String(Math.floor(cursor / 60)).padStart(2, "0")}:${String(cursor % 60).padStart(2, "0")}`,
-        end: `${String(endHour).padStart(2, "0")}:00`,
-      });
-    }
-
+    if (dayEnd - cursor >= 15) slots.push({ start: minsToTime(cursor), end: minsToTime(dayEnd) });
     return slots;
   };
 
@@ -346,74 +345,106 @@ export function WeeklyRoutine({ editable = false }: { editable?: boolean }) {
           <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.weekShape}</h3>
         </div>
         <div className="flex items-center gap-3 text-xs flex-wrap">
-          {(Object.keys(kindStyle) as BlockKind[]).map((k) => (
-            <div key={k} className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${kindStyle[k].dot}`} />
-              <span className="text-muted-foreground">{categoryLabel(data, k, t, scheduleText.categoryLabel)}</span>
-            </div>
-          ))}
+          {data.categories.filter((c) => c.id !== "sleep").map((c) => {
+            const s = safeKindStyle(c.id, data.categories);
+            return (
+              <div key={c.id} className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${s.dot}`} style={s.dotStyle} />
+                <span className="text-muted-foreground">{scheduleText.categoryLabel(c.id as BlockKind, c.label, c.labelCustom)}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-[56px_repeat(7,1fr)] gap-2">
+      <div className="mt-6 grid grid-cols-[48px_repeat(7,1fr)] gap-1.5">
         <div />
         {days.map((di) => (
-          <div key={di} className="text-center text-[11px] uppercase tracking-[0.18em] text-muted-foreground pb-2">
+          <div key={di} className={`text-center text-[11px] uppercase tracking-[0.18em] pb-2 ${di === todayDow ? "text-secondary font-semibold" : "text-muted-foreground"}`}>
             {t.common.days.short[di]}
           </div>
         ))}
+
+        {/* Time axis */}
         <div className="relative" style={{ height: gridHeight }}>
           {tickHours.map((h) => (
-            <div key={h} className="absolute right-2 -translate-y-1/2 text-[10px] num text-muted-foreground/70" style={{ top: ((h - startHour) / totalHours) * gridHeight }}>
-              {String(h).padStart(2, "0")}:00
+            <div key={h} className="absolute right-1.5 -translate-y-1/2 text-[10px] num text-muted-foreground/60 leading-none" style={{ top: ((h - startHour) / totalHours) * gridHeight }}>
+              {String(h).padStart(2, "0")}h
             </div>
           ))}
         </div>
-        {days.map((di) => (
-          <div key={`col-${di}`} className="relative rounded-md bg-surface-raised border border-border/60" style={{ height: gridHeight }}>
-            {tickHours.slice(1, -1).map((h) => (
-              <div key={`gl-${h}`} className="absolute left-0 right-0 border-t border-dashed border-border/50" style={{ top: ((h - startHour) / totalHours) * gridHeight }} />
-            ))}
-            {freeSlotsForDay(di).map((slot) => {
-              const sh = timeToMinutes(slot.start) / 60;
-              const eh = timeToMinutes(slot.end) / 60;
-              const top = ((sh - startHour) / totalHours) * gridHeight;
-              const height = Math.max(12, ((eh - sh) / totalHours) * gridHeight - 2);
-              return (
-                <div
-                  key={`free-${di}-${slot.start}`}
-                  className="absolute left-1 right-1 rounded-md border border-dashed border-border/50 bg-background/25 px-1.5 py-1 overflow-hidden"
-                  style={{ top, height }}
-                  title={`${t.chronos.today.free} · ${slot.start}-${slot.end}`}
-                >
-                  {height >= 24 && (
-                    <div className="truncate text-[9px] uppercase tracking-wider text-muted-foreground/55">
-                      {t.chronos.today.free}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {data.routine.filter((b) => b.day === di).map((b) => {
-              const sh = timeToMinutes(b.start) / 60;
-              const eh = timeToMinutes(b.end) / 60;
-              const top = ((sh - startHour) / totalHours) * gridHeight;
-              const height = Math.max(18, ((eh - sh) / totalHours) * gridHeight - 2);
-              const s = safeKindStyle(b.kind, data.categories);
-              return (
-                <div key={b.id} className={`group absolute left-1 right-1 rounded-md text-[10px] font-medium px-1.5 py-1 ${s.chip} border border-current/10 overflow-hidden`} style={s.chipStyle ? { top, height, ...s.chipStyle } : { top, height }} title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.start}–${b.end}`}>
-                  <div className="truncate">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>
-                  <div className="text-[9px] opacity-70 num">{b.start}</div>
-                  {editable && (
-                    <button onClick={() => { removeRoutine(b.id); toast({ title: t.chronos.widgets.blockRemoved }); }} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 h-4 w-4 rounded grid place-items-center bg-background/70 hover:bg-background">
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+
+        {/* Day columns */}
+        {days.map((di) => {
+          const segs = routineSegments.filter((b) => b.renderDay === di && b.kind !== "sleep");
+          const isToday = di === todayDow;
+          return (
+            <div
+              key={`col-${di}`}
+              className={`relative rounded-md border ${isToday ? "bg-secondary/5 border-secondary/25" : "bg-surface-raised border-border/60"}`}
+              style={{ height: gridHeight }}
+            >
+              {/* Horizontal grid lines */}
+              {tickHours.slice(1).map((h) => (
+                <div key={`gl-${h}`} className="absolute left-0 right-0 border-t border-dashed border-border/40" style={{ top: ((h - startHour) / totalHours) * gridHeight }} />
+              ))}
+
+              {/* Free slots */}
+              {freeSlotsForDay(di).map((slot) => {
+                const sh = timeToMinutes(slot.start) / 60;
+                const eh = timeToMinutes(slot.end === "24:00" ? "24:00" : slot.end) / 60;
+                const csh = Math.max(startHour, sh);
+                const ceh = Math.min(endHour, eh);
+                if (ceh <= csh) return null;
+                const top = ((csh - startHour) / totalHours) * gridHeight;
+                const height = Math.max(6, ((ceh - csh) / totalHours) * gridHeight - 2);
+                return (
+                  <div
+                    key={`free-${slot.start}`}
+                    className="absolute left-1 right-1 rounded border border-dashed border-border/40 bg-background/20 px-1 py-0.5 overflow-hidden"
+                    style={{ top, height }}
+                    title={`${t.chronos.today.free} · ${slot.start}–${slot.end}`}
+                  >
+                    {height >= 20 && <div className="truncate text-[8px] uppercase tracking-wider text-muted-foreground/45">{t.chronos.today.free}</div>}
+                  </div>
+                );
+              })}
+
+              {/* Routine blocks — clamped to the visible window */}
+              {segs.map((b) => {
+                const sh = timeToMinutes(b.renderStart) / 60;
+                const rawEh = b.renderEnd === "23:59" ? 24 : timeToMinutes(b.renderEnd) / 60;
+                const csh = Math.max(startHour, sh);
+                const ceh = Math.min(endHour, rawEh);
+                if (ceh <= csh) return null;
+                const top = ((csh - startHour) / totalHours) * gridHeight;
+                const height = Math.max(14, ((ceh - csh) / totalHours) * gridHeight - 2);
+                const s = safeKindStyle(b.kind, data.categories);
+                const clickable = !!onBlockClick;
+                return (
+                  <div
+                    key={`${b.id}-${b.renderStart}`}
+                    className={`group absolute left-1 right-1 rounded text-[10px] font-medium px-1.5 py-0.5 ${s.chip} border border-current/10 overflow-hidden select-none ${clickable ? "cursor-pointer hover:brightness-110 hover:ring-1 hover:ring-primary/20" : ""}`}
+                    style={s.chipStyle ? { top, height, ...s.chipStyle } : { top, height }}
+                    title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.renderStart}–${b.renderEnd}`}
+                    onClick={() => clickable && onBlockClick(b as unknown as RoutineBlock)}
+                  >
+                    <div className="truncate leading-tight">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>
+                    {height >= 28 && <div className="text-[8px] opacity-60 num">{b.renderStart}</div>}
+                    {editable && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeRoutine(b.id); toast({ title: t.chronos.widgets.blockRemoved }); }}
+                        className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 h-4 w-4 rounded grid place-items-center bg-background/70 hover:bg-background"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -1,14 +1,14 @@
-import { useState, useMemo } from "react";
-import { WeeklyRoutine, kindStyle, safeKindStyle } from "@/components/dashboard/widgets";
+import { useState } from "react";
+import { WeeklyRoutine } from "@/components/dashboard/widgets";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { GoalList } from "@/components/dashboard/GoalList";
 import { useSchedule } from "@/lib/schedule/store";
 import type { Commitment, Goal } from "@/lib/schedule/types";
-import { BlockKind, RoutineBlock, durationMin, computeGoalProgress, computeStreak, getPeriodStartEnd, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
+import { BlockKind, RoutineBlock, durationMin, computeGoalProgress, computeStreak, getPeriodStartEnd, daysUntilDeadline } from "@/lib/schedule/types";
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Expand, Shrink, Trash2, Pencil, Target, BarChart3, Clock, CheckCircle2, CalendarDays } from "lucide-react";
+import { Expand, Shrink, Trash2, Target, BarChart3, Clock, CheckCircle2, CalendarDays } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
@@ -25,10 +25,7 @@ export default function Week() {
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
   const [editItem, setEditItem] = useState<RoutineBlock | null>(null);
-  // Mon=1..Sun=0, same order as the weekly grid
   const isPt = bcp47.toLowerCase().startsWith("pt");
-  const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
-  const byDay = DAY_ORDER.map((di) => ({ di, blocks: data.routine.filter((r) => r.day === di).sort((a, b) => a.start.localeCompare(b.start)) }));
 
   function patchRoutine(id: string, patch: Record<string, unknown>, successTitle = t.common.save) {
     const err = updateRoutine(id, patch);
@@ -62,9 +59,33 @@ export default function Week() {
     commitmentsByDate[c.date].push(c);
   });
 
+  const todayIso = today.toISOString().slice(0, 10);
+  const totalSchedMin = data.routine.reduce((s, r) => {
+    if (today.getDay() === r.day) return s + durationMin(r.start, r.end);
+    return s;
+  }, 0);
+  const goalStats = data.goals.reduce((acc, g) => {
+    const p = computeGoalProgress(g, todayIso, data.goals, data.routine, data.commitments);
+    acc.total++;
+    if (p.denominator > 0 && p.ratio >= 1) acc.completed++;
+    acc.weightedSum += p.ratio * g.weight;
+    acc.totalWeight += g.weight;
+    return acc;
+  }, { total: 0, completed: 0, weightedSum: 0, totalWeight: 0 });
+  const avgProgress = goalStats.totalWeight > 0 ? goalStats.weightedSum / goalStats.totalWeight : 0;
+  const goalsToday = data.goals.filter((g) => {
+    const pp = getPeriodStartEnd(g.startDate, g.period, todayIso);
+    return todayIso >= pp.start && todayIso <= pp.end;
+  }).length;
+  const bestStreak = data.goals.reduce((best, g) => Math.max(best, computeStreak(g, todayIso)), 0);
+  const deadlineGoals = data.goals
+    .filter((g): g is Goal & { deadline: string } => g.kind === "deadline" && !!g.deadline)
+    .sort((a, b) => a.deadline.localeCompare(b.deadline))
+    .slice(0, 5);
+
   return (
     <>
-      <header className="mb-7 flex items-end justify-between gap-6 flex-wrap">
+      <header className="mb-6 flex items-end justify-between gap-6 flex-wrap">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.weekPage.eyebrow}</div>
           <h1 className="font-display text-4xl text-primary mt-1.5">{t.chronos.weekPage.title}</h1>
@@ -72,12 +93,72 @@ export default function Week() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={() => setMonthView(!monthView)}>
-            {monthView ? <><Shrink className="h-4 w-4 mr-1.5" /> {isPt ? "Semana" : "Week"}</> : <><Expand className="h-4 w-4 mr-1.5" /> {isPt ? "Mês" : "Month"}</>}
+            {monthView ? <><Shrink className="h-4 w-4 mr-1.5" />{isPt ? "Semana" : "Week"}</> : <><Expand className="h-4 w-4 mr-1.5" />{isPt ? "Mês" : "Month"}</>}
           </Button>
           <ComposeBlockDialog />
         </div>
       </header>
 
+      {/* Stats row — visible in week view only */}
+      {!monthView && (
+        <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="chronos-card p-3">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              <Target className="h-3 w-3" /><span>{isPt ? "Metas" : "Goals"}</span>
+            </div>
+            <div className="text-lg font-display text-primary">{goalStats.total}</div>
+            <div className="text-[10px] text-muted-foreground">{goalStats.completed} {isPt ? "concluídas esta semana" : "completed this week"}</div>
+          </div>
+          <div className="chronos-card p-3">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              <BarChart3 className="h-3 w-3" /><span>{isPt ? "Progresso" : "Progress"}</span>
+            </div>
+            <div className="text-lg font-display text-primary">{Math.round(avgProgress * 100)}%</div>
+            <div className="text-[10px] text-muted-foreground">{isPt ? "média ponderada" : "weighted average"}</div>
+          </div>
+          <div className="chronos-card p-3">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              <Clock className="h-3 w-3" /><span>{isPt ? "Hoje" : "Today"}</span>
+            </div>
+            <div className="text-lg font-display text-primary">{fmtDur(totalSchedMin)}</div>
+            <div className="text-[10px] text-muted-foreground">{goalsToday} {isPt ? "metas ativas" : "active goals"}</div>
+          </div>
+          <div className="chronos-card p-3">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              <CheckCircle2 className="h-3 w-3" /><span>Streak</span>
+            </div>
+            <div className="text-lg font-display text-primary">{bestStreak}</div>
+            <div className="text-[10px] text-muted-foreground">{isPt ? "melhor sequência de meta" : "best goal streak"}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Upcoming deadlines */}
+      {!monthView && deadlineGoals.length > 0 && (
+        <div className="mb-5 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">
+            <CalendarDays className="h-3 w-3" />
+            <span>{isPt ? "Prazos" : "Deadlines"}</span>
+          </div>
+          {deadlineGoals.map((g) => {
+            const d = daysUntilDeadline(g.deadline);
+            const overdue = d < 0;
+            return (
+              <div
+                key={g.id}
+                className={`rounded-md border px-2.5 py-1 text-xs flex items-center gap-2 ${overdue ? "border-rose-500/30 bg-rose-500/8" : d <= 3 ? "border-amber-500/30 bg-amber-500/8" : "border-border/60"}`}
+              >
+                <span className="text-primary font-medium truncate max-w-[120px]">{g.title}</span>
+                <span className={`num ${overdue ? "text-rose-600" : d <= 3 ? "text-amber-600" : "text-muted-foreground"}`}>
+                  {overdue ? `${Math.abs(d)}d ${isPt ? "em atraso" : "overdue"}` : `${d}d`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Main content: week grid or month calendar */}
       {monthView ? (
         <section className="chronos-card p-6">
           <div className="flex items-center justify-between mb-4">
@@ -101,7 +182,7 @@ export default function Week() {
               const day = i + 1;
               const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const dayCommitments = commitmentsByDate[dateStr] ?? [];
-              const isToday = dateStr === new Date().toISOString().slice(0, 10);
+              const isToday = dateStr === todayIso;
               return (
                 <div key={day} className={`bg-background min-h-[90px] p-1.5 ${isToday ? "ring-1 ring-secondary/40 ring-inset" : ""}`}>
                   <div className={`text-xs font-medium mb-1 ${isToday ? "text-secondary" : "text-muted-foreground"}`}>{day}</div>
@@ -120,124 +201,13 @@ export default function Week() {
           </div>
         </section>
       ) : (
-        <div className="grid grid-cols-1 gap-6"><WeeklyRoutine /></div>
-      )}
-
-      {!monthView && (() => {
-        const todayIso = new Date().toISOString().slice(0, 10);
-        const weekStart = getPeriodStartEnd(data.goals[0]?.startDate ?? todayIso, "weekly", todayIso).start;
-        const weekEnd = getPeriodStartEnd(data.goals[0]?.startDate ?? todayIso, "weekly", todayIso).end;
-        const totalSchedMin = data.routine.reduce((s, r) => {
-          if (new Date(todayIso + "T00:00:00").getDay() === r.day) return s + durationMin(r.start, r.end);
-          return s;
-        }, 0);
-        const goalStats = data.goals.reduce((acc, g) => {
-          const p = computeGoalProgress(g, todayIso, data.goals, data.routine, data.commitments);
-          acc.total++;
-          if (p.denominator > 0 && p.ratio >= 1) acc.completed++;
-          acc.weightedSum += p.ratio * g.weight;
-          acc.totalWeight += g.weight;
-          return acc;
-        }, { total: 0, completed: 0, weightedSum: 0, totalWeight: 0 });
-        const avgProgress = goalStats.totalWeight > 0 ? goalStats.weightedSum / goalStats.totalWeight : 0;
-        const goalsToday = data.goals.filter((g) => {
-          const pp = getPeriodStartEnd(g.startDate, g.period, todayIso);
-          return todayIso >= pp.start && todayIso <= pp.end;
-        }).length;
-        return (
-          <>
-            <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="chronos-card p-3">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                  <Target className="h-3 w-3" />
-                  <span>Goals</span>
-                </div>
-                <div className="text-lg font-display text-primary">{goalStats.total}</div>
-                <div className="text-[10px] text-muted-foreground">{goalStats.completed} completed this week</div>
-              </div>
-              <div className="chronos-card p-3">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                  <BarChart3 className="h-3 w-3" />
-                  <span>Progress</span>
-                </div>
-                <div className="text-lg font-display text-primary">{Math.round(avgProgress * 100)}%</div>
-                <div className="text-[10px] text-muted-foreground">weighted average</div>
-              </div>
-              <div className="chronos-card p-3">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                  <Clock className="h-3 w-3" />
-                  <span>Today</span>
-                </div>
-                <div className="text-lg font-display text-primary">{fmtDur(totalSchedMin)}</div>
-                <div className="text-[10px] text-muted-foreground">{goalsToday} active goals</div>
-              </div>
-              <div className="chronos-card p-3">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  <span>Streak</span>
-                </div>
-                <div className="text-lg font-display text-primary">
-                  {data.goals.reduce((best, g) => Math.max(best, computeStreak(g, todayIso)), 0)}
-                </div>
-                <div className="text-[10px] text-muted-foreground">best goal streak</div>
-              </div>
-            </div>
-            {data.goals.filter((g) => g.kind === "deadline" && g.deadline).length > 0 && (
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-                  <CalendarDays className="h-3 w-3" />
-                  <span>Upcoming deadlines</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {data.goals
-                    .filter((g): g is Goal & { deadline: string } => g.kind === "deadline" && !!g.deadline)
-                    .sort((a, b) => a.deadline.localeCompare(b.deadline))
-                    .slice(0, 5)
-                    .map((g) => {
-                      const d = daysUntilDeadline(g.deadline);
-                      const overdue = d < 0;
-                      return (
-                        <div key={g.id}
-                          className={`rounded-md border px-2.5 py-1.5 text-xs flex items-center gap-2 ${overdue ? "border-rose-500/30 bg-rose-500/8" : d <= 3 ? "border-amber-500/30 bg-amber-500/8" : "border-border/60"}`}
-                        >
-                          <span className="text-primary font-medium truncate max-w-[120px]">{g.title}</span>
-                          <span className={`num ${overdue ? "text-rose-600" : d <= 3 ? "text-amber-600" : "text-muted-foreground"}`}>
-                            {overdue ? `${Math.abs(d)}d overdue` : `${d}d left`}
-                          </span>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-          </>
-        );
-      })()}
-
-        {!monthView && (
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {byDay.map(({ di, blocks }) => (
-            <div key={di} className="chronos-card p-5">
-              <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.common.days.long[di]}</div>
-              <div className="font-display text-lg text-primary mt-0.5">{t.chronos.weekPage.blocks(blocks.length)}</div>
-              <ul className="mt-3 space-y-2">
-                {blocks.length === 0 && <li className="text-xs text-muted-foreground italic">{t.chronos.weekPage.empty}</li>}
-                {blocks.map((b) => (
-                  <li key={b.id} className="group rounded-md border border-border/60 bg-surface-raised p-2.5 text-sm">
-                    <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${safeKindStyle(b.kind, data.categories).dot}`} style={safeKindStyle(b.kind, data.categories).dotStyle} />
-                    <span className="text-primary truncate flex-1">{scheduleText.blockTitle(b.title, b.titleCustom)}</span>
-                    <span className="text-[11px] text-muted-foreground num">{b.start} · {fmtDur(durationMin(b.start, b.end))}</span>
-                    <button onClick={() => setEditItem(b)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary"><Pencil className="h-3.5 w-3.5" /></button>
-                    </div>
-                    <div className="mt-1.5 text-[11px] text-muted-foreground num">
-                      {b.start}–{b.end}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+        <div className="grid grid-cols-1 gap-6">
+          <WeeklyRoutine
+            onBlockClick={(b) => {
+              const original = data.routine.find((r) => r.id === b.id);
+              if (original) setEditItem(original);
+            }}
+          />
         </div>
       )}
 
@@ -288,6 +258,7 @@ function WeekBlockEditDialog({
   onSave: (patch: Partial<RoutineBlock>) => void;
 }) {
   const t = useT();
+  const { bcp47 } = useI18n();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
   const [title, setTitle] = useState(item.titleCustom ?? item.title);
