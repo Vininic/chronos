@@ -1,11 +1,10 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { PlannerPreferences, PlannerProposal } from "./types";
 import type { ScheduleData, RoutineBlock, Category } from "@/lib/schedule/types";
 import type { LearningProfile } from "@/lib/ai/learning/types";
 import { DAY_LABELS } from "@/lib/schedule/types";
 import { generateProposals } from "./generator";
 import { loadProfile } from "@/lib/ai/learning/store";
-import { getApiKeyForProvider } from "@/lib/ai/settings/store";
+import { resolveProvider } from "@/lib/ai/core/resolveProvider";
 
 const TONES = [
   "bronze", "midnight", "primary-glow", "emerald", "neutral", "indigo",
@@ -312,22 +311,20 @@ export async function generateGeminiProposals(
   prefs: PlannerPreferences,
   learningProfile?: LearningProfile,
 ): Promise<PlannerProposal[]> {
-  const apiKey = getApiKeyForProvider("gemini-local") || getApiKeyForProvider("gemini");
-
-  if (!apiKey) {
+  const provider = resolveProvider();
+  if (!provider) {
     return fallbackProposals(prefs, learningProfile);
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
-
     const learningSummary = summarizeLearningProfileLight();
     const prompt = buildGeminiPrompt(prefs, learningSummary);
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const blueprint = parseBlueprint(text);
+    const result = await provider.generateContent(prompt, {
+      temperature: 0.7,
+      maxTokens: 4096,
+    });
+    const blueprint = parseBlueprint(result.text);
 
     if (!blueprint) {
       return fallbackProposals(prefs, learningProfile);

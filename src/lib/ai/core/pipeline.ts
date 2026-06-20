@@ -15,8 +15,7 @@ import { detectPatterns } from "../pattern/detect";
 import { callGemini } from "./gemini";
 import { compressedTokenEstimate, compressContext } from "../context/serializers";
 import type { LLMProvider } from "./provider";
-import { createProviderFromSettings, resolveFallbackProvider } from "./registry";
-import { loadSettingsSync, getApiKeyForProvider } from "../settings/store";
+import { resolveProvider } from "./resolveProvider";
 
 export interface AetherisPipelineInput {
   data: ScheduleData;
@@ -68,22 +67,6 @@ function filterByAutonomy(
   }
 }
 
-function resolveProvider(): LLMProvider | null {
-  const settings = loadSettingsSync();
-  const apiKey = settings.apiKeys[settings.providerId] ?? getApiKeyForProvider(settings.providerId);
-
-  if (apiKey) {
-    return createProviderFromSettings({
-      providerId: settings.providerId,
-      apiKey,
-      model: settings.models[settings.providerId],
-      baseUrl: settings.baseUrls[settings.providerId],
-    });
-  }
-
-  const fallback = resolveFallbackProvider(settings.providerId, settings.apiKeys);
-  return fallback?.provider ?? null;
-}
 
 export async function runAetherisPipeline(input: AetherisPipelineInput): Promise<AetherisPipelineResult> {
   const autonomy = input.autonomy ?? "balanced";

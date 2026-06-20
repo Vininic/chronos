@@ -5,6 +5,7 @@ import { addDigest } from "./store";
 import { loadSettingsSync } from "@/lib/ai/settings/store";
 import { buildContext } from "@/lib/ai/context/buildContext";
 import { callGemini } from "@/lib/ai/core/gemini";
+import { resolveProvider } from "@/lib/ai/core/resolveProvider";
 
 import { recoveryAnalysis } from "./modules/recovery";
 import { productivityAnalysis } from "./modules/productivity";
@@ -113,8 +114,9 @@ async function aiCards(data: ScheduleData, tf: string): Promise<ReportCard[] | n
     const settings = loadSettingsSync();
     const autonomy = settings.autonomy ?? "balanced";
     const ctx = buildContext(data, autonomy);
+    const provider = resolveProvider();
     const scope = TIMEFRAME_SCOPE[tf] ?? TIMEFRAME_SCOPE.daily;
-    const result = await callGemini(ctx, autonomy, undefined, scope);
+    const result = await callGemini(ctx, autonomy, provider ?? undefined, scope);
     const insights = result.response.insights;
     if (!insights || insights.length === 0) return null;
     return insights.map(insightToReportCard);
