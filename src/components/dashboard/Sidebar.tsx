@@ -66,7 +66,7 @@ useEffect(() => subscribe(setAetherisCount), []);
           <div className="flex items-center justify-between mt-1.5">
             <span className="text-[11px] text-sidebar-foreground/70 num">{weekProgress}% {t.chronos.nav.arcCompleted}</span>
           </div>
-          <div className="mt-3 pt-3 border-t border-sidebar-border/50">
+          {data.goals.length > 0 && (<div className="mt-3 pt-3 border-t border-sidebar-border/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.22em] text-secondary-soft">
                 <Target className="h-3 w-3" />
@@ -77,7 +77,7 @@ useEffect(() => subscribe(setAetherisCount), []);
             <div className="mt-1.5 h-1.5 rounded-full bg-sidebar-border overflow-hidden">
               <div className="h-full bg-bronze transition-all" style={{ width: `${Math.round(overallGoalProgress() * 100)}%` }} />
             </div>
-          </div>
+          </div>)}
         </button>
         <ProgressDialog open={progressOpen} onOpenChange={setProgressOpen} />
       </div>
@@ -132,12 +132,12 @@ useEffect(() => subscribe(setAetherisCount), []);
       </nav>
 
       {!collapsed && (
-        <div className="px-4 mb-3">
+        <div className="px-4 mt-4 mb-2">
           <TimerCard />
         </div>
       )}
 
-      <div className="p-4">
+      <div className="px-4 pb-4 pt-2">
         <button
           onClick={() => setProfileOpen(true)}
           className={`w-full rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3 hover:bg-sidebar-accent transition-colors text-left ${collapsed ? "justify-center" : ""}`}
