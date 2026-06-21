@@ -6,7 +6,9 @@ import { isNewDay, setLastVisitDate } from "@/lib/ai/briefing/store";
 import { addAuditEntry, describeToolCall } from "@/lib/ai/audit/store";
 import { pendingRegeneration } from "@/lib/ai/tools/regenerateTools";
 import { regenerateDays } from "@/lib/ai/planner/refine";
-import { useSchedule } from "@/lib/schedule/store";
+import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
+import { timeToMinutes, durationMin, fmtDur } from "@/lib/schedule/types";
+import { safeKindStyle } from "@/components/dashboard/widgets";
 import { runAetherisPipeline, type AetherisPipelineResult } from "@/lib/ai/core/pipeline";
 import type { Insight, Suggestion, RecoveryAnalysis } from "@/lib/ai/core/schemas";
 import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
@@ -30,8 +32,6 @@ import { getSuggestionFeedback, recordSuggestionFeedback } from "@/lib/ai/metric
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import ChatThread from "@/components/chat/ChatThread";
 import DemoTour from "@/components/chat/DemoTour";
-import { buildDigest } from "@/components/dashboard/ProactivePanel";
-import { getLatestDigest } from "@/lib/digest/store";
 import { ReportsPanel } from "@/components/digest/ReportsPanel";
 import SuggestionFeedbackDialog from "@/components/chat/SuggestionFeedbackDialog";
 import {
@@ -427,7 +427,20 @@ export default function Aetheris() {
     return `Powered by ${name}${model ? " · " + model : ""} · AI can make mistakes`;
   }, []);
 
-  const todayCount = (recoveryIntel.recoveryScore < 50 ? 1 : 0) + insights.filter(i => i.severity === "critical" && i.type !== "recovery").length;
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+
+  const todayAgenda = useMemo(() => {
+    return buildAgendaForDate(data, new Date())
+      .filter((a) => a.kind !== "sleep" && !(a as { sleepBoundary?: boolean }).sleepBoundary)
+      .sort((a, b) => a.start.localeCompare(b.start));
+  }, [data.routine, data.commitments]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const todayTotalMin = todayAgenda.reduce((s, a) => s + durationMin(a.start, a.end), 0);
+  const todayFocusMin = todayAgenda
+    .filter((a) => (data.meta.focusCategoryIds ?? []).includes(a.kind))
+    .reduce((s, a) => s + durationMin(a.start, a.end), 0);
+
+  const todayCount = (recoveryIntel.recoveryScore < 50 ? 1 : 0) + optimization.conflicts.length;
   const tabs: { key: TabView; label: string; icon: typeof Brain; count: number }[] = [
     { key: "today", label: "Today", icon: CalendarDays, count: todayCount },
     { key: "analysis", label: "Analysis", icon: Brain, count: insights.length + suggestions.length },
@@ -656,38 +669,68 @@ export default function Aetheris() {
               ))}
             </div>
 
-            {/* Today: digest + recovery warning + critical alerts + stats */}
+            {/* Today: day agenda + structural issues only */}
             {tab === "today" && (
               <div className="space-y-3">
                 {pipelineLoading ? (
                   <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-secondary" /></div>
                 ) : (
                   <>
-                    {(() => {
-                      const today = new Date().toISOString().slice(0, 10);
-                      const stored = getLatestDigest();
-                      const todayDigest = stored?.date === today ? stored : null;
-                      const digestText = todayDigest?.summary ?? buildDigest(data);
-                      return (
-                        <div
-                          className="border border-border rounded-lg p-3 bg-gradient-to-br from-secondary/5 to-transparent cursor-pointer hover:from-secondary/10 transition-colors"
-                          onClick={() => setTab("reports")}
-                          title="View full digest in Reports"
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <CalendarDays className="h-4 w-4 text-secondary" />
-                            <span className="text-xs font-medium text-primary">Today's digest</span>
-                            {todayDigest && (
-                              <span className="ml-auto text-[9px] text-secondary/60 flex items-center gap-0.5">
-                                <Sparkles className="h-2.5 w-2.5" />
-                                {todayDigest.generatedBy === "ai" ? "AI" : "Structural"}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground leading-relaxed">{digestText}</p>
+                    {/* Today's agenda — the actual day schedule */}
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60">
+                        <CalendarDays className="h-3.5 w-3.5 text-secondary/70" />
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Today</span>
+                        <span className="ml-auto text-[9px] text-muted-foreground/40 num">
+                          {todayAgenda.length} blocks · {fmtDur(todayTotalMin)}
+                        </span>
+                      </div>
+                      {todayAgenda.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground/50 text-center py-4 px-3">No blocks scheduled today</p>
+                      ) : (
+                        <div>
+                          {todayAgenda.map((block, i) => {
+                            const bStart = timeToMinutes(block.start);
+                            const bEnd = timeToMinutes(block.end === "24:00" ? "23:59" : block.end);
+                            const isActive = bStart <= nowMin && nowMin < bEnd;
+                            const isPast = bEnd <= nowMin;
+                            const style = safeKindStyle(block.kind, data.categories);
+                            return (
+                              <div
+                                key={`${String(block.id ?? block.start)}-${i}`}
+                                className={`flex items-center gap-2.5 px-3 py-2 border-b border-border/20 last:border-0 transition-colors ${
+                                  isActive ? "bg-secondary/5" : ""
+                                } ${isPast ? "opacity-35" : ""}`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full shrink-0 ${style.dot}`}
+                                  style={style.dotStyle}
+                                />
+                                <span className="text-[10px] text-muted-foreground/50 num shrink-0 tabular-nums">
+                                  {block.start}
+                                </span>
+                                <span className={`text-[11px] flex-1 min-w-0 truncate ${isActive ? "text-secondary font-medium" : "text-primary/80"}`}>
+                                  {block.titleCustom ?? block.title}
+                                </span>
+                                {isActive && (
+                                  <span className="text-[8px] bg-secondary/15 text-secondary px-1.5 py-0.5 rounded-full shrink-0 font-semibold uppercase tracking-wider">
+                                    Now
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })()}
+                      )}
+                      {todayFocusMin > 0 && (
+                        <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/60 bg-muted/10">
+                          <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">Focus today</span>
+                          <span className="text-[10px] text-secondary/80 num font-medium">{fmtDur(todayFocusMin)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Recovery warning */}
                     {recoveryIntel.recoveryScore < 50 && (
                       <div className="border border-red-400/50 rounded-lg p-3">
                         <button
@@ -709,58 +752,76 @@ export default function Aetheris() {
                         )}
                       </div>
                     )}
-                    {insights
-                      .filter(i => i.severity === "critical" && i.type !== "recovery")
-                      .slice(0, 3)
-                      .map((ins) => (
-                        <InsightCard key={ins.title + ins.detail} insight={ins} blinking={blinkingIds.includes(ins.title + ins.detail)} />
-                      ))
-                    }
-                    {insights.filter(i => i.severity === "critical" && i.type !== "recovery").length === 0 && recoveryIntel.recoveryScore >= 50 && (
-                      <p className="text-xs text-muted-foreground text-center py-2">No critical issues today</p>
+
+                    {/* Structural conflicts only — no AI insights here */}
+                    {optimization.conflicts.slice(0, 3).map((c, i) => (
+                      <div key={i} className="border border-amber-400/30 rounded-lg p-3">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                          <span className="text-[11px] font-medium text-primary">Scheduling conflict</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-relaxed">{c.detail}</p>
+                      </div>
+                    ))}
+
+                    {optimization.conflicts.length === 0 && recoveryIntel.recoveryScore >= 50 && (
+                      <p className="text-[11px] text-muted-foreground/40 text-center py-1">No structural issues</p>
                     )}
-                    <div className="border border-border rounded-lg p-3">
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Schedule</div>
-                      <dl className="space-y-1.5 text-xs">
-                        {([
-                          ["Blocks", data.routine.length],
-                          ["Commitments", data.commitments.length],
-                          ["Categories", data.categories.length],
-                          ["Score", `${data.ledger.compositionScore}/100`],
-                          ["Cycle", data.meta.cycle.name],
-                        ] as [string, string | number][]).map(([l, v]) => (
-                          <div key={l} className="flex items-center justify-between">
-                            <dt className="text-muted-foreground">{l}</dt>
-                            <dd className="text-primary font-medium num">{v}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </div>
                   </>
                 )}
               </div>
             )}
 
-            {/* Analysis: metrics + non-critical insights + suggestions + conflicts/gaps */}
+            {/* Analysis: score + AI insights + suggestions + structural issues */}
             {tab === "analysis" && (
               <div className="space-y-3 overflow-x-hidden">
                 {pipelineLoading ? (
                   <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-secondary" /></div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <MetricBox label="Conflicts" value={optimization.conflicts.length} />
-                      <MetricBox label="Gaps" value={optimization.idleGaps.length} />
-                      <MetricBox label="Frag." value={`${Math.round(optimization.focusFragmentation * 100)}%`} />
-                      <MetricBox label="Consist." value={`${Math.round(optimization.routineConsistency * 100)}%`} />
+                    {/* Composition score + key structural metrics */}
+                    <div className="border border-border rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">Composition score</span>
+                        <span className="font-display text-xl text-secondary num leading-none">
+                          {data.ledger.compositionScore}
+                          <span className="text-xs text-muted-foreground/40 font-sans">/100</span>
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1 rounded-full bg-border overflow-hidden">
+                        <div className="h-full bg-secondary transition-all" style={{ width: `${data.ledger.compositionScore}%` }} />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mt-3">
+                        {[
+                          ["Conflicts", optimization.conflicts.length],
+                          ["Gaps", optimization.idleGaps.length],
+                          ["Consist.", `${Math.round(optimization.routineConsistency * 100)}%`],
+                        ].map(([l, v]) => (
+                          <div key={String(l)} className="text-center">
+                            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/40">{l}</div>
+                            <div className="text-sm font-medium text-primary num mt-0.5">{v}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {insights
-                      .filter(i => i.severity !== "critical" && i.type !== "recovery")
-                      .slice(0, 5)
-                      .map((ins) => (
-                        <InsightCard key={ins.title + ins.detail} insight={ins} blinking={false} />
-                      ))
-                    }
+
+                    {/* AI insights (non-critical, non-recovery) */}
+                    {insights.filter(i => i.severity !== "critical" && i.type !== "recovery").length > 0 && (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-2 px-0.5 flex items-center gap-1.5">
+                          <Sparkles className="h-3 w-3" />
+                          AI insights
+                        </div>
+                        {insights
+                          .filter(i => i.severity !== "critical" && i.type !== "recovery")
+                          .slice(0, 4)
+                          .map((ins) => (
+                            <InsightCard key={ins.title + ins.detail} insight={ins} blinking={false} />
+                          ))
+                        }
+                      </div>
+                    )}
+
                     {suggestions.length > 0 && (
                       <div className="pt-2 border-t border-border/40">
                         <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Suggestions</div>
@@ -833,7 +894,7 @@ export default function Aetheris() {
                     )}
                     {optimization.conflicts.length > 0 && (
                       <div className="pt-2 border-t border-border/40">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Conflicts</div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Structural conflicts</div>
                         <div className="space-y-2">
                           {optimization.conflicts.map((c, i) => (
                             <div key={i} className="border border-border rounded-lg p-2.5">
@@ -859,7 +920,7 @@ export default function Aetheris() {
                     )}
                     {optimization.idleGaps.length > 0 && (
                       <div className="pt-2 border-t border-border/40">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Idle gaps</div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2 px-0.5">Open gaps</div>
                         {optimization.idleGaps.slice(0, 3).map((g, i) => (
                           <div key={i} className="border border-border rounded-lg p-2.5 mb-2 last:mb-0">
                             <div className="flex items-center gap-1.5">
@@ -872,8 +933,8 @@ export default function Aetheris() {
                         ))}
                       </div>
                     )}
-                    {insights.length === 0 && suggestions.length === 0 && optimization.conflicts.length === 0 && (
-                      <p className="text-xs text-muted-foreground text-center py-4">No issues detected</p>
+                    {insights.filter(i => i.severity !== "critical" && i.type !== "recovery").length === 0 && suggestions.length === 0 && optimization.conflicts.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground/40 text-center py-4">No issues detected</p>
                     )}
                   </>
                 )}

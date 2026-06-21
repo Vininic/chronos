@@ -7,6 +7,7 @@ import { buildContext } from "@/lib/ai/context/buildContext";
 import { callGemini } from "@/lib/ai/core/gemini";
 import { resolveProvider } from "@/lib/ai/core/resolveProvider";
 
+import { optimizeSchedule } from "@/lib/ai/optimization/optimizationEngine";
 import { recoveryAnalysis } from "./modules/recovery";
 import { productivityAnalysis } from "./modules/productivity";
 import { scheduleQualityAnalysis } from "./modules/schedule-quality";
@@ -157,10 +158,25 @@ export async function generateDigest(
   let allCards: ReportCard[];
   let generatedBy: "ai" | "heuristic" = "heuristic";
 
+  // Pre-compute deterministic structural state so AI cards can be validated.
+  // The AI sees all routine blocks aggregated across days and sometimes mistakes
+  // same-time blocks on different weekdays as same-time conflicts.
+  const ctx = buildContext(data, "balanced");
+  const realConflicts = optimizeSchedule(ctx).conflicts.length;
+
   const ai = await aiCards(data, tf);
   if (ai && ai.length > 0) {
-    allCards = ai;
-    generatedBy = "ai";
+    const validated = ai.filter((card) => {
+      // If the structural check found no real overlaps, suppress any AI card that
+      // claims blocks overlap — that's a hallucination caused by cross-day ambiguity.
+      if (realConflicts === 0) {
+        const text = `${card.title} ${card.body}`.toLowerCase();
+        if (/overlap|simultane|physically impossible|same time|conflict/.test(text)) return false;
+      }
+      return true;
+    });
+    allCards = validated.length > 0 ? validated : heuristicCards(data, tf);
+    generatedBy = validated.length > 0 ? "ai" : "heuristic";
   } else {
     allCards = heuristicCards(data, tf);
   }
