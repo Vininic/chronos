@@ -1,6 +1,7 @@
 import type { ScheduleData, Goal, Category, WorkspaceStructure } from "@/lib/schedule/types";
 import { durationMin, computeStreak } from "@/lib/schedule/types";
 import { calcProgress } from "@/lib/schedule/workspace-engine";
+import { getLogsLastNDays } from "@/lib/schedule/dailyLog";
 import type {
   ScheduleContext,
   AiBlock,
@@ -315,8 +316,11 @@ export function buildContext(
     overloadScore,
   };
 
-  /* ── Daily stats ────────────────────────────────── */
-  const dailyStats: DailyStats[] = [{
+  /* ── Historical daily logs ──────────────────────── */
+  const pastLogs = getLogsLastNDays(30);
+
+  /* ── Daily stats (today + last 30 days from log) ── */
+  const todayEntry: DailyStats = {
     date: today,
     totalBlocks: blocks.length,
     completedBlocks: blocks.filter((b) => b.complete).length,
@@ -324,38 +328,92 @@ export function buildContext(
     focusMinutes: focusTimeMin,
     recoveryMinutes: recoveryTimeMin,
     sleepMinutes: avgSleepMin,
-  }];
+  };
 
-  /* ── Weekly stats ───────────────────────────────── */
+  const dailyStats: DailyStats[] = [
+    ...pastLogs.map((l) => ({
+      date: l.date,
+      totalBlocks: l.blocks.length,
+      completedBlocks: l.blocks.length, // scheduled = treated as planned
+      totalMinutes: l.totalMin,
+      focusMinutes: l.focusMin,
+      recoveryMinutes: l.recoveryMin,
+      sleepMinutes: avgSleepMin,
+    })),
+    todayEntry,
+  ];
+
+  /* ── Weekly stats (last 12 weeks from log + current) */
+  const weekBuckets = new Map<string, { totalMin: number; focusMin: number; recoveryMin: number; days: number }>();
+
+  for (const l of pastLogs) {
+    const d = new Date(l.date + "T12:00:00");
+    const dow = d.getDay();
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    const wk = formatDate(mon);
+    const b = weekBuckets.get(wk) ?? { totalMin: 0, focusMin: 0, recoveryMin: 0, days: 0 };
+    b.totalMin += l.totalMin;
+    b.focusMin += l.focusMin;
+    b.recoveryMin += l.recoveryMin;
+    b.days += 1;
+    weekBuckets.set(wk, b);
+  }
+
+  const weeklyStats: WeeklyStats[] = Array.from(weekBuckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-12)
+    .map(([wk, s]) => ({
+      weekStart: wk,
+      totalMinutes: s.totalMin,
+      focusMinutes: s.focusMin,
+      recoveryMinutes: s.recoveryMin,
+      avgSleepMinutes: avgSleepMin,
+      completionRate: 1,
+      dayCount: s.days,
+    }));
+
+  // Add current week so there's always at least one entry
   const now = new Date();
   const dayOfWeek = now.getDay();
   const monday = new Date(now);
   monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-  const weekStart = formatDate(monday);
+  const currentWeekStart = formatDate(monday);
+  if (!weekBuckets.has(currentWeekStart)) {
+    weeklyStats.push({
+      weekStart: currentWeekStart,
+      totalMinutes: blocks.reduce((s, b) => s + b.durationMin, 0),
+      focusMinutes: focusTimeMin,
+      recoveryMinutes: recoveryTimeMin,
+      avgSleepMinutes: avgSleepMin,
+      completionRate: blocks.length > 0 ? blocks.filter((b) => b.complete).length / blocks.length : 0,
+      dayCount: 1,
+    });
+  }
 
-  const weekMinutes = blocks.reduce((s, b) => s + b.durationMin, 0);
-  const weekCompleted = blocks.filter((b) => b.complete).length;
-
-  const weeklyStats: WeeklyStats[] = [{
-    weekStart,
-    totalMinutes: weekMinutes,
-    focusMinutes: focusTimeMin,
-    recoveryMinutes: recoveryTimeMin,
-    avgSleepMinutes: avgSleepMin,
-    completionRate: blocks.length > 0 ? weekCompleted / blocks.length : 0,
-    dayCount: 1,
-  }];
-
-  /* ── Historical completion ──────────────────────── */
+  /* ── Historical completion (last 14 days from log) ─ */
   const historicalCompletion: HistoricalCompletion[] = [];
 
+  for (const l of pastLogs.slice(-14)) {
+    for (const b of l.blocks) {
+      historicalCompletion.push({
+        date: l.date,
+        blockId: `${l.date}-${b.kind}`,
+        blockTitle: b.title,
+        category: b.kind,
+        durationMin: b.durationMin,
+        completed: true,
+      });
+    }
+  }
+
+  // Also include today's program-tracked blocks (existing logic)
   for (const r of data.routine ?? []) {
     const ws = r.workspace as Record<string, unknown> | undefined;
     const cat = categoryMap.get(r.kind);
     const struct = cat?.workspace;
     const p = struct ? calcProgress(ws ?? {}, struct) : { done: 0, total: 0 };
     const isComplete = p.total > 0 && p.done >= p.total;
-
     if (p.total > 0) {
       historicalCompletion.push({
         date: today,
