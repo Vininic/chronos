@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle, Wand2, ArrowLeft, Trash2, Plus, MessageSquare, AlertTriangle, X } from "lucide-react";
+import { CheckCircle, Wand2, ArrowLeft, Trash2, Plus, MessageSquare, AlertTriangle, X, Loader2, Sparkles } from "lucide-react";
 import PlannerForm from "@/components/planner/PlannerForm";
 import PlannerProposals from "@/components/planner/PlannerProposals";
 import PlannerBuilder from "@/components/planner/PlannerBuilder";
 import PlannerMerge from "@/components/planner/PlannerMerge";
 import PlannerExplanation from "@/components/planner/PlannerExplanation";
 import { generateProposals } from "@/lib/ai/planner/generator";
+import { generateGeminiProposals } from "@/lib/ai/planner/gemini-planner";
 import { useSchedule } from "@/lib/schedule/store";
 import { useLearningProfile } from "@/lib/ai/learning/store";
 import { useChatStore } from "@/lib/ai/chat/store";
@@ -16,7 +17,7 @@ import type { ScheduleData } from "@/lib/schedule/types";
 import { useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-type PageState = "builder" | "form" | "proposals" | "merge" | "explain" | "applied" | "dashboard" | "empty";
+type PageState = "builder" | "form" | "generating" | "proposals" | "merge" | "explain" | "applied" | "dashboard" | "empty";
 
 export default function PlannerPage() {
   const t = useT();
@@ -69,10 +70,22 @@ export default function PlannerPage() {
     setState("applied");
   }
 
-  function handleSubmit(prefs: PlannerPreferences) {
+  async function handleSubmit(prefs: PlannerPreferences) {
     setLastPrefs(prefs);
-    const generated = generateProposals(prefs, profile);
-    setProposals(generated);
+    setState("generating");
+
+    // Heuristic archetypes are instant and always available — keep them for
+    // variety and as the fallback if the AI provider is unconfigured/offline.
+    const heuristic = generateProposals(prefs, profile);
+    let proposals = heuristic;
+    try {
+      const aiList = await generateGeminiProposals(prefs, profile);
+      const aiProposal = aiList.find((p) => p.id.startsWith("gemini-"));
+      if (aiProposal) proposals = [aiProposal, ...heuristic.slice(0, 4)];
+    } catch {
+      // keep heuristic-only
+    }
+    setProposals(proposals);
     setState("proposals");
   }
 
@@ -362,6 +375,25 @@ export default function PlannerPage() {
             {pp.applied.generateAgain}
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (state === "generating") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="relative mb-6">
+          <Sparkles className="h-10 w-10 text-secondary" />
+          <Loader2 className="h-16 w-16 text-secondary/30 animate-spin absolute -top-3 -left-3" />
+        </div>
+        <h1 className="font-display text-2xl text-primary mb-2">
+          {locale === "pt" ? "Desenhando seu plano…" : "Designing your plan…"}
+        </h1>
+        <p className="text-sm text-muted-foreground max-w-md">
+          {locale === "pt"
+            ? "A IA está montando uma semana sob medida com base nas suas preferências. As alternativas estruturais aparecem junto."
+            : "AI is composing a week tailored to your preferences. Structural alternatives are prepared alongside."}
+        </p>
       </div>
     );
   }
