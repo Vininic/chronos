@@ -25,7 +25,10 @@ const baseData: ScheduleData = {
     { id: "r-cross", day: 0, start: "23:30", end: "01:00", endsNextDay: true, kind: "deep", title: "Crossday" },
   ],
   commitments: [],
+  presets: [],
   suggestions: [],
+  goals: [],
+  progressSnapshots: [],
   ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
 };
 

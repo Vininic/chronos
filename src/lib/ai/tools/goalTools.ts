@@ -45,16 +45,15 @@ export function registerGoalTools(
     execute: (p) => mutators.addGoal({
       title: p.title,
       kind: p.kind,
-      tracking: p.tracking,
-      period: p.period,
+      tracking: p.tracking as Goal["tracking"],
+      period: p.period as Goal["period"],
       categoryId: p.categoryId,
       target: p.target,
       unit: p.unit,
       weight: p.weight ?? 1,
       deadline: p.deadline,
       description: "",
-      evaluateAt: "00:00",
-      periodAnchor: new Date().toISOString().slice(0, 10),
+      startDate: new Date().toISOString().slice(0, 10),
     }),
   });
 

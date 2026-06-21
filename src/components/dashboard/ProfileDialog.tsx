@@ -415,7 +415,7 @@ export default function ProfileDialog({ open, onOpenChange }: Props) {
             opts={{
               align: "start", loop: false,
               watchDrag: (emblaApi, evt) => {
-                const t = evt.event.target as HTMLElement | null;
+                const t = (evt as Event).target as HTMLElement | null;
                 if (t?.closest("span,p,h1,h2,h3,h4,h5,h6,label,li,button,input,select,textarea,a")) return false;
                 const sel = window.getSelection();
                 if (sel && !sel.isCollapsed) return false;

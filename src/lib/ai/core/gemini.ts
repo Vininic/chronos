@@ -119,28 +119,20 @@ function summarizeLearningProfile(): string {
     const prefSummary = prefs
       .sort((a, b) => b.completionRate - a.completionRate)
       .slice(0, 5)
-      .map((p) => `${p.categoryId}: ${Math.round(p.completionRate * 100)}% completion, avg ${Math.round(p.averageDurationMin)}min, ${p.consistency > 0.5 ? "consistent" : "variable"} schedule`)
+      .map((p) => `${p.categoryId}: ${Math.round(p.completionRate * 100)}% completion, avg ${Math.round(p.averageDurationMin)}min, ${p.startVariance < 60 ? "consistent" : "variable"} schedule`)
       .join("\n");
 
     const windows = profile.productivityWindows;
-    const focusPeak = windows
-      .filter((w) => w.type === "focus")
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map((w) => `${w.hour}:00 (score ${Math.round(w.score * 100)})`)
-      .join(", ");
-
-    const recoveryPeak = windows
-      .filter((w) => w.type === "recovery")
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map((w) => `${w.hour}:00 (score ${Math.round(w.score * 100)})`)
+    const peakWindows = windows
+      .slice()
+      .sort((a, b) => b.averageFocusScore - a.averageFocusScore)
+      .slice(0, 3)
+      .map((w) => `${String(Math.floor(w.startMin / 60)).padStart(2, "0")}:00 (focus ${Math.round(w.averageFocusScore * 100)})`)
       .join(", ");
 
     return [
       prefSummary ? `--- High-success categories ---\n${prefSummary}` : "",
-      focusPeak ? `--- Peak focus windows ---\n${focusPeak}` : "",
-      recoveryPeak ? `--- Peak recovery windows ---\n${recoveryPeak}` : "",
+      peakWindows ? `--- Peak productivity windows ---\n${peakWindows}` : "",
     ].filter(Boolean).join("\n\n");
   } catch {
     return "";

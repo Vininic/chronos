@@ -234,7 +234,7 @@ export function generateDemoData(): GeneratedDemoData {
     meta: {
       version: 5,
       owner: "Demo User",
-      cycle: { name: "Exploration", number: 3, week: 12 },
+      cycle: { name: "Exploration", number: 3, week: 12, progress: 0 },
       workdayStart: "07:00",
       workdayEnd: "18:00",
       sleepWindow: { start: "23:00", end: "07:00" },

@@ -61,7 +61,7 @@ export function registerBlockTools(
       return null;
     },
     execute: (p) => {
-      const checks = runSafetyChecks(ctx, "createBlock", p);
+      const checks = runSafetyChecks(ctx, "createBlock", p as unknown as Record<string, unknown>);
       if (!allSafetyChecksPass(checks)) {
         throw new Error(checks.find((c) => !c.passed)!.detail);
       }

@@ -240,7 +240,7 @@ export function AetherisCard({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const [count, setCount] = useState(getAetherisCount());
   useEffect(() => subscribeNotif(setCount), []);
-  const latestDaily = getAllDigests().findLast((d) => d.timeframe === "daily") ?? getLatestDigest();
+  const latestDaily = [...getAllDigests()].reverse().find((d) => d.timeframe === "daily") ?? getLatestDigest();
   return (
     <div className="chronos-card-elevated p-6 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-2xl" />

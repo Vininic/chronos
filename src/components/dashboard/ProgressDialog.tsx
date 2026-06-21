@@ -34,7 +34,7 @@ export function ProgressDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl text-primary">{t.chronos.nav.cycle} {cycle.number} · {t.chronos.nav.week_short} {cycle.week}</DialogTitle>
         </DialogHeader>

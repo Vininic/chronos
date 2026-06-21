@@ -1,5 +1,5 @@
 import { globalToolRegistry } from "./registry";
-import type { Category } from "@/lib/schedule/types";
+import type { Category, WorkspaceStructure } from "@/lib/schedule/types";
 
 interface CreateProgramParams {
   categoryId: string;
@@ -36,7 +36,7 @@ export function registerProgramTools(
     },
     execute: (p) => {
       mutators.updateCategory(p.categoryId, {
-        workspace: { templates: [{ name: p.templateName, groups: [] }] },
+        workspace: { templates: [{ name: p.templateName }] } as WorkspaceStructure,
       });
     },
   });
@@ -53,7 +53,7 @@ export function registerProgramTools(
     },
     execute: (p) => {
       mutators.updateCategory(p.categoryId, {
-        workspace: { templates: [{ name: p.newTemplateName ?? p.templateName }] },
+        workspace: { templates: [{ name: p.newTemplateName ?? p.templateName }] } as WorkspaceStructure,
       });
     },
   });
@@ -71,7 +71,7 @@ export function registerProgramTools(
     },
     execute: (p) => {
       mutators.updateCategory(p.categoryId, {
-        workspace: { templates: [{ name: p.newTemplateName }] },
+        workspace: { templates: [{ name: p.newTemplateName }] } as WorkspaceStructure,
       });
     },
   });

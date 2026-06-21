@@ -227,7 +227,7 @@ export default function Week() {
           onToggleBlock={toggleGoalBlock}
           onToggleSubTask={toggleGoalSubTask}
           onAddSubTask={addGoalSubTask}
-          onAddBlock={(goalId, duration) => addGoalBlock(goalId, { title: "", duration: duration ?? 60, date: new Date().toISOString().slice(0, 10), done: true, order: 0 })}
+          onAddBlock={(goalId, duration) => addGoalBlock(goalId, { goalId, title: "", duration: duration ?? 60, date: new Date().toISOString().slice(0, 10), done: true, order: 0 })}
         />
       </div>
 

@@ -1385,8 +1385,6 @@ const en: typeof pt = {
       balanceTitle: "Focus vs other",
       other: "Other",
       total: "Total",
-      avg: "avg",
-      balanceBlocks: "blocks",
       deep: "Routine",
       recovery: "Free",
       composedWeekly: "Total time",

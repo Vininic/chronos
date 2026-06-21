@@ -13,12 +13,14 @@ export async function regenerateDays(
 
   const categoryLabels = data.categories.map((c) => c.label);
   const prefs: PlannerPreferences = {
+    workMode: "remote",
+    workHoursStart: data.meta.workdayStart ?? "09:00",
+    workHoursEnd: data.meta.workdayEnd ?? "17:00",
+    focusPreference: "balanced",
+    recoveryPriority: "medium",
     weeklyCategories: categoryLabels,
-    intensity: "balanced",
-    variety: "moderate",
-    dayDescriptions: days.map((d) => `Day ${d}: needs changes — ${instructions}`),
-    preferredStart: data.routine.reduce((earliest, b) => b.start < earliest ? b.start : earliest, "23:59"),
-    preferredEnd: data.routine.reduce((latest, b) => b.end > latest ? b.end : latest, "00:00"),
+    sleepStart: data.meta.sleepWindow?.start ?? "22:30",
+    sleepEnd: data.meta.sleepWindow?.end ?? "07:00",
   };
 
   const learningProfile: LearningProfile | undefined = loadProfile();

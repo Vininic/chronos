@@ -135,9 +135,10 @@ function summarizeLearningProfileLight(): string {
       .join(", ");
     const windows = profile.productivityWindows;
     const peak = windows
-      .sort((a, b) => b.score - a.score)
+      .slice()
+      .sort((a, b) => b.averageFocusScore - a.averageFocusScore)
       .slice(0, 3)
-      .map((w) => `${w.hour}:00`)
+      .map((w) => `${String(Math.floor(w.startMin / 60)).padStart(2, "0")}:00`)
       .join(", ");
     const parts: string[] = [];
     if (top) parts.push(`Best categories: ${top}`);

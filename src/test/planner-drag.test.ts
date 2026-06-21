@@ -51,7 +51,10 @@ describe("snapTime / clockTimeFromMin", () => {
   });
 });
 
-function makeData(overrides?: Partial<ScheduleData>): ScheduleData {
+function makeData(
+  overrides?: Partial<Omit<ScheduleData, "meta">> & { meta?: Partial<ScheduleData["meta"]> },
+): ScheduleData {
+  const { meta: metaOverride, ...rest } = overrides ?? {};
   return {
     meta: {
       version: 3,
@@ -61,17 +64,20 @@ function makeData(overrides?: Partial<ScheduleData>): ScheduleData {
       workdayEnd: "19:00",
       enforceSleepBoundary: true,
       sleepSchedule: [],
-      ...overrides?.meta,
+      ...metaOverride,
     },
     categories: [
       { id: "deep", label: "Deep", tone: "blue", description: "Deep work" },
       { id: "recovery", label: "Recovery", tone: "green", description: "Recovery" },
     ],
-    routine: overrides?.routine ?? [],
-    commitments: overrides?.commitments ?? [],
+    routine: [],
+    commitments: [],
+    presets: [],
     suggestions: [],
+    goals: [],
+    progressSnapshots: [],
     ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -188,7 +194,10 @@ describe("pushMoveDayChain — cross-day boundary constraints", () => {
         { id: "r1", day: 1, start: "23:00", end: "01:00", endsNextDay: true, kind: "deep", title: "Cross" },
       ],
       commitments: [],
+      presets: [],
       suggestions: [],
+      goals: [],
+      progressSnapshots: [],
       ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
     };
     // Tuesday = day 2

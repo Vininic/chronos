@@ -76,7 +76,7 @@ export function GoalCard({ goal, allGoals, routine, commitments, snapshots, onEd
   const [blockDuration, setBlockDuration] = useState(60);
   const [newSubTask, setNewSubTask] = useState("");
   const Icon = kindIcons[goal.kind] ?? Target;
-  const periodLabel = g[`period${goal.period.charAt(0).toUpperCase() + goal.period.slice(1)}` as keyof typeof g] ?? goal.period;
+  const periodLabel = (g[`period${goal.period.charAt(0).toUpperCase() + goal.period.slice(1)}` as keyof typeof g] as string | undefined) ?? goal.period;
   const accentColor = goal.color ?? "hsl(var(--secondary))";
   const bgTint = goal.color ? `${goal.color}20` : "hsl(var(--secondary) / 0.12)";
   const doneBlocks = goal.blocks.filter((b) => b.done);
@@ -97,7 +97,7 @@ export function GoalCard({ goal, allGoals, routine, commitments, snapshots, onEd
             <div className="text-sm font-medium text-primary">{goal.title}</div>
             <div className="flex items-center gap-1 shrink-0">
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${kindBadgeColors[goal.kind]}`}>
-                {g[`kind${goal.kind.charAt(0).toUpperCase() + goal.kind.slice(1)}` as keyof typeof g] ?? goal.kind}
+                {(g[`kind${goal.kind.charAt(0).toUpperCase() + goal.kind.slice(1)}` as keyof typeof g] as string | undefined) ?? goal.kind}
               </span>
               <span className="text-[9px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
                 {goal.tracking === "category"

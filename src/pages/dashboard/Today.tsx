@@ -6,12 +6,12 @@ import { GoalSection } from "@/components/dashboard/GoalSection";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd, DAY_LABELS } from "@/lib/schedule/types";
-import type { Goal, ScheduleData } from "@/lib/schedule/types";
+import type { Goal, ScheduleData, Preset, Commitment } from "@/lib/schedule/types";
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler, Dumbbell, BookOpen, GraduationCap, ClipboardList, Brain, ListChecks, Wrench, Box } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler, Dumbbell, BookOpen, GraduationCap, ClipboardList, Brain, ListChecks, Wrench, Box, GripVertical } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -46,7 +46,7 @@ function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
 
 export default function Today() {
   const { session } = useAuth();
-  const { data, addRoutine, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
+  const { data, addRoutine, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, reorderCategory, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
   const { bcp47 } = useI18n();
   const t = useT();
   const scheduleText = useScheduleText();
@@ -85,7 +85,7 @@ export default function Today() {
   const routineById = new Map(data.routine.map((r) => [r.id, r]));
   const commitmentById = new Map(data.commitments.map((c) => [c.id, c]));
 
-  function resolveDisplayBlock<T extends { id: string; source: "routine" | "commitment"; sourceId?: string; start: string; end: string; title: string; titleCustom?: string; kind: keyof typeof kindStyle }>(block: T | null) {
+  function resolveDisplayBlock<T extends { id: string; source: "routine" | "commitment"; sourceId?: string; start: string; end: string; title: string; titleCustom?: string; kind: string; continuesToNextDay?: boolean; continuesFromPrevDay?: boolean }>(block: T | null) {
     if (!block) return null;
     if (block.kind === "sleep") {
       // PM segment (bedtime): sleep ends tomorrow morning — use next day's entry for wake time
@@ -213,7 +213,7 @@ export default function Today() {
             onToggleBlock={toggleGoalBlock}
             onToggleSubTask={toggleGoalSubTask}
             onAddSubTask={addGoalSubTask}
-            onAddBlock={(goalId, duration) => addGoalBlock(goalId, { title: "", duration: duration ?? 60, date: todayIso, done: true, order: 0 })}
+            onAddBlock={(goalId, duration) => addGoalBlock(goalId, { goalId, title: "", duration: duration ?? 60, date: todayIso, done: true, order: 0 })}
             onAssignMode={setAssignGoalId}
             compact
           />
@@ -261,6 +261,7 @@ export default function Today() {
           onReset={resetCategoryNaming}
           onAdd={addCategory}
           onRemove={removeCategory}
+          onReorder={reorderCategory}
           addRoutine={addRoutine}
           addCommitment={addCommitment}
           todayIso={todayIso}
@@ -271,15 +272,25 @@ export default function Today() {
   );
 }
 
+type NowNextBlock = {
+  id: string;
+  kind: string;
+  start: string;
+  end: string;
+  title: string;
+  titleCustom?: string;
+  source: "routine" | "commitment";
+};
+
 function NowNextCards({
   t, displayCurrentBlock, displayNextBlock, currentBlock, nextBlock, jumpToBlock,
   nextLabel, emptyNowLabel, emptyNextLabel, fmtFriendlyDuration, isPt, scheduleText, bcp47, isNextFromTomorrow,
 }: {
   t: ReturnType<typeof useT>;
-  displayCurrentBlock: Record<string, unknown> | null;
-  displayNextBlock: Record<string, unknown> | null;
-  currentBlock: Record<string, unknown> | null;
-  nextBlock: Record<string, unknown> | null;
+  displayCurrentBlock: NowNextBlock | null;
+  displayNextBlock: NowNextBlock | null;
+  currentBlock: NowNextBlock | null;
+  nextBlock: NowNextBlock | null;
   jumpToBlock: (id: string, source: "routine" | "commitment", kind?: string) => void;
   nextLabel: string;
   emptyNowLabel: string;
@@ -498,10 +509,10 @@ function CommitmentListPopup({ sections, initialSection, open, onClose }: { sect
                   <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} style={s.dotStyle} />
                   <span className="flex-1 truncate text-primary font-medium min-w-0">{scheduleText.blockTitle(c.title, c.titleCustom)}</span>
                   <span className="text-[11px] num text-muted-foreground/60 shrink-0 whitespace-nowrap">
-                    {isPresetSection ? fmtDur(c.duration) : (
+                    {isPresetSection ? fmtDur((c as Preset).duration) : (
                       active.key === "loose"
-                        ? `${fmtFriendlyDuration(durationMin(c.start, c.end), isPt)}`
-                        : `${c.date.slice(5)} · ${formatClock(c.start, bcp47)}`
+                        ? `${fmtFriendlyDuration(durationMin((c as Commitment).start, (c as Commitment).end), isPt)}`
+                        : `${(c as Commitment).date!.slice(5)} · ${formatClock((c as Commitment).start, bcp47)}`
                     )}
                   </span>
                 </div>
@@ -846,7 +857,7 @@ function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; 
   );
 }
 
-function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: {
+function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, onReorder, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: {
   data: ScheduleData;
   t: ReturnType<typeof useT>;
   isPt: boolean;
@@ -855,6 +866,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   onReset: ReturnType<typeof useSchedule>["resetCategoryNaming"];
   onAdd: ReturnType<typeof useSchedule>["addCategory"];
   onRemove: ReturnType<typeof useSchedule>["removeCategory"];
+  onReorder: ReturnType<typeof useSchedule>["reorderCategory"];
   addRoutine: ReturnType<typeof useSchedule>["addRoutine"];
   addCommitment: ReturnType<typeof useSchedule>["addCommitment"];
   todayIso: string;
@@ -869,6 +881,8 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   const [createDesc, setCreateDesc] = useState("");
   const [createColor, setCreateColor] = useState(COLOR_PALETTE[0]);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragIdRef = useRef<string | null>(null);
   function startEdit(c: ScheduleData["categories"][number]) {
     setEditingId(c.id);
     setDraftLabel(scheduleText.categoryLabel(c.id, c.label, c.labelCustom));
@@ -952,20 +966,36 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
         </div>
 
         <div className="space-y-px">
-          {data.categories.map((c) => {
+          {data.categories.map((c, idx) => {
             const blockStyle = safeKindStyle(c.id, data.categories);
             const dotKey = blockStyle.dot;
             const dotHex = blockStyle.customColor ?? TAILWIND_TO_HEX[dotKey] ?? "#f59e0b";
             const isEditing = editingId === c.id;
             const label = scheduleText.categoryLabel(c.id, c.label, c.labelCustom);
             const description = scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom);
-            const isBuiltin = BUILTIN_KINDS.includes(c.id);
+            const isBuiltin = (BUILTIN_KINDS as readonly string[]).includes(c.id);
             const hasCustom = !!(c.labelCustom || c.descriptionCustom || c.color);
 
             return (
               <div
                 key={c.id}
-                className={`${blockStyle.blockBg} ${blockStyle.blockBorder} rounded-lg px-4 py-3`}
+                draggable={!isEditing}
+                onDragStart={() => { dragIdRef.current = c.id; }}
+                onDragOver={(e) => { e.preventDefault(); setDragOverIndex(idx); }}
+                onDragEnd={() => {
+                  setDragOverIndex(null);
+                  dragIdRef.current = null;
+                }}
+                onDrop={() => {
+                  if (dragIdRef.current && dragIdRef.current !== c.id) {
+                    onReorder(dragIdRef.current, idx);
+                  }
+                  setDragOverIndex(null);
+                  dragIdRef.current = null;
+                }}
+                className={`${blockStyle.blockBg} ${blockStyle.blockBorder} rounded-lg px-4 py-3 transition-shadow ${
+                  dragOverIndex === idx && dragIdRef.current && dragIdRef.current !== c.id ? 'ring-2 ring-secondary' : ''
+                }`}
                 style={blockStyle.blockStyle}
               >
                 {isEditing ? (
@@ -1013,6 +1043,9 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                   <>
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
+                        <span className="cursor-grab active:cursor-grabbing text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors shrink-0">
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </span>
                         <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: dotHex }} />
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-primary truncate">{label}</div>
@@ -1057,7 +1090,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t.chronos.settings.category}</DialogTitle>
+            <DialogTitle>{t.chronos.settings.categories}</DialogTitle>
             <DialogDescription>{isPt ? "Criar novo tipo de bloco" : "Create a new block type"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

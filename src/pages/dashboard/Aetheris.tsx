@@ -23,7 +23,7 @@ import {
   Clock, ThumbsUp, ThumbsDown, CalendarDays, FileText, Zap, SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import type { ScheduleData } from "@/lib/schedule/types";
+import type { ScheduleData, Goal } from "@/lib/schedule/types";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import { useLearningProfile } from "@/lib/ai/learning/store";
 import type { RejectedSuggestion } from "@/lib/ai/learning/types";
@@ -130,10 +130,10 @@ export default function Aetheris() {
       replace({
         ...cur,
         goals: [...cur.goals, {
-          id, kind: (g.kind as string) ?? "numeric",
-          tracking: (g.tracking as string) ?? "category",
+          id, kind: ((g.kind as string) ?? "numeric") as Goal["kind"],
+          tracking: ((g.tracking as string) ?? "category") as Goal["tracking"],
           title: g.title as string, categoryId: g.categoryId as string | undefined,
-          target: (g.target as number) ?? 1, period: (g.period as string) ?? "weekly",
+          target: (g.target as number) ?? 1, period: ((g.period as string) ?? "weekly") as Goal["period"],
           startDate: (g.startDate as string) ?? new Date().toISOString().slice(0, 10),
           weight: (g.weight as number) ?? 1, color: g.color as string | undefined,
           description: g.description as string | undefined,
@@ -835,11 +835,11 @@ export default function Aetheris() {
                                   <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
                                     s.priority === "high"
                                       ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                                      : s.priority === "med"
+                                      : s.priority === "medium"
                                       ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
                                       : "bg-muted text-muted-foreground border border-border/50"
                                   }`}>
-                                    {s.priority === "high" ? "Sure" : s.priority === "med" ? "Fair" : "Unsure"}
+                                    {s.priority === "high" ? "Sure" : s.priority === "medium" ? "Fair" : "Unsure"}
                                   </span>
                                 )}
                               </div>

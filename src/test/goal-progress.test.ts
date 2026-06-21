@@ -454,11 +454,11 @@ describe("computeGoalProgress", () => {
       const commitments: Commitment[] = [
         {
           id: "c1", date: "2026-06-10", start: "09:00", end: "10:00",
-          kind: "deep", title: "CMT 1", createdAt: "2026-06-01", priority: "low",
+          kind: "deep", title: "CMT 1", priority: { urgent: false, important: false },
         },
         {
           id: "c2", date: "2026-06-10", start: "10:00", end: "11:00",
-          kind: "deep", title: "CMT 2", createdAt: "2026-06-01", priority: "low",
+          kind: "deep", title: "CMT 2", priority: { urgent: false, important: false },
         },
       ];
       // Both commitments have ended (past time), so should be counted

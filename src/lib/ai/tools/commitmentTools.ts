@@ -60,7 +60,6 @@ export function registerCommitmentTools(
         end: p.end,
         date: p.date,
         kind: p.kind,
-        commitmentType: p.commitmentType ?? "flexible",
         notes: p.notes ?? "",
         workspace: undefined,
       });

@@ -199,7 +199,7 @@ export function GoalDialog({ open, onClose, onSave, initial, categories }: Props
 
           <div className="space-y-1.5">
             <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{g.period}</Label>
-            <CardGrid options={periodMeta.filter((p) => validPeriods.includes(p.value))} value={period} onChange={setPeriod} />
+            <CardGrid options={periodMeta.filter((p) => validPeriods.includes(p.value))} value={period} onChange={(v) => setPeriod(v as typeof period)} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
