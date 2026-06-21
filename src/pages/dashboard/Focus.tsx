@@ -54,7 +54,7 @@ export default function Focus() {
     const agenda = buildAgendaForDate(data, new Date());
     const item = agenda.find((a) => {
       const cat = data.categories.find((c) => c.id === a.kind);
-      const ws = (a as Record<string, unknown>).workspace as Record<string, unknown> | undefined;
+      const ws = a.workspace;
       return cat?.workspace && ws?._sessionStarted && !ws?._sessionEnded;
     });
     if (!item) return null;
@@ -351,7 +351,7 @@ export default function Focus() {
               {todays.map((b) => {
                 const cat = data.categories.find((c) => c.id === b.kind);
                 const dws = cat?.workspace;
-                const rt = (b as Record<string, unknown>).workspace as Record<string, unknown> | undefined;
+                const rt = b.workspace;
                 const prog = dws && rt?.templateName ? calcProgress(rt, dws) : null;
                 const isNow = activeScheduled?.id === b.id;
                 const st = safeKindStyle(b.kind, data.categories);

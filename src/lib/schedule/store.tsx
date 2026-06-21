@@ -14,7 +14,7 @@ const STORAGE_KEY = "chronos.schedule.v5";
 const LEGACY_STORAGE_KEYS = ["chronos.schedule.v4", "chronos.schedule.v3", "chronos.schedule.v2", "chronos.schedule.v1"];
 
 function getSeedForLocale(locale: Locale): ScheduleData {
-  return locale === "pt" ? (seedPt as ScheduleData) : (seedEn as ScheduleData);
+  return locale === "pt" ? (seedPt as unknown as ScheduleData) : (seedEn as unknown as ScheduleData);
 }
 
 function load(locale: Locale = "en"): ScheduleData {
@@ -141,10 +141,10 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
 
   return {
     ...data,
-    categories,
-    routine,
-    commitments: (data.commitments ?? []).map((c) => migrateWorkspaceBlockRuntime(c)),
-    presets: (data.presets ?? []).map((p) => migrateWorkspaceBlockRuntime(p)),
+    categories: categories as Category[],
+    routine: routine as RoutineBlock[],
+    commitments: (data.commitments ?? []).map((c) => migrateWorkspaceBlockRuntime(c)) as Commitment[],
+    presets: (data.presets ?? []).map((p) => migrateWorkspaceBlockRuntime(p)) as Preset[],
     goals,
     suggestions: data.suggestions ?? [],
     progressSnapshots: data.progressSnapshots ?? [],
@@ -152,7 +152,7 @@ function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData 
       ...data.meta,
       version: SCHEMA_VERSION,
       enforceSleepBoundary: data.meta.enforceSleepBoundary ?? true,
-      focusCategoryIds: data.meta.focusCategoryIds ?? (data.meta.focusCategoryId ? [data.meta.focusCategoryId] as string[] : undefined),
+      focusCategoryIds: data.meta.focusCategoryIds ?? ((data.meta as { focusCategoryId?: string }).focusCategoryId ? [(data.meta as { focusCategoryId?: string }).focusCategoryId!] : undefined),
       sleepSchedule,
       sleepWindow: normalizeSleepWindow(data), // keep for legacy compat
     },
@@ -738,6 +738,7 @@ interface Ctx {
   resetCategoryNaming: (id: Category["id"]) => void;
   addCategory: (category: Omit<Category, never>) => void;
   removeCategory: (id: Category["id"]) => void;
+  reorderCategory: (id: Category["id"], newIndex: number) => void;
   applySuggestion: (id: string) => void;
   deferSuggestion: (id: string) => void;
   refreshSuggestions: () => void;
@@ -1549,6 +1550,17 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const reorderCategory = useCallback((id: Category["id"], newIndex: number) => {
+    setData((d) => {
+      const cats = [...d.categories];
+      const idx = cats.findIndex((c) => c.id === id);
+      if (idx === -1) return d;
+      const [cat] = cats.splice(idx, 1);
+      cats.splice(newIndex, 0, cat);
+      return withDerived({ ...d, categories: cats });
+    });
+  }, []);
+
   const applySuggestion = useCallback((id: string) => {
     setData((d) => {
       const s = d.suggestions.find((x) => x.id === id);
@@ -1610,6 +1622,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCategory,
       addCategory,
       removeCategory,
+      reorderCategory,
       resetCategoryNaming,
       applySuggestion,
       deferSuggestion,
@@ -1654,6 +1667,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       updateCategory,
       addCategory,
       removeCategory,
+      reorderCategory,
       resetCategoryNaming,
       applySuggestion,
       deferSuggestion,
@@ -1688,7 +1702,26 @@ export function useSchedule() {
 }
 
 /** Build today's agenda from routine + commitments for a given date. */
-export function buildAgendaForDate(data: ScheduleData, date: Date) {
+/** A concrete block instance on a given date, produced by buildAgendaForDate.
+ *  Unifies routine, commitment and structural sleep-boundary segments. */
+export interface AgendaItem {
+  id: string;
+  sourceId?: string;
+  title: string;
+  titleCustom?: string;
+  notes?: string;
+  start: string;
+  end: string;
+  kind: string;
+  source: "routine" | "commitment";
+  derived?: boolean;
+  continuesFromPrevDay?: boolean;
+  continuesToNextDay?: boolean;
+  workspace?: WorkspaceRuntime;
+  sleepBoundary?: boolean;
+}
+
+export function buildAgendaForDate(data: ScheduleData, date: Date): AgendaItem[] {
   const day = date.getDay();
   const iso = date.toISOString().slice(0, 10);
   const prevDay = (day + 6) % 7;
@@ -1756,7 +1789,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date) {
   const sleepEntry = getSleepWindowForDay(sleepSchedule, day);
   const sleepSegments = data.meta.enforceSleepBoundary === false || !sleepEntry || sleepEntry.start === sleepEntry.end
     ? []
-    : buildSleepSegmentsForDate(sleepEntry, date, sleepTitle);
+    : buildSleepSegmentsForDate(sleepEntry as { start: string; end: string }, date, sleepTitle);
 
   return [...sleepSegments, ...fromRoutine, ...fromCommit].sort((a, b) => a.start.localeCompare(b.start));
 }
