@@ -138,4 +138,90 @@ corepack pnpm test
 
 ---
 
-*Local-first by design; your schedule and keys never leave the browser unless you point the assistant at a provider.*
+*Local-first by design; your schedule and keys never leave the browser unless you point the assistant at a provider.
+
+---
+
+## System readiness
+
+### 🟢 Ship-ready (clean, tested, no known gaps)
+
+| System | Size | Notes |
+|---|---|---|
+| **Schedule domain** (types, helpers, sleep, agenda, ledger, suggestions) | ~42 KB | Pure functions, zero framework deps |
+| **Schedule services** (ScheduleService, Validator, Migrator) | ~38 KB | Clean architecture, fully extracted |
+| **Schedule React adapter** (store.tsx) | 440 lines | Thin wiring layer, all logic delegated |
+| **Repository port + impl** (LocalStorage) | ~1.6 KB | Interface + impl, swappable |
+| **Auth** (local fake) | 1.7 KB | Simple, stable |
+| **Theme** (next-themes) | 2.1 KB | Standard wrapper |
+| **I18n** (pt/en) | ~74 KB | Full dictionaries |
+| **Keyboard shortcuts** | 3.6 KB | Rebindable system |
+| **Workspace engine + presets** | ~31 KB | Solid, tested (13 tests) |
+| **Build / dev infra** | configs | Vite + SWC, pnpm, Vitest, Tailwind, shadcn |
+
+### 🟡 Needs polish (functional, has issues)
+
+| System | Size | Issues |
+|---|---|---|
+| **Today page** | 71 KB | Massive, no separation of concerns |
+| **Week page** | 24 KB | Recently rewritten, needs iteration |
+| **Focus page** | 24 KB | "Focus concept" unchecked in checklist |
+| **Goal system** | ~30 KB | Works well, 44 tests pass |
+| **Planner UI** (builder, merge, proposals) | ~80 KB | Gemini planner not wired into UI yet |
+| **Chat UI** (Aetheris thread) | ~40 KB | "Mid-rework, visually inconsistent" |
+| **Export** (JSON/XLSX/ICS) | 7 KB | Functional, no known bugs |
+| **ComposeBlockDialog** | 29 KB | Functional, could use polish |
+| **TimerCard** | 10 KB | Timer section rework unchecked |
+| **Schedule templates** | 47 KB | AI displays false concerns — needs fixing |
+
+### 🟠 Needs work (known gaps or missing pieces)
+
+| System | Size | Issues |
+|---|---|---|
+| **AI Pipeline** (core/pipeline.ts) | 5.9 KB | Central orchestration — 0 tests |
+| **AI Chat service** (chat/service.ts) | 13.4 KB | Prompt building, tool extraction — 0 tests |
+| **AI Tools** (10 modules) | ~29 KB | Validation, safety, execution — 0 tests |
+| **AI Learning** (learning/) | 13 KB | Recommutation logic — 0 tests |
+| **AI Planner** (generator + gemini-planner) | ~33 KB | Heuristic + gemini generators — 0 tests |
+| **AI Adapters** (5 providers) | ~19 KB | No mock or integration tests |
+| **AI Context** (context/) | ~26 KB | Builder untested beyond basics |
+| **AI Scheduling engine** (scheduler.ts) | 6 KB | All 7 rule checks — 0 tests |
+| **AI Optimization** | 3.8 KB | 0 tests |
+| **AI Autonomy** | 5.4 KB | 0 tests |
+| **AI Pattern detection** | 3.8 KB | 0 tests |
+| **AI Self-eval / Explainability** | ~5.2 KB | 0 tests |
+| **Digest system** | ~31 KB | Low-signal, ignores timeframe, always Gemini |
+| **Programs** | — | High priority, unstarted |
+| **DayPlanner** | 130 KB | Largest file — needs splitting into grid + drag + blocks |
+
+### 🔴 Not started / Should delete
+
+| System | Size | Issues |
+|---|---|---|
+| **AI suggestions/index.ts** | 0 B | Empty placeholder |
+| **Hourglass3D** (Three.js) | 17 KB | Unused — delete + drop three/react-three deps |
+| **schedule.json** (root data/) | 5 KB | Orphaned stale seed — delete |
+| **PWA / offline** | — | Not started |
+| **Cloud sync** | — | Not started |
+| **Push notifications** | — | Not started |
+
+### 📋 Development checklist
+
+From `checklist.md` — 7 items remaining:
+
+- [ ] **Continue programs work** (high priority — needs scoping)
+- [ ] **Timer section rework** — pop-up card above profile, relevant blocks, focus hourglass, "start section" integration
+- [ ] **Improve Focus concept** — highlight focus blocks in category creator
+- [ ] **Category color picker UI** — small lines on bottom visual oversight
+- [ ] **Remove system-baked instances** — full modularity, no hard-coded categories/blocks
+- [ ] **Fix schedule templates** — AI should not display false concerns, use sleep functions properly
+- [x] **Move system to clean architecture** — ✅ done
+
+### 🔜 Recommended next steps (in order)
+
+1. **Split DayPlanner** (130 KB → grid + drag handler + block renderer + orchestration)
+2. **Test AI core** — pipeline, chat service, at least one adapter contract test
+3. **Close checklist** — fix high-impact unchecked items (programs, timer, templates)
+4. **Fix digest** — respect provider choice, fix timeframe granularity, improve empty state
+5. **Housekeeping** — delete Hourglass3D + three deps, orphaned schedule.json, empty suggestions/index.ts
+6. **Update AGENTS.md** — stale reference to "line 340 of README.md"*

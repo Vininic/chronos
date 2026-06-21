@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
-import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
+import { useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import { durationMin, timeToMinutes } from "@/lib/schedule/types";
 import type { TreeNode } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";

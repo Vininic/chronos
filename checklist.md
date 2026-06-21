@@ -1,20 +1,20 @@
 ## Final Refinements
 - [ ] Continue to work on programs (High Priority)
 - [ ] Remake timer section; Make pop-up card above profile card; Display relevant blocks; Focus sections accurate hourglass UI; Integrate timers with "start section;"
-- [ ] Rethink "System" section; Rethink readding settings tab instead of AI settings; Check relevancy; Check possible new settings to add (e.g. Keybinds, Shortcuts;)
-- [ ] Rethink sidebar items; currently, 4 whole tabs dedicated to AI.
-- [ ] Complete "Week" page redesign
-- [ ] Rethink "Week" page functionality; ponder whether to integrate drag system or not;
-- [ ] Move "Weekly" stats from today page into week; create new ones for today and week;
-- [ ] Improve Week display/Month display
+- [x] Rethink "System" section; Rethink readding settings tab instead of AI settings; Check relevancy; Check possible new settings to add (e.g. Keybinds, Shortcuts;)
+- [x] Rethink sidebar items; currently, 4 whole tabs dedicated to AI.
+- [x] Complete "Week" page redesign
+- [x] Rethink "Week" page functionality; ponder whether to integrate drag system or not;
+- [x] Move "Weekly" stats from today page into week; create new ones for today and week;
+- [x] Improve Week display/Month display
 - [ ] Improve "Focus" concept; Highlight "Focus" blocks in category creator;
-- [ ] Better time search UI on create/edit blocks; Fix weird spacing on boxes when searching; Add smarter searching (ex: typing "4" will result in 4AM and 4PM as topmost options)
+- [x] Better time search UI on create/edit blocks; Fix weird spacing on boxes when searching; Add smarter searching (ex: typing "4" will result in 4AM and 4PM as topmost options)
 - [x] Improve top-left card; Fix spacing/Out of bounds issue
 - [x] No way to rearrange created categories
 - [x] Top-Left goals meter always on 0% if no goals.
 - [ ] Slight UI oversight in category creator color pickers. Small lines on the bottom.
 - [ ] Remove any trace of system-baked instances (Categories, Goals, Extensions, Blocks, anything.) System should be fully modular.
-- [ ] "New block" button tries creating a 1h block in now bar instead of 09:00 default
+- [x] "New block" button tries creating a 1h block in now bar instead of 09:00 default
 - [ ] Move system to clean-architecture (Is it already?)
 - [x] Fix awful footer rendering
 - [ ] Fix schedule templates, make them display no concerns from the AI, make them utilize sleep functions properly.

@@ -1,5 +1,7 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
-import { useSchedule, buildAgendaForDate, getSleepWindowForDay } from "@/lib/schedule/store";
+import { useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
+import { getSleepWindowForDay } from "@/lib/schedule/sleep";
 import { BlockKind, SNAP, snapTime, clockTimeFromMin, durationMin, timeToMinutes, fmtDur, daysUntilDeadline } from "@/lib/schedule/types";
 import type { SleepCut, SleepScheduleEntry } from "@/lib/schedule/types";
 import { safeKindStyle, toCssColor, alpha } from "./widgets";

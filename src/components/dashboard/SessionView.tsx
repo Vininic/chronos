@@ -568,7 +568,7 @@ export function BlockSessionBadge({
     state === "completed" ? "text-green-500" :
     state === "active"    ? "text-secondary" :
                             "text-muted-foreground/40";
-  const showCount = total > 0 && state === "active";
+  const showCount = total > 0 && (state === "active" || state === "completed");
 
   if (tier === "micro") {
     return (

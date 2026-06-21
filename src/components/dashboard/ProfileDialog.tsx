@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "@/components/ui/carousel";
 import { useAuth } from "@/lib/auth";
-import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
+import { useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import { useT, useFmtDur, useI18n } from "@/lib/i18n/I18nProvider";
 import { toast } from "@/hooks/use-toast";
 import { exportToJSON, exportToXLSX, exportToICS } from "@/lib/schedule/export";

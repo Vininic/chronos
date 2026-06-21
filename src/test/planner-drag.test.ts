@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clockTimeFromMin, snapTime } from "@/lib/schedule/types";
-import { buildAgendaForDate } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import type { ScheduleData } from "@/lib/schedule/types";
 
 interface AgendaEntryShape {

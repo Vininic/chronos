@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgendaForDate } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import type { ScheduleData } from "@/lib/schedule/types";
 
 const baseData: ScheduleData = {

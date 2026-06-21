@@ -37,7 +37,7 @@ function readAuditLog(): AuditEntry[] {
   return _snapshot;
 }
 
-export default function AuditHistory() {
+export default function AuditHistory({ compact }: { compact?: boolean }) {
   const entries = useSyncExternalStore(subscribeAuditLog, readAuditLog);
   const { replace } = useSchedule();
   const [revertId, setRevertId] = useState<string | null>(null);
@@ -55,11 +55,11 @@ export default function AuditHistory() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className={compact ? 'space-y-3' : 'mx-auto max-w-3xl space-y-6 p-6'}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <History className="h-6 w-6 text-muted-foreground" />
-          <h1 className="text-2xl font-bold">Action History</h1>
+          <h1 className={compact ? "text-base font-bold" : "text-2xl font-bold"}>Action History</h1>
         </div>
         {entries.length > 0 && (
           <AlertDialog>
@@ -96,7 +96,7 @@ export default function AuditHistory() {
           </CardContent>
         </Card>
       ) : (
-        <ScrollArea className="h-[70vh]">
+        <ScrollArea className={compact ? 'max-h-60' : 'h-[70vh]'}>
           <div className="space-y-3">
             {[...entries].reverse().map((entry) => (
               <Card key={entry.id} className={entry.undone ? "opacity-50" : ""}>

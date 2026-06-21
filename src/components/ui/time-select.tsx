@@ -45,6 +45,18 @@ function matchesSearch(time: string, q: string, bcp47: string): boolean {
   return false;
 }
 
+function searchRelevance(time: string, q: string, bcp47: string): number {
+  const lq = q.toLowerCase();
+  const hour = parseInt(time, 10);
+  // Tier 1: 24h hour matches query exactly
+  if (`${hour}` === lq) return 0;
+  // Tier 2: 12h hour matches query exactly
+  const hour12 = `${hour % 12 || 12}`;
+  if (hour12 === lq) return 1;
+  // Tier 3: any other match
+  return 2;
+}
+
 export function TimeSelect({
   value,
   onValueChange,
@@ -101,9 +113,16 @@ export function TimeSelect({
   const filteredGroups = useMemo(() => {
     if (!search) return groups;
     const q = search.toLowerCase();
-    return groups
-      .map((g) => ({ ...g, items: g.items.filter((t) => matchesSearch(t, q, bcp47)) }))
-      .filter((g) => g.items.length > 0);
+    const flat = groups
+      .flatMap((g) => g.items.filter((t) => matchesSearch(t, q, bcp47)))
+      .sort((a, b) => {
+        const ra = searchRelevance(a, q, bcp47);
+        const rb = searchRelevance(b, q, bcp47);
+        if (ra !== rb) return ra - rb;
+        return toMin(a) - toMin(b);
+      });
+    if (!flat.length) return [];
+    return [{ hour: "_search", items: flat }];
   }, [groups, search, bcp47]);
 
   useEffect(() => {
@@ -142,7 +161,7 @@ export function TimeSelect({
             <CommandEmpty>No time found.</CommandEmpty>
             {filteredGroups.map((group, i) => (
               <Fragment key={group.hour}>
-                {i > 0 && <CommandSeparator />}
+                {i > 0 && group.hour !== "_search" && <CommandSeparator />}
                 <CommandGroup>
                   {group.items.map((time) => (
                     <CommandItem

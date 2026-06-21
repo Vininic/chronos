@@ -1,6 +1,6 @@
 import type { ScheduleData } from "@/lib/schedule/types";
 import { durationMin } from "@/lib/schedule/types";
-import { buildAgendaForDate } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 
 const STORAGE_KEY = "chronos.daily-log";
 const RETENTION_DAYS = 90;

@@ -6,7 +6,8 @@ import { isNewDay, setLastVisitDate } from "@/lib/ai/briefing/store";
 import { addAuditEntry, describeToolCall } from "@/lib/ai/audit/store";
 import { pendingRegeneration } from "@/lib/ai/tools/regenerateTools";
 import { regenerateDays } from "@/lib/ai/planner/refine";
-import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
+import { useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import { timeToMinutes, durationMin, fmtDur } from "@/lib/schedule/types";
 import { safeKindStyle } from "@/components/dashboard/widgets";
 import { runAetherisPipeline, type AetherisPipelineResult } from "@/lib/ai/core/pipeline";
@@ -21,6 +22,7 @@ import {
   Sparkles, Brain, Coffee, Target, AlertTriangle, ChevronDown, ChevronUp,
   Loader2, MessageSquare, Send, Plus, Trash2, PanelRightOpen, PanelRightClose,
   Clock, ThumbsUp, ThumbsDown, CalendarDays, FileText, Zap, SlidersHorizontal,
+  History, BarChart3,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { ScheduleData, Goal } from "@/lib/schedule/types";
@@ -34,17 +36,20 @@ import ChatThread from "@/components/chat/ChatThread";
 import DemoTour from "@/components/chat/DemoTour";
 import { ReportsPanel } from "@/components/digest/ReportsPanel";
 import SuggestionFeedbackDialog from "@/components/chat/SuggestionFeedbackDialog";
+import LearningInsights from "@/components/planner/LearningInsights";
+import AuditHistory from "./AuditHistory";
+import AetherisMetrics from "./AetherisMetrics";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { setAetherisCount } from "@/lib/notification-count";
 
-type TabView = "today" | "analysis" | "reports";
+type TabView = "today" | "analysis" | "reports" | "learning" | "history" | "metrics";
 
 export default function Aetheris() {
   const { data, replace, applySuggestion, deferSuggestion } = useSchedule();
-  const { addPreferences, rejectSuggestion } = useLearningProfile();
+  const { profile, addPreferences, rejectSuggestion } = useLearningProfile();
   const { settings, setAutonomy, setFeatureToggle } = useAISettings();
   const t = useT();
   const { locale } = useI18n();
@@ -445,6 +450,9 @@ export default function Aetheris() {
     { key: "today", label: "Today", icon: CalendarDays, count: todayCount },
     { key: "analysis", label: "Analysis", icon: Brain, count: insights.length + suggestions.length },
     { key: "reports", label: "Reports", icon: FileText, count: 0 },
+    { key: "learning", label: "Learning", icon: Brain, count: 0 },
+    { key: "history", label: "History", icon: History, count: 0 },
+    { key: "metrics", label: "Metrics", icon: BarChart3, count: 0 },
   ];
 
   return (
@@ -649,12 +657,12 @@ export default function Aetheris() {
           <div className="w-80 shrink-0 bg-background min-w-0 overflow-y-auto max-h-full">
           <div className="p-4">
             {/* Tab bar */}
-            <div className="flex gap-1 mb-4">
+            <div className="flex flex-wrap gap-1 mb-4">
               {tabs.map((tabDef) => (
                 <button
                   key={tabDef.key}
                   onClick={() => setTab(tabDef.key)}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wider rounded-md transition-colors ${
+                  className={`flex items-center gap-1 px-2 py-1 text-[9px] font-medium uppercase tracking-wider rounded-md transition-colors ${
                     tab === tabDef.key
                       ? "bg-secondary/20 text-secondary"
                       : "text-muted-foreground hover:text-primary hover:bg-secondary/5"
@@ -950,6 +958,24 @@ export default function Aetheris() {
                   inputEl?.focus();
                 }}
               />
+            )}
+
+            {tab === "learning" && (
+              <div className="space-y-3">
+                <LearningInsights profile={profile} />
+              </div>
+            )}
+
+            {tab === "history" && (
+              <div className="overflow-x-hidden">
+                <AuditHistory compact />
+              </div>
+            )}
+
+            {tab === "metrics" && (
+              <div className="overflow-x-hidden">
+                <AetherisMetrics compact />
+              </div>
             )}
           </div>
         </div>

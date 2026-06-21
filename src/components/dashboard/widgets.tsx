@@ -1,5 +1,6 @@
 import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target, AlertTriangle } from "lucide-react";
-import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
+import { useSchedule } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import { BlockKind, RoutineBlock, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
