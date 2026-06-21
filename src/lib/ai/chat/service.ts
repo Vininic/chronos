@@ -2,7 +2,7 @@ import type { ScheduleData } from "@/lib/schedule/types";
 import { buildContext } from "../context/buildContext";
 import { compressContext } from "../context/serializers";
 import type { ChatMessage } from "./store";
-import { createProviderFromSettings, resolveFallbackProvider } from "../core/registry";
+import { createProviderFromSettings, resolveFallbackProvider, getProviderRegistration } from "../core/registry";
 import { loadSettingsSync, getApiKeyForProvider } from "../settings/store";
 import { globalToolRegistry, type ToolDefinition } from "../tools/registry";
 import { PromptBuilder } from "../prompts/builder";
@@ -185,14 +185,15 @@ export async function processChatMessage(
   const settings = loadSettingsSync();
   const providerId = settings.providerId;
   const modelName = settings.models[providerId];
+  const reg = getProviderRegistration(providerId);
   const apiKey = settings.apiKeys[providerId] || getApiKeyForProvider(providerId);
 
   let provider;
 
-  if (apiKey) {
+  if (reg && !reg.requiresApiKey || apiKey) {
     provider = createProviderFromSettings({
       providerId,
-      apiKey,
+      apiKey: apiKey || "",
       model: modelName,
       baseUrl: settings.baseUrls[providerId],
     });
@@ -275,15 +276,16 @@ export async function* streamChatMessage(
 
   const settings = loadSettingsSync();
   const resolvedAutonomy = autonomy ?? settings.autonomy ?? "balanced";
-  const apiKey = settings.apiKeys[settings.providerId] || getApiKeyForProvider(settings.providerId);
   const providerId = settings.providerId;
   const modelName = settings.models[providerId];
+  const reg = getProviderRegistration(providerId);
+  const apiKey = settings.apiKeys[providerId] || getApiKeyForProvider(providerId);
   let provider;
 
-  if (apiKey) {
+  if (reg && !reg.requiresApiKey || apiKey) {
     provider = createProviderFromSettings({
       providerId,
-      apiKey,
+      apiKey: apiKey || "",
       model: modelName,
       baseUrl: settings.baseUrls[providerId],
     });
