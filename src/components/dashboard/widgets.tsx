@@ -23,14 +23,10 @@ function categoryLabel(
   return category ? localizeCategoryLabel(kind, category.label, category.labelCustom) : fallback.common.kinds[kind];
 }
 
-export const kindStyle: Record<string, BlockStyle> = {
-  deep:     { dot: "bg-amber-500",   chip: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/20 dark:text-amber-300",     icon: Brain,   blockBg: "bg-amber-500/10 dark:bg-amber-400/15",    blockBorder: "border-amber-500/35 dark:border-amber-400/30" },
-  meeting:  { dot: "bg-blue-500",    chip: "bg-blue-500/15  text-blue-700  dark:bg-blue-400/20  dark:text-blue-300",      icon: CalIcon, blockBg: "bg-blue-500/10  dark:bg-blue-400/15",     blockBorder: "border-blue-500/30  dark:border-blue-400/25" },
-  ritual:   { dot: "bg-violet-500",  chip: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300", icon: Zap,     blockBg: "bg-violet-500/10 dark:bg-violet-400/15", blockBorder: "border-violet-500/30 dark:border-violet-400/25" },
-  recovery: { dot: "bg-emerald-500", chip: "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300", icon: Coffee, blockBg: "bg-emerald-500/10 dark:bg-emerald-400/15", blockBorder: "border-emerald-500/30 dark:border-emerald-400/25" },
-  shallow:  { dot: "bg-slate-400",   chip: "bg-slate-400/15  text-slate-600  dark:bg-slate-400/20  dark:text-slate-300",  icon: Clock,   blockBg: "bg-slate-400/10",                         blockBorder: "border-slate-400/30" },
-  sleep:    { dot: "bg-indigo-400",  chip: "bg-indigo-400/15  text-indigo-700 dark:bg-indigo-400/20  dark:text-indigo-300",  icon: Moon,    blockBg: "bg-indigo-400/10  dark:bg-indigo-400/12",  blockBorder: "border-indigo-400/30 dark:border-indigo-400/20" },
-};
+// Sleep is a structural day boundary, not a user category — it keeps one fixed
+// style. Every real category derives its look from its own tone/color (below),
+// so there are no hardcoded category→colour mappings anymore.
+const SLEEP_STYLE: BlockStyle = { dot: "bg-indigo-400", chip: "bg-indigo-400/15 text-indigo-700 dark:bg-indigo-400/20 dark:text-indigo-300", icon: Moon, blockBg: "bg-indigo-400/10 dark:bg-indigo-400/12", blockBorder: "border-indigo-400/30 dark:border-indigo-400/20" };
 
 const toneStyle: Record<string, BlockStyle> = {
   bronze:       { dot: "bg-amber-600",   chip: "bg-amber-600/15 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300",     icon: Brain,  blockBg: "bg-amber-600/10",                      blockBorder: "border-amber-600/35" },
@@ -77,14 +73,7 @@ function pickDefaultTone(kind: string): string {
 }
 
 export function safeKindStyle(kind: string, categories?: { id: string; tone?: string; color?: string }[]): BlockStyle {
-  if (kindStyle[kind]) {
-    if (categories) {
-      const cat = categories.find(c => c.id === kind);
-      const cssColor = toCssColor(cat?.color);
-      if (cssColor) return { ...kindStyle[kind], customColor: cssColor, blockStyle: { backgroundColor: alpha(cssColor, "18"), borderColor: alpha(cssColor, "40") }, chipStyle: { backgroundColor: alpha(cssColor, "22"), color: cssColor }, dotStyle: { backgroundColor: cssColor } };
-    }
-    return kindStyle[kind];
-  }
+  if (kind === "sleep") return SLEEP_STYLE;
   if (categories) {
     const cat = categories.find(c => c.id === kind);
     const cssColor = toCssColor(cat?.color);
@@ -462,12 +451,6 @@ export function FocusBlocksCard() {
   if (focusIds.length === 0) {
     return (
       <div className="chronos-card p-6 h-full flex flex-col">
-        <div className="flex items-end justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
-            <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.focusToday}</h3>
-          </div>
-        </div>
         <div className="flex-1 grid place-items-center">
           <p className="text-sm text-muted-foreground text-center max-w-[20ch] leading-relaxed">
             {t.chronos.widgets.focusPickCategory}
@@ -492,40 +475,38 @@ export function FocusBlocksCard() {
 
   return (
     <div className="chronos-card p-6 h-full flex flex-col">
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
-          <h3 className="font-display text-2xl text-primary mt-1">{t.chronos.widgets.focusToday}</h3>
-        </div>
-        <span className="text-xs text-muted-foreground num">{t.chronos.widgets.focusComposed(top.length, fmtDur(totalMin))}</span>
+      <div className="flex-1">
+        {top.length === 0 ? (
+          <p className="mt-5 text-sm text-muted-foreground italic">{t.chronos.widgets.focusEmpty}</p>
+        ) : (
+          <div>
+            <span className="text-xs text-muted-foreground num">{t.chronos.widgets.focusComposed(top.length, fmtDur(totalMin))}</span>
+            <ul className="mt-4 space-y-3">
+              {top.map((s) => {
+                const dur = durationMin(s.start, s.end);
+                const pct = Math.min(100, Math.round((dur / 120) * 100));
+                return (
+                  <li key={s.id} className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-md bg-primary text-primary-foreground grid place-items-center">
+                      <Brain className="h-4 w-4 text-secondary-soft" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-primary truncate">{scheduleText.blockTitle(s.title, s.titleCustom)}</div>
+                      <div className="h-1.5 mt-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full bg-bronze" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground num">{fmtDur(dur)}</div>
+                      <div className="text-[11px] text-secondary num">{s.start}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </div>
-      {top.length === 0 ? (
-        <p className="mt-5 text-sm text-muted-foreground italic">{t.chronos.widgets.focusEmpty}</p>
-      ) : (
-        <ul className="mt-5 space-y-3">
-          {top.map((s) => {
-            const dur = durationMin(s.start, s.end);
-            const pct = Math.min(100, Math.round((dur / 120) * 100));
-            return (
-              <li key={s.id} className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-md bg-primary text-primary-foreground grid place-items-center">
-                  <Brain className="h-4 w-4 text-secondary-soft" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-primary truncate">{scheduleText.blockTitle(s.title, s.titleCustom)}</div>
-                  <div className="h-1.5 mt-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full bg-bronze" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-muted-foreground num">{fmtDur(dur)}</div>
-                  <div className="text-[11px] text-secondary num">{s.start}</div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
       <div className="flex-1" />
       <Link
         to="/dashboard/focus"

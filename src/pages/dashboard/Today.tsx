@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPlanner, type DayPlannerHandle } from "@/components/dashboard/DayPlanner";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
-import { PerformanceCard, BalanceCard, FocusBlocksCard, AetherisCard, OptimizationStrip, kindStyle, safeKindStyle, TAILWIND_TO_HEX, COLOR_PALETTE, COLOR_FAMILIES } from "@/components/dashboard/widgets";
+import { FocusBlocksCard, AetherisCard, safeKindStyle, alpha, TAILWIND_TO_HEX, COLOR_PALETTE, COLOR_FAMILIES } from "@/components/dashboard/widgets";
 import { GoalSection } from "@/components/dashboard/GoalSection";
 import { useAuth } from "@/lib/auth";
 import { buildAgendaForDate, getSleepWindowForDay, useSchedule } from "@/lib/schedule/store";
-import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd, DAY_LABELS } from "@/lib/schedule/types";
+import type { AgendaItem } from "@/lib/schedule/store";
+import { BlockKind, durationMin, snapTime, timeToMinutes, eisenhowerQuadrant, quadrantOrder, QUADRANT_COLORS, QUADRANT_TEXT_COLORS, QUADRANT_LABELS, fmtDur, BUILTIN_KINDS, computeGoalProgress, getPeriodStartEnd, DAY_LABELS, categoryRoleOf } from "@/lib/schedule/types";
 import type { Goal, ScheduleData, Preset, Commitment } from "@/lib/schedule/types";
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler, Dumbbell, BookOpen, GraduationCap, ClipboardList, Brain, ListChecks, Wrench, Box, GripVertical } from "lucide-react";
+import { ChevronDown, Plus, Trash2, Eye, Pencil, Check, X, RotateCcw, AlertTriangle, Target, LayoutGrid, PencilRuler, Dumbbell, BookOpen, GraduationCap, ClipboardList, Brain, ListChecks, Wrench, Box, GripVertical, Activity, Zap, Heart } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -221,24 +222,24 @@ export default function Today() {
       )}
 
       <div className="mt-10 border-t border-border/30 pt-5">
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
-            <span className="text-xs text-muted-foreground">· {t.chronos.widgets.balanceTitle}</span>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5"><FocusBlocksCard /></div>
-            <div className="lg:col-span-7"><BalanceCard /></div>
-          </div>
-        </section>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.focus}</div>
+          <span className="text-xs text-muted-foreground">· {t.chronos.widgets.focusToday}</span>
+        </div>
+        <FocusBlocksCard />
       </div>
 
+      {/* Daily stats section */}
       <div className="mt-10 border-t border-border/30 pt-5">
         <div className="flex items-center gap-2 mb-4">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</div>
-          <span className="text-xs text-muted-foreground">· {t.chronos.widgets.compositionScore}</span>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.today.eyebrow}</div>
+          <span className="text-xs text-muted-foreground">· {isPt ? "Estatísticas do dia" : "Daily stats"}</span>
         </div>
-        <PerformanceStatsSection goals={data.goals} todayIso={todayIso} t={t} data={data} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <DayProgressCard agenda={todayAgenda} categories={data.categories} t={t} isPt={isPt} />
+          <FocusRecoveryCard agenda={todayAgenda} categories={data.categories} t={t} isPt={isPt} />
+          <AgendaStatsCard agenda={todayAgenda} categories={data.categories} t={t} isPt={isPt} />
+        </div>
       </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
@@ -252,6 +253,10 @@ export default function Today() {
       </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
+          <span className="text-xs text-muted-foreground">· {t.chronos.settings.vocabulary}</span>
+        </div>
         <BlockTypeGallery
           data={data}
           t={t}
@@ -804,58 +809,153 @@ function CommitmentCard({ data, addCommitment, removeCommitment, updateCommitmen
   );
 }
 
-function PerformanceStatsSection({ goals, todayIso, t, data }: { goals: Goal[]; todayIso: string; t: ReturnType<typeof useT>; data: ScheduleData }) {
-  const activeGoals = goals.filter((g) => {
-    const pp = getPeriodStartEnd(g.startDate, g.period, todayIso);
-    return todayIso >= pp.start && todayIso <= pp.end;
+
+/* ─── Daily stats cards ─── */
+
+function DayProgressCard({ agenda, categories, t, isPt }: { agenda: AgendaItem[]; categories: ScheduleData["categories"]; t: ReturnType<typeof useT>; isPt: boolean }) {
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nonSleep = agenda.filter((a) => a.kind !== "sleep");
+  const completed = nonSleep.filter((a) => timeToMinutes(a.end) <= nowMin).length;
+  const total = nonSleep.length;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const slots = Array.from({ length: 24 }, (_, h) => {
+    const slotStart = h * 60;
+    const slotEnd = slotStart + 60;
+    const covering = nonSleep.find((a) => timeToMinutes(a.start) < slotEnd && timeToMinutes(a.end) > slotStart);
+    if (!covering) return null;
+    const s = safeKindStyle(covering.kind, categories);
+    const hex = s.customColor ?? TAILWIND_TO_HEX[s.dot] ?? undefined;
+    return hex ? alpha(hex, "80") : "hsl(var(--muted-foreground) / 0.35)";
   });
-  const p = activeGoals.reduce((acc, g) => {
-    const gp = computeGoalProgress(g, todayIso, goals, data.routine, data.commitments);
-    acc.weighted += gp.ratio * g.weight;
-    acc.totalWeight += g.weight;
-    if (gp.denominator > 0 && gp.ratio >= 1) acc.done++;
-    return acc;
-  }, { weighted: 0, totalWeight: 0, done: 0 });
-  const overall = p.totalWeight > 0 ? p.weighted / p.totalWeight : 0;
 
   return (
-    <section className="space-y-6">
-      {activeGoals.length > 0 && (
-        <div className="chronos-card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Target className="h-4 w-4 text-secondary" />
-            <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.goals.eyebrow}</span>
+    <div className="chronos-card p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Activity className="h-4 w-4 text-secondary" />
+        <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{isPt ? "Progresso do dia" : "Day progress"}</span>
+      </div>
+      <div>
+        <div className="flex items-center gap-3 mb-1">
+          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: "hsl(var(--secondary))" }} />
           </div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.round(overall * 100)}%`, backgroundColor: "hsl(var(--secondary))" }} />
-            </div>
-            <span className="text-xs text-primary font-medium num">{Math.round(overall * 100)}%</span>
-          </div>
-          <div className="text-[10px] text-muted-foreground mb-3">
-            {p.done}/{activeGoals.length} goals completed
-          </div>
-          <div className="space-y-1.5">
-            {activeGoals.map((g) => {
-              const gp = computeGoalProgress(g, todayIso, goals, data.routine, data.commitments);
-              return (
-                <div key={g.id} className="flex items-center gap-2">
-                  <span className="text-[10px] text-primary truncate flex-1">{g.title}</span>
-                  <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${Math.round(gp.ratio * 100)}%`, backgroundColor: g.color ?? "hsl(var(--secondary))" }} />
-                  </div>
-                  <span className="text-[9px] text-muted-foreground num w-7 text-right">{Math.round(gp.ratio * 100)}%</span>
-                </div>
-              );
-            })}
-          </div>
+          <span className="text-xs text-primary font-medium num">{pct}%</span>
         </div>
-      )}
-      <PerformanceCard />
-      <div className="mt-6"><OptimizationStrip /></div>
-    </section>
+        <div className="text-[10px] text-muted-foreground">{completed}/{total} {isPt ? "blocos concluídos" : "blocks done"}</div>
+      </div>
+      <div className="flex items-end gap-px h-5 mt-1">
+        {slots.map((color, h) => (
+          <div key={h} className="flex-1 rounded-sm" style={{ height: color ? "100%" : "40%", backgroundColor: color ?? "hsl(var(--muted-foreground) / 0.15)" }} title={`${String(h).padStart(2, "0")}:00`} />
+        ))}
+      </div>
+      <div className="flex justify-between text-[8px] text-muted-foreground/50">
+        <span>00:00</span>
+        <span>12:00</span>
+        <span>24:00</span>
+      </div>
+    </div>
   );
 }
+
+function FocusRecoveryCard({ agenda, categories, t, isPt }: { agenda: AgendaItem[]; categories: ScheduleData["categories"]; t: ReturnType<typeof useT>; isPt: boolean }) {
+  const nonSleep = agenda.filter((a) => a.kind !== "sleep");
+  let focusMin = 0, recoveryMin = 0, neutralMin = 0;
+  nonSleep.forEach((a) => {
+    const dur = durationMin(a.start, a.end);
+    const role = categoryRoleOf(categories, a.kind);
+    if (role === "focus") focusMin += dur;
+    else if (role === "recovery") recoveryMin += dur;
+    else neutralMin += dur;
+  });
+  const totalMin = focusMin + recoveryMin + neutralMin || 1;
+  const fmtMin = (m: number) => `${Math.round(m / 60 * 10) / 10}h`;
+
+  return (
+    <div className="chronos-card p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Zap className="h-4 w-4 text-secondary" />
+        <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{isPt ? "Foco vs Recuperação" : "Focus vs Recovery"}</span>
+      </div>
+      <div className="space-y-2.5">
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="flex items-center gap-1.5">
+              <Zap className="h-3 w-3 text-secondary" />
+              <span className="text-muted-foreground">{isPt ? "Foco" : "Focus"}</span>
+            </span>
+            <span className="num text-primary">{fmtMin(focusMin)} · {totalMin > 0 ? Math.round(focusMin / totalMin * 100) : 0}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${totalMin > 0 ? focusMin / totalMin * 100 : 0}%`, backgroundColor: "hsl(var(--secondary))" }} />
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="flex items-center gap-1.5">
+              <Heart className="h-3 w-3 text-rose-400" />
+              <span className="text-muted-foreground">{isPt ? "Recuperação" : "Recovery"}</span>
+            </span>
+            <span className="num text-primary">{fmtMin(recoveryMin)} · {totalMin > 0 ? Math.round(recoveryMin / totalMin * 100) : 0}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full bg-rose-400/60" style={{ width: `${totalMin > 0 ? recoveryMin / totalMin * 100 : 0}%` }} />
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-full bg-muted-foreground/30" />
+              <span className="text-muted-foreground">{isPt ? "Outros" : "Other"}</span>
+            </span>
+            <span className="num text-primary">{fmtMin(neutralMin)} · {totalMin > 0 ? Math.round(neutralMin / totalMin * 100) : 0}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full bg-muted-foreground/20" style={{ width: `${totalMin > 0 ? neutralMin / totalMin * 100 : 0}%` }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgendaStatsCard({ agenda, categories, t, isPt }: { agenda: AgendaItem[]; categories: ScheduleData["categories"]; t: ReturnType<typeof useT>; isPt: boolean }) {
+  const nonSleep = agenda.filter((a) => a.kind !== "sleep");
+  const totalBlocks = nonSleep.length;
+  const focusMin = nonSleep.reduce((s, a) => {
+    const role = categoryRoleOf(categories, a.kind);
+    return role === "focus" ? s + durationMin(a.start, a.end) : s;
+  }, 0);
+  const sorted = [...nonSleep].sort((a, b) => a.start.localeCompare(b.start));
+  let freeSlots = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = timeToMinutes(sorted[i].start) - timeToMinutes(sorted[i - 1].end);
+    if (gap >= 30) freeSlots++;
+  }
+
+  return (
+    <div className="chronos-card p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <ListChecks className="h-4 w-4 text-secondary" />
+        <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{isPt ? "Resumo" : "Summary"}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 flex-1 items-center">
+        <div className="text-center">
+          <div className="text-lg font-display text-primary">{totalBlocks}</div>
+          <div className="text-[10px] text-muted-foreground">{isPt ? "Blocos" : "Blocks"}</div>
+        </div>
+        <div className="text-center">
+          <div className="text-lg font-display text-primary">{Math.round(focusMin / 6) / 10}h</div>
+          <div className="text-[10px] text-muted-foreground">{isPt ? "Foco" : "Focus"}</div>
+        </div>
+        <div className="text-center">
+          <div className="text-lg font-display text-primary">{freeSlots}</div>
+          <div className="text-[10px] text-muted-foreground">{isPt ? "Janelas" : "Gaps"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, onReorder, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: {
   data: ScheduleData;
@@ -960,10 +1060,6 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   return (
     <section>
       <div className="chronos-card p-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.settings.categories}</div>
-          <span className="text-xs text-muted-foreground">· {t.chronos.settings.vocabulary}</span>
-        </div>
 
         <div className="space-y-px">
           {data.categories.map((c, idx) => {

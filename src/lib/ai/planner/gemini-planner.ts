@@ -19,7 +19,7 @@ interface GeminiBlueprint {
     sleepEnd: string;
     focusCategoryIds: string[];
   };
-  categories: { id: string; label: string; tone: string }[];
+  categories: { id: string; label: string; tone: string; role?: "focus" | "recovery" | "neutral" }[];
   days: {
     day: number;
     blocks: { start: string; end: string; kind: string; title: string }[];
@@ -40,8 +40,9 @@ function computeLedger(schedule: ScheduleData) {
   const focusMin = schedule.routine
     .filter((b) => focusIds.includes(b.kind))
     .reduce((s, b) => s + durationMin(b), 0);
+  const recoveryIds = new Set(schedule.categories.filter((c) => c.role === "recovery").map((c) => c.id));
   const recoveryMin = schedule.routine
-    .filter((b) => b.kind === "recovery")
+    .filter((b) => recoveryIds.has(b.kind))
     .reduce((s, b) => s + durationMin(b), 0);
   const compositionScore = Math.min(100, Math.round((focusMin + recoveryMin) / Math.max(1, totalMin) * 100));
   return {
@@ -69,6 +70,7 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
     id: c.id,
     label: c.label,
     tone: c.tone,
+    role: c.role ?? "neutral",
     labelCustom: undefined,
     descriptionCustom: undefined,
     description: `${c.label} activities.`,
@@ -98,6 +100,11 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
   // Sleep is a structural concept derived from meta.sleepWindow (the agenda
   // builder renders it). It is never stored as routine blocks.
 
+  // Focus categories come from the roles the AI assigned (falling back to the
+  // explicit list) — no hardcoded category id is assumed.
+  const focusFromRoles = blueprint.categories.filter((c) => c.role === "focus").map((c) => c.id);
+  const focusCategoryIds = focusFromRoles.length > 0 ? focusFromRoles : blueprint.meta.focusCategoryIds;
+
   const schedule: ScheduleData = {
     meta: {
       version: 5,
@@ -107,7 +114,7 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
       workdayEnd: blueprint.meta.workdayEnd,
       sleepWindow: { start: blueprint.meta.sleepStart, end: blueprint.meta.sleepEnd },
       enforceSleepBoundary: true,
-      focusCategoryIds: blueprint.meta.focusCategoryIds,
+      focusCategoryIds,
     },
     categories,
     routine,
@@ -179,19 +186,19 @@ function buildGeminiPrompt(
 - Focus style: ${prefs.focusPreference} — ${focusDescriptions[prefs.focusPreference]}
 - Recovery priority: ${prefs.recoveryPriority} — ${recoveryDescriptions[prefs.recoveryPriority]}
 - Sleep: ${prefs.sleepStart} to ${prefs.sleepEnd}
-- Custom categories requested: ${prefs.weeklyCategories.length > 0 ? prefs.weeklyCategories.join(", ") : "none (use defaults)"}
+- Custom categories requested: ${prefs.weeklyCategories.length > 0 ? prefs.weeklyCategories.join(", ") : "none — design categories that fit this person"}
 ${learningSummary ? `\n## Learning Profile\n${learningSummary}` : ""}
 
 ## Requirements
-1. Design 6-10 categories including these defaults: deep, meeting, ritual, recovery, shallow, sleep. Add custom ones as requested.
-2. For each category, assign a unique tone from: ${TONES.join(", ")}
-3. Create blocks for Monday through Friday (days 1-5). Days 0 (Sunday) and 6 (Saturday) should be lighter.
-4. Follow the focus style: ${focusDescriptions[prefs.focusPreference]}
-5. Follow the recovery priority: ${recoveryDescriptions[prefs.recoveryPriority]}
-6. SLEEP BOUNDARY: The user is awake between ${prefs.sleepEnd} and ${prefs.sleepStart}. ALL blocks must start and end within this window. Never schedule blocks before ${prefs.sleepEnd} or after ${prefs.sleepStart}. Do NOT include sleep blocks in the days array — they are added automatically.
-7. Each block must have a meaningful, human-readable title.
-8. Core work blocks belong between ${prefs.workHoursStart} and ${prefs.workHoursEnd}.
-9. Ritual and recovery blocks may appear just after wake (${prefs.sleepEnd}) or before sleep (${prefs.sleepStart}).
+1. Design 5-9 categories that fit THIS person's life and the work mode above, and incorporate any custom categories they requested. Do not assume a generic office worker — a student, a freelancer, a shift worker or someone running a business each need different categories. Use clear lowercase hyphenated ids (e.g. "deep-work", "client", "training").
+2. Give every category a "role": "focus" for demanding/high-cognition work, "recovery" for rest and recharge, or "neutral" for everything else. List the ids of the focus-role categories in meta.focusCategoryIds.
+3. Assign each category a unique tone from: ${TONES.join(", ")}
+4. Create blocks for Monday through Friday (days 1-5). Days 0 (Sunday) and 6 (Saturday) should be lighter.
+5. Follow the focus style: ${focusDescriptions[prefs.focusPreference]}
+6. Follow the recovery priority: ${recoveryDescriptions[prefs.recoveryPriority]}
+7. SLEEP BOUNDARY: The user is awake between ${prefs.sleepEnd} and ${prefs.sleepStart}. ALL blocks must start and end within this window. Never schedule blocks before ${prefs.sleepEnd} or after ${prefs.sleepStart}. Do NOT include sleep in the days array — it is handled structurally.
+8. Each block needs a meaningful title, and its "kind" must be one of your category ids.
+9. Core work belongs between ${prefs.workHoursStart} and ${prefs.workHoursEnd}. Recovery blocks may sit just after wake (${prefs.sleepEnd}) or before bedtime (${prefs.sleepStart}).
 10. Block times must be valid HH:MM strings. End time must always be later than start time within the same day.
 
 Return ONLY valid JSON with this exact structure (no markdown, no code fences):
@@ -201,22 +208,23 @@ Return ONLY valid JSON with this exact structure (no markdown, no code fences):
     "workdayEnd": "${prefs.workHoursEnd}",
     "sleepStart": "${prefs.sleepStart}",
     "sleepEnd": "${prefs.sleepEnd}",
-    "focusCategoryIds": ["deep"]
+    "focusCategoryIds": ["<ids of your focus-role categories>"]
   },
   "categories": [
-    { "id": "deep", "label": "Deep Work", "tone": "bronze" }
+    { "id": "deep-work", "label": "Deep Work", "tone": "bronze", "role": "focus" },
+    { "id": "recharge", "label": "Recharge", "tone": "emerald", "role": "recovery" }
   ],
   "days": [
     {
       "day": 1,
       "blocks": [
-        { "start": "07:00", "end": "07:30", "kind": "ritual", "title": "Morning routine" }
+        { "start": "07:00", "end": "07:30", "kind": "deep-work", "title": "Morning deep work" }
       ]
     }
   ]
 }
 
-Be creative and practical. Design a schedule that feels natural for this user's lifestyle.`;
+Be creative and practical. The categories should reflect this specific person, not a template.`;
 }
 
 function fallbackProposals(prefs: PlannerPreferences, learningProfile?: LearningProfile): PlannerProposal[] {
@@ -244,13 +252,14 @@ function parseBlueprint(text: string): GeminiBlueprint | null {
 function createProposalFromBlueprint(blueprint: GeminiBlueprint, prefs: PlannerPreferences): PlannerProposal {
   const schedule = blueprintToScheduleData(blueprint);
   const totalBlocks = schedule.routine.filter((b) => b.kind !== "sleep").length;
-  const focusIds = blueprint.meta.focusCategoryIds;
-  const focusBlocks = schedule.routine.filter((b) => focusIds.includes(b.kind));
-  const recoveryBlocks = schedule.routine.filter((b) => b.kind === "recovery");
+  const focusIds = new Set(schedule.meta.focusCategoryIds ?? []);
+  const recoveryIds = new Set(schedule.categories.filter((c) => c.role === "recovery").map((c) => c.id));
+  const focusBlocks = schedule.routine.filter((b) => focusIds.has(b.kind));
+  const recoveryBlocks = schedule.routine.filter((b) => recoveryIds.has(b.kind));
   const focusHours = Math.round(focusBlocks.reduce((s, b) => s + durationMin(b), 0) / 60 * 10) / 10;
   const recoveryHours = Math.round(recoveryBlocks.reduce((s, b) => s + durationMin(b), 0) / 60 * 10) / 10;
   const totalHours = focusHours + recoveryHours + Math.round(
-    schedule.routine.filter((b) => !focusIds.includes(b.kind) && b.kind !== "recovery" && b.kind !== "sleep")
+    schedule.routine.filter((b) => !focusIds.has(b.kind) && !recoveryIds.has(b.kind) && b.kind !== "sleep")
       .reduce((s, b) => s + durationMin(b), 0) / 60 * 10,
   ) / 10;
   const focusRatio = totalHours > 0 ? focusHours / totalHours : 0.5;
@@ -272,9 +281,9 @@ function createProposalFromBlueprint(blueprint: GeminiBlueprint, prefs: PlannerP
     preview: {
       weeklyBreakdown: Array.from({ length: 7 }, (_, d) => ({
         day: DAY_LABELS[d] ?? `Day ${d}`,
-        focus: schedule.routine.filter((b) => b.day === d && focusIds.includes(b.kind)).reduce((s, b) => s + durationMin(b), 0) / 60,
-        recovery: schedule.routine.filter((b) => b.day === d && b.kind === "recovery").reduce((s, b) => s + durationMin(b), 0) / 60,
-        other: schedule.routine.filter((b) => b.day === d && !focusIds.includes(b.kind) && b.kind !== "recovery" && b.kind !== "sleep").reduce((s, b) => s + durationMin(b), 0) / 60,
+        focus: schedule.routine.filter((b) => b.day === d && focusIds.has(b.kind)).reduce((s, b) => s + durationMin(b), 0) / 60,
+        recovery: schedule.routine.filter((b) => b.day === d && recoveryIds.has(b.kind)).reduce((s, b) => s + durationMin(b), 0) / 60,
+        other: schedule.routine.filter((b) => b.day === d && !focusIds.has(b.kind) && !recoveryIds.has(b.kind) && b.kind !== "sleep").reduce((s, b) => s + durationMin(b), 0) / 60,
       })),
       categoryDistribution: blueprint.categories.map((c) => ({
         name: c.label,

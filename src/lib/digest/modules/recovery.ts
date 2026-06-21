@@ -2,7 +2,7 @@ import type { ScheduleData } from "@/lib/schedule/types";
 import type { ReportCard } from "../types";
 import { fmtDur } from "@/lib/schedule/types";
 import type { DigestContext } from "./helpers";
-import { isRecoveryKind, totalMinutes } from "./helpers";
+import { recoveryKindSet, totalMinutes } from "./helpers";
 
 export function recoveryAnalysis(data: ScheduleData, ctx: DigestContext): ReportCard[] {
   const cards: ReportCard[] = [];
@@ -22,8 +22,9 @@ export function recoveryAnalysis(data: ScheduleData, ctx: DigestContext): Report
   // ── Recovery share of scheduled time ────────────────────────────────
   const total = totalMinutes(ctx);
   if (total > 0) {
+    const recoveryKinds = recoveryKindSet(data);
     const recoveryMin = ctx.blocks
-      .filter((b) => isRecoveryKind(b.kind))
+      .filter((b) => recoveryKinds.has(b.kind))
       .reduce((s, b) => s + b.durationMin, 0);
     const pct = Math.round((recoveryMin / total) * 100);
 

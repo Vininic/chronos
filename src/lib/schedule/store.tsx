@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
-import type { Category, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
+import type { Category, CategoryRole, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, Suggestion, SleepCut, SleepScheduleEntry } from "./types";
 import type { TreeNode, WorkspaceStructure, WorkspaceRuntime } from "@/lib/schedule/types";
 import { durationMin, timeToMinutes, getPeriodStartEnd, computeGoalProgress, isGoalTrackingValid, isGoalPeriodValid, getDefaultGoalTracking, getDefaultGoalPeriod } from "./types";
 import type { Locale } from "@/lib/i18n/dictionaries";
@@ -111,10 +111,14 @@ function pickDefaultTone(id: string): string {
 }
 
 function normalizeNamingModel(data: ScheduleData, locale: Locale): ScheduleData {
+  // Derive category roles for legacy data: focus from the existing
+  // focusCategoryIds list, recovery from the legacy "recovery" id, else neutral.
+  const focusIds = new Set(data.meta.focusCategoryIds ?? []);
   const categories = data.categories.map((c) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
-    return migrateWorkspaceCategory({ id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone ?? pickDefaultTone(c.id), color: c.color, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, workspace: c.workspace });
+    const role: CategoryRole = c.role ?? (focusIds.has(c.id) ? "focus" : c.id === "recovery" ? "recovery" : "neutral");
+    return migrateWorkspaceCategory({ id: c.id, label: c.label, labelCustom, descriptionCustom, tone: c.tone ?? pickDefaultTone(c.id), color: c.color, role, description: c.description, extensionId: c.extensionId, extensionConfig: c.extensionConfig, workspace: c.workspace });
   });
 
   const routine = data.routine
@@ -509,8 +513,9 @@ function buildLedger(data: ScheduleData): ScheduleData["ledger"] {
     .filter((c) => focusCatIds.includes(c.id))
     .flatMap((c) => data.routine.filter((r) => r.kind === c.id))
     .reduce((s, r) => s + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
+  const recoveryCatIds = new Set(data.categories.filter((c) => c.role === "recovery").map((c) => c.id));
   const recoveryMin = data.routine
-    .filter((r) => r.kind === "recovery")
+    .filter((r) => recoveryCatIds.has(r.kind))
     .reduce((s, r) => s + Math.max(0, timeToMinutes(r.end) - timeToMinutes(r.start)), 0);
 
   const focusScore = clamp(Math.round(totalRoutineMin > 0 ? (focusMin / totalRoutineMin) * 100 : 0));
@@ -734,7 +739,8 @@ interface Ctx {
   updateSleepSchedule: (schedule: SleepScheduleEntry[]) => void;
   addSleepCut: (cut: Omit<SleepCut, never>) => void;
   removeSleepCut: (target: { date: string; start?: string; end?: string }) => void;
-  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "workspace">>) => void;
+  updateCategory: (id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "role" | "workspace">>) => void;
+  setCategoryRole: (id: Category["id"], role: CategoryRole) => void;
   resetCategoryNaming: (id: Category["id"]) => void;
   addCategory: (category: Omit<Category, never>) => void;
   removeCategory: (id: Category["id"]) => void;
@@ -1515,11 +1521,26 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "workspace">>) => {
+  const updateCategory = useCallback((id: Category["id"], patch: Partial<Pick<Category, "label" | "labelCustom" | "description" | "descriptionCustom" | "tone" | "color" | "role" | "workspace">>) => {
     setData((d) => withDerived({
       ...d,
       categories: d.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
     }));
+  }, []);
+
+  // Set a category's role and keep the legacy focusCategoryIds list in sync,
+  // so "focus" role ⟺ membership in focusCategoryIds (the existing focus picker).
+  const setCategoryRole = useCallback((id: Category["id"], role: CategoryRole) => {
+    setData((d) => {
+      const focusIds = new Set(d.meta.focusCategoryIds ?? []);
+      if (role === "focus") focusIds.add(id);
+      else focusIds.delete(id);
+      return withDerived({
+        ...d,
+        categories: d.categories.map((c) => (c.id === id ? { ...c, role } : c)),
+        meta: { ...d.meta, focusCategoryIds: [...focusIds] },
+      });
+    });
   }, []);
 
   const addCategory = useCallback((cat: Category) => {
@@ -1620,6 +1641,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addSleepCut,
       removeSleepCut,
       updateCategory,
+      setCategoryRole,
       addCategory,
       removeCategory,
       reorderCategory,
@@ -1665,6 +1687,7 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
       addSleepCut,
       removeSleepCut,
       updateCategory,
+      setCategoryRole,
       addCategory,
       removeCategory,
       reorderCategory,

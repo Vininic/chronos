@@ -144,8 +144,9 @@ export function isFocusKind(kind: string, data: ScheduleData): boolean {
   return (data.meta.focusCategoryIds ?? []).includes(kind);
 }
 
-export function isRecoveryKind(kind: string): boolean {
-  return kind === "recovery";
+/** Category ids whose role is "recovery" — replaces the hardcoded "recovery" id. */
+export function recoveryKindSet(data: ScheduleData): Set<string> {
+  return new Set(data.categories.filter((c) => c.role === "recovery").map((c) => c.id));
 }
 
 export function categoryLabel(data: ScheduleData, kind: string): string {

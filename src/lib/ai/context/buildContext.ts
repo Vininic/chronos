@@ -302,7 +302,7 @@ export function buildContext(
     .filter((b) => focusedCategories.has(b.category))
     .reduce((s, b) => s + b.durationMin, 0);
   const recoveryTimeMin = blocks
-    .filter((b) => b.category === "recovery")
+    .filter((b) => categoryMap.get(b.category)?.role === "recovery")
     .reduce((s, b) => s + b.durationMin, 0);
   const totalBlockMin = blocks.reduce((s, b) => s + b.durationMin, 0);
   const overloadScore = totalBlockMin > 0 ? Math.min(1, focusTimeMin / totalBlockMin) : 0;

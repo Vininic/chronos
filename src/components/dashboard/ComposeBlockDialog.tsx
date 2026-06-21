@@ -11,7 +11,7 @@ import { TimeSelect } from "@/components/ui/time-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSchedule } from "@/lib/schedule/store";
 import { BlockKind, durationMin, timeToMinutes, CommitmentPriority, eisenhowerQuadrant, QUADRANT_COLORS, QUADRANT_LABELS } from "@/lib/schedule/types";
-import { kindStyle, safeKindStyle, alpha, TAILWIND_TO_HEX } from "./widgets";
+import { safeKindStyle, alpha, TAILWIND_TO_HEX } from "./widgets";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Bookmark, CalendarDays, StickyNote } from "lucide-react";
 import { useI18n, useT } from "@/lib/i18n/I18nProvider";
@@ -89,6 +89,12 @@ export function ComposeBlockDialog({
   const t = useT();
   const { bcp47 } = useI18n();
   const scheduleText = useScheduleText();
+  const nowSnap = (offsetMin: number): string => {
+    const n = new Date();
+    const m = n.getHours() * 60 + n.getMinutes() + offsetMin;
+    const s = Math.round(m / 15) * 15;
+    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  };
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"routine" | "commitment">("routine");
   const [kind, setKind] = useState<BlockKind>(defaultKind);
@@ -158,8 +164,8 @@ export function ComposeBlockDialog({
     const baseDate = defaultDateIso ?? new Date().toISOString().slice(0, 10);
     setTitle("");
     setNoteLines([]);
-    setStart(defaultStart ?? "09:00");
-    setEnd(defaultEnd ?? "10:00");
+    setStart(defaultStart ?? nowSnap(0));
+    setEnd(defaultEnd ?? nowSnap(60));
     setKind(defaultKind);
     setDay(String(defaultDay ?? new Date().getDay()));
     setDate(baseDate);
@@ -179,6 +185,8 @@ export function ComposeBlockDialog({
     setDay(String(defaultDay ?? new Date().getDay()));
     setDate(baseDate);
     setEndDate(baseDate);
+    setStart(defaultStart ?? nowSnap(0));
+    setEnd(defaultEnd ?? nowSnap(60));
     setRoutineEndsNextDay(false);
     setCommitmentEndsNextDay(false);
     setLooseDuration(60);

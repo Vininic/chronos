@@ -13,7 +13,7 @@ import { useSchedule, buildAgendaForDate } from "@/lib/schedule/store";
 import { useT, useFmtDur, useI18n } from "@/lib/i18n/I18nProvider";
 import { toast } from "@/hooks/use-toast";
 import { exportToJSON, exportToXLSX, exportToICS } from "@/lib/schedule/export";
-import { kindStyle, safeKindStyle, toCssColor, TAILWIND_TO_HEX } from "./widgets";
+import { safeKindStyle, toCssColor, TAILWIND_TO_HEX } from "./widgets";
 import type { BlockKind } from "@/lib/schedule/types";
 import { durationMin } from "@/lib/schedule/types";
 import type { ScheduleData } from "@/lib/schedule/types";

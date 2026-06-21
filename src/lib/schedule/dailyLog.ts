@@ -64,6 +64,7 @@ export function autoCaptureLogs(data: ScheduleData): void {
   const yesterday = addDays(today, -1);
   const cutoff = addDays(today, -RETENTION_DAYS);
   const focusIds = new Set(data.meta.focusCategoryIds ?? []);
+  const recoveryIds = new Set(data.categories.filter((c) => c.role === "recovery").map((c) => c.id));
 
   // Prune logs older than the retention window
   const existing = loadDailyLogs().filter((l) => l.date >= cutoff);
@@ -87,7 +88,7 @@ export function autoCaptureLogs(data: ScheduleData): void {
 
       const totalMin = blocks.reduce((s, b) => s + b.durationMin, 0);
       const focusMin = blocks.filter((b) => focusIds.has(b.kind)).reduce((s, b) => s + b.durationMin, 0);
-      const recoveryMin = blocks.filter((b) => b.kind === "recovery").reduce((s, b) => s + b.durationMin, 0);
+      const recoveryMin = blocks.filter((b) => recoveryIds.has(b.kind)).reduce((s, b) => s + b.durationMin, 0);
 
       newEntries.push({
         date: cursor,

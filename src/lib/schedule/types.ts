@@ -300,8 +300,13 @@ export interface CommitmentPriority {
   important: boolean;
 }
 
+/** Semantic role of a category, used by stats and highlights instead of
+ *  hardcoded category ids. "focus" generalises the legacy focusCategoryIds. */
+export type CategoryRole = "focus" | "recovery" | "neutral";
+
 /** A user-defined category. `tone`/`color` drive its visual identity;
- *  `workspace` (when present) is the structured program definition. */
+ *  `workspace` (when present) is the structured program definition;
+ *  `role` drives focus/recovery stats and highlighting. */
 export interface Category {
   id: string;
   label: string;
@@ -310,9 +315,15 @@ export interface Category {
   descriptionCustom?: string;
   tone?: string;
   color?: string;
+  role?: CategoryRole;
   workspace?: WorkspaceStructure;
   extensionId?: string;
   extensionConfig?: Record<string, unknown>;
+}
+
+/** Resolve a category's role, defaulting to "neutral". */
+export function categoryRoleOf(categories: Category[], kind: string): CategoryRole {
+  return categories.find((c) => c.id === kind)?.role ?? "neutral";
 }
 
 /** A weekly-repeating block. `day` is 0=Sun..6=Sat. */

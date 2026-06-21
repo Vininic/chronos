@@ -2,7 +2,7 @@ import type { ScheduleData } from "@/lib/schedule/types";
 import type { ReportCard } from "../types";
 import { timeToMinutes, fmtDur } from "@/lib/schedule/types";
 import type { DigestContext, DigestBlock, DigestDay } from "./helpers";
-import { WEEKDAY_NAMES, isRecoveryKind } from "./helpers";
+import { WEEKDAY_NAMES, recoveryKindSet } from "./helpers";
 
 const BREAK_GAP_MIN = 15;      // a gap >= this counts as a real break
 const LONG_STRETCH_MIN = 4 * 60; // continuous activity beyond this is a burnout flag
@@ -12,8 +12,8 @@ function endMin(b: DigestBlock): number {
 }
 
 /** Longest run of back-to-back non-recovery blocks (gaps < BREAK_GAP_MIN), in minutes. */
-function longestStretch(day: DigestDay): { minutes: number; from: string; to: string } {
-  const blocks = day.blocks.filter((b) => !isRecoveryKind(b.kind));
+function longestStretch(day: DigestDay, recoveryKinds: Set<string>): { minutes: number; from: string; to: string } {
+  const blocks = day.blocks.filter((b) => !recoveryKinds.has(b.kind));
   let best = { minutes: 0, from: "", to: "" };
   let runStart = 0;
   let runEnd = 0;
@@ -39,11 +39,12 @@ function longestStretch(day: DigestDay): { minutes: number; from: string; to: st
 
 export function burnoutAnalysis(data: ScheduleData, ctx: DigestContext): ReportCard[] {
   const cards: ReportCard[] = [];
+  const recoveryKinds = recoveryKindSet(data);
 
   // ── Longest continuous activity without a break ─────────────────────
   let worst = { minutes: 0, from: "", to: "", day: -1 };
   for (const day of ctx.days) {
-    const s = longestStretch(day);
+    const s = longestStretch(day, recoveryKinds);
     if (s.minutes > worst.minutes) worst = { ...s, day: day.day };
   }
   if (worst.minutes >= LONG_STRETCH_MIN) {
@@ -59,7 +60,7 @@ export function burnoutAnalysis(data: ScheduleData, ctx: DigestContext): ReportC
   // ── Days carrying load but zero recovery ────────────────────────────
   if (ctx.dayCount > 1) {
     const loadedDays = ctx.days.filter((d) => d.blocks.length > 0);
-    const noRecoveryDays = loadedDays.filter((d) => !d.blocks.some((b) => isRecoveryKind(b.kind)));
+    const noRecoveryDays = loadedDays.filter((d) => !d.blocks.some((b) => recoveryKinds.has(b.kind)));
     if (loadedDays.length > 0 && noRecoveryDays.length >= Math.ceil(loadedDays.length / 2)) {
       cards.push({
         kind: "burnout",

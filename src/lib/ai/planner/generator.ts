@@ -26,29 +26,18 @@ function baseCategories(): Category[] {
   ];
 }
 
-const FOCUS_NAMES: Record<string, string> = {
-  deep: "Deep work",
-  study: "Study",
-  creative: "Creative",
-  exercise: "Exercise",
-  social: "Social",
-  admin: "Admin",
-  planning: "Planning",
-  review: "Review",
-  class: "Class",
-};
+const TONE_POOL = ["bronze", "sky", "violet", "lime", "peach", "slate", "amber", "mint", "coral", "emerald", "indigo", "rose"];
 
-const FOCUS_TONES: Record<string, string> = {
-  deep: "bronze",
-  study: "sky",
-  creative: "violet",
-  exercise: "lime",
-  social: "peach",
-  admin: "slate",
-  planning: "amber",
-  review: "mint",
-  class: "coral",
-};
+// Deterministic tone/label from a category id — no hardcoded per-category map.
+function toneForId(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i) | 0;
+  return TONE_POOL[Math.abs(hash) % TONE_POOL.length];
+}
+
+function labelForId(id: string): string {
+  return id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " ");
+}
 
 interface Archetype {
   name: string;
@@ -231,7 +220,7 @@ function buildScheduleData(archetype: Archetype, prefs: PlannerPreferences): Sch
       return {
         id,
         label: name.trim(),
-        tone: FOCUS_TONES[id] ?? "neutral",
+        tone: toneForId(id),
         description: `Custom category: ${name.trim()}.`,
       };
     });
@@ -240,9 +229,9 @@ function buildScheduleData(archetype: Archetype, prefs: PlannerPreferences): Sch
     .filter((id) => !base.categories.some((c: Category) => c.id === id))
     .map((id) => ({
       id,
-      label: FOCUS_NAMES[id] ?? id,
-      tone: FOCUS_TONES[id] ?? "neutral",
-      description: `${FOCUS_NAMES[id] ?? id} activities.`,
+      label: labelForId(id),
+      tone: toneForId(id),
+      description: `${labelForId(id)} activities.`,
     }));
 
   const allCategories = [...base.categories, ...extraFromArchetype, ...userCats];
