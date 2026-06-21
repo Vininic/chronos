@@ -294,6 +294,70 @@ export interface ProgressSnapshot {
   denominator: number;
 }
 
+/** Eisenhower urgency/importance flags for a commitment or preset. */
+export interface CommitmentPriority {
+  urgent: boolean;
+  important: boolean;
+}
+
+/** A user-defined category. `tone`/`color` drive its visual identity;
+ *  `workspace` (when present) is the structured program definition. */
+export interface Category {
+  id: string;
+  label: string;
+  labelCustom?: string;
+  description?: string;
+  descriptionCustom?: string;
+  tone?: string;
+  color?: string;
+  workspace?: WorkspaceStructure;
+  extensionId?: string;
+  extensionConfig?: Record<string, unknown>;
+}
+
+/** A weekly-repeating block. `day` is 0=Sun..6=Sat. */
+export interface RoutineBlock {
+  id: string;
+  day: number;
+  start: string;
+  end: string;
+  kind: string;
+  title: string;
+  titleCustom?: string;
+  notes?: string;
+  endsNextDay?: boolean;
+  workspace?: WorkspaceRuntime;
+}
+
+/** A date-specific commitment. Loose (undated) commitments omit `date`. */
+export interface Commitment {
+  id: string;
+  title: string;
+  titleCustom?: string;
+  start: string;
+  end: string;
+  kind: string;
+  day?: number;
+  date?: string;
+  endDate?: string;
+  notes?: string;
+  endsNextDay?: boolean;
+  priority?: CommitmentPriority;
+  workspace?: WorkspaceRuntime;
+}
+
+/** A reusable block template the user can drop onto the schedule. */
+export interface Preset {
+  id: string;
+  title: string;
+  titleCustom?: string;
+  kind: string;
+  duration: number;
+  notes?: string;
+  priority?: CommitmentPriority;
+  workspace?: WorkspaceRuntime;
+}
+
 export interface ScheduleData {
   meta: {
     version: number;
