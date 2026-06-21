@@ -1,52 +1,58 @@
-import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard, DigestTimeframe } from "../types";
+import type { ScheduleData, Goal } from "@/lib/schedule/types";
+import type { ReportCard } from "../types";
+import { computeStreak } from "@/lib/schedule/types";
+import type { DigestContext } from "./helpers";
 
-export function consistencyAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
+export function consistencyAnalysis(data: ScheduleData, ctx: DigestContext): ReportCard[] {
   const cards: ReportCard[] = [];
-  const goals = data.goals;
+  const today = new Date().toISOString().slice(0, 10);
 
-  const activeGoals = goals.filter((g: { period: string }) => g.period !== "total");
-  if (activeGoals.length === 0) return cards;
+  // Recurring goals only (period-based); deadline/total goals have no streak.
+  const recurring = data.goals.filter((g) => g.period === "daily" || g.period === "weekly" || g.period === "monthly");
 
-  const weakGoals = activeGoals.filter((g: { blocks: unknown[]; _streak?: number }) => {
-    const streak = (g as { _streak?: number })._streak ?? 0;
-    return streak === 0 && g.blocks.length > 0;
-  });
+  if (recurring.length > 0) {
+    const withStreak = recurring.map((g) => ({ goal: g, streak: computeStreak(g as Goal, today) }));
 
-  if (weakGoals.length > 0) {
-    const names = weakGoals.slice(0, 2).map((g: { title: string }) => `"${g.title}"`).join(", ");
-    cards.push({
-      kind: "consistency",
-      severity: "trend",
-      title: `${weakGoals.length} goal${weakGoals.length > 1 ? "s" : ""} with no active streak`,
-      body: weakGoals.length <= 2
-        ? `${names} ${weakGoals.length > 1 ? "have" : "has"} no active streak.`
-        : `${weakGoals.length} goals have no active streak.`,
-      actionable: true,
-    });
+    // ── Goals on a streak (positive reinforcement) ────────────────────
+    const onStreak = withStreak.filter((x) => x.streak >= 2).sort((a, b) => b.streak - a.streak);
+    if (onStreak.length > 0) {
+      const best = onStreak[0];
+      cards.push({
+        kind: "consistency",
+        severity: "trend",
+        title: `${onStreak.length} goal${onStreak.length > 1 ? "s" : ""} on an active streak`,
+        body: `Best run: "${best.goal.title}" at ${best.streak} ${best.goal.period === "daily" ? "days" : best.goal.period === "weekly" ? "weeks" : "months"} in a row.`,
+      });
+    }
+
+    // ── Goals that have lapsed (no current streak) ────────────────────
+    const lapsed = withStreak.filter((x) => x.streak === 0);
+    if (lapsed.length > 0) {
+      const names = lapsed.slice(0, 2).map((x) => `"${x.goal.title}"`).join(", ");
+      cards.push({
+        kind: "consistency",
+        severity: "insight",
+        title: `${lapsed.length} goal${lapsed.length > 1 ? "s" : ""} with no active streak`,
+        body: lapsed.length <= 2
+          ? `${names} ${lapsed.length > 1 ? "have" : "has"} lapsed. Completing the current period restarts the streak.`
+          : `${lapsed.length} recurring goals have lapsed this period.`,
+        actionable: true,
+      });
+    }
   }
 
-  if (timeframe === "monthly") {
+  // ── Monthly: completed-period consistency rate from snapshots ───────
+  if (ctx.timeframe === "monthly") {
     const snapshots = data.progressSnapshots;
     if (snapshots.length > 0) {
-      const totalSnapshots = snapshots.length;
-      const doneSnapshots = snapshots.filter((s: { numerator: number; denominator: number }) => s.denominator > 0 && s.numerator >= s.denominator).length;
-      const consistencyRate = Math.round((doneSnapshots / totalSnapshots) * 100);
-      if (consistencyRate < 60) {
-        cards.push({
-          kind: "consistency",
-          severity: "insight",
-          title: `Monthly consistency rate: ${consistencyRate}%`,
-          body: `${doneSnapshots} of ${totalSnapshots} tracked goal periods completed this month.`,
-        });
-      } else if (consistencyRate >= 80) {
-        cards.push({
-          kind: "consistency",
-          severity: "insight",
-          title: `Monthly consistency rate: ${consistencyRate}%`,
-          body: `${doneSnapshots} of ${totalSnapshots} goal periods completed.`,
-        });
-      }
+      const done = snapshots.filter((s) => s.denominator > 0 && s.numerator >= s.denominator).length;
+      const rate = Math.round((done / snapshots.length) * 100);
+      cards.push({
+        kind: "consistency",
+        severity: "insight",
+        title: `Monthly consistency rate: ${rate}%`,
+        body: `${done} of ${snapshots.length} tracked goal periods were completed this month.`,
+      });
     }
   }
 

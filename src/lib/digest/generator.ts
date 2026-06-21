@@ -8,6 +8,7 @@ import { callGemini } from "@/lib/ai/core/gemini";
 import { resolveProvider } from "@/lib/ai/core/resolveProvider";
 
 import { optimizeSchedule } from "@/lib/ai/optimization/optimizationEngine";
+import { buildDigestContext, type DigestContext } from "./modules/helpers";
 import { recoveryAnalysis } from "./modules/recovery";
 import { productivityAnalysis } from "./modules/productivity";
 import { scheduleQualityAnalysis } from "./modules/schedule-quality";
@@ -17,7 +18,9 @@ import { programsAnalysis } from "./modules/programs";
 import { burnoutAnalysis } from "./modules/burnout";
 import { opportunityAnalysis } from "./modules/opportunity";
 
-const HEURISTIC_MODULES = [
+type DigestModule = (data: ScheduleData, ctx: DigestContext) => ReportCard[];
+
+const HEURISTIC_MODULES: DigestModule[] = [
   recoveryAnalysis,
   productivityAnalysis,
   scheduleQualityAnalysis,
@@ -26,7 +29,9 @@ const HEURISTIC_MODULES = [
   programsAnalysis,
   burnoutAnalysis,
   opportunityAnalysis,
-] as const;
+];
+
+const MAX_CARDS = 12;
 
 const INSIGHT_TYPE_TO_KIND: Record<string, ReportCardKind> = {
   overload: "recovery",
@@ -126,13 +131,22 @@ async function aiCards(data: ScheduleData, tf: string): Promise<ReportCard[] | n
   }
 }
 
-function heuristicCards(data: ScheduleData, tf: DigestTimeframe): ReportCard[] {
+function heuristicCards(ctx: DigestContext, data: ScheduleData): ReportCard[] {
   const allCards: ReportCard[] = [];
   for (const module of HEURISTIC_MODULES) {
-    allCards.push(...module(data, tf));
+    try {
+      allCards.push(...module(data, ctx));
+    } catch {
+      // A single misbehaving module shouldn't sink the whole digest.
+    }
   }
-  allCards.sort((a, b) => (CARD_ORDER[a.kind] ?? 99) - (CARD_ORDER[b.kind] ?? 99));
-  return allCards;
+  // Warnings first within each kind, then by kind order; cap to keep signal high.
+  const sevRank = (s: ReportCard["severity"]) => (s === "warning" ? 0 : 1);
+  allCards.sort((a, b) => {
+    const k = (CARD_ORDER[a.kind] ?? 99) - (CARD_ORDER[b.kind] ?? 99);
+    return k !== 0 ? k : sevRank(a.severity) - sevRank(b.severity);
+  });
+  return allCards.slice(0, MAX_CARDS);
 }
 
 export async function generateDigest(
@@ -158,11 +172,14 @@ export async function generateDigest(
   let allCards: ReportCard[];
   let generatedBy: "ai" | "heuristic" = "heuristic";
 
+  // Deterministic per-timeframe view of the schedule (routine + commitments
+  // expanded across the actual date range). Shared by every heuristic module.
+  const digestCtx = buildDigestContext(data, tf, customDate);
+
   // Pre-compute deterministic structural state so AI cards can be validated.
   // The AI sees all routine blocks aggregated across days and sometimes mistakes
   // same-time blocks on different weekdays as same-time conflicts.
-  const ctx = buildContext(data, "balanced");
-  const realConflicts = optimizeSchedule(ctx).conflicts.length;
+  const realConflicts = optimizeSchedule(buildContext(data, "balanced")).conflicts.length;
 
   const ai = await aiCards(data, tf);
   if (ai && ai.length > 0) {
@@ -175,10 +192,10 @@ export async function generateDigest(
       }
       return true;
     });
-    allCards = validated.length > 0 ? validated : heuristicCards(data, tf);
+    allCards = validated.length > 0 ? validated : heuristicCards(digestCtx, data);
     generatedBy = validated.length > 0 ? "ai" : "heuristic";
   } else {
-    allCards = heuristicCards(data, tf);
+    allCards = heuristicCards(digestCtx, data);
   }
 
   const digest: Digest = {

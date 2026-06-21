@@ -1,59 +1,88 @@
 import type { ScheduleData } from "@/lib/schedule/types";
-import type { ReportCard, DigestTimeframe } from "../types";
-import { getBlocksForTimeframe } from "./helpers";
+import type { ReportCard } from "../types";
+import { timeToMinutes, fmtDur } from "@/lib/schedule/types";
+import type { DigestContext, DigestBlock, DigestDay } from "./helpers";
+import { WEEKDAY_NAMES, categoryLabel, minutesByCategory, totalMinutes } from "./helpers";
 
-export function opportunityAnalysis(data: ScheduleData, timeframe: DigestTimeframe): ReportCard[] {
+function endMin(b: DigestBlock): number {
+  return b.end === "24:00" ? 1440 : timeToMinutes(b.end);
+}
+
+/** Largest open gap between consecutive blocks within a day's active window. */
+function largestGap(day: DigestDay): { start: string; end: string; minutes: number } | null {
+  const sorted = [...day.blocks].sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+  let best: { start: string; end: string; minutes: number } | null = null;
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = timeToMinutes(sorted[i].start) - endMin(sorted[i - 1]);
+    if (gap > 0 && (!best || gap > best.minutes)) {
+      best = { start: sorted[i - 1].end, end: sorted[i].start, minutes: gap };
+    }
+  }
+  return best;
+}
+
+export function opportunityAnalysis(data: ScheduleData, ctx: DigestContext): ReportCard[] {
   const cards: ReportCard[] = [];
 
-  const blocks = getBlocksForTimeframe(data, timeframe)
-    .filter((b: { kind: string }) => b.kind !== "sleep")
-    .sort((a: { start: string }, b: { start: string }) => a.start.localeCompare(b.start));
-
-  const deepBlocks = blocks.filter((b: { kind: string }) => b.kind === "deep");
-  if (deepBlocks.length > 0) {
-    const deepMornings = deepBlocks.filter((b: { start: string }) => {
-      const h = parseInt(b.start.split(":")[0], 10);
-      return h < 12;
-    });
-    cards.push({
-      kind: "opportunity",
-      severity: "insight",
-      title: `${deepMornings.length} of ${deepBlocks.length} deep work session${deepBlocks.length > 1 ? "s" : ""} in the morning`,
-      body: `${Math.round((deepMornings.length / deepBlocks.length) * 100)}% of deep work is scheduled before noon.`,
-    });
-  }
-
-  const shallowOrMeeting = blocks.filter((b: { kind: string }) => b.kind === "shallow" || b.kind === "meeting");
-  if (shallowOrMeeting.length > 0) {
-    cards.push({
-      kind: "opportunity",
-      severity: "insight",
-      title: `${shallowOrMeeting.length} shallow or meeting block${shallowOrMeeting.length > 1 ? "s" : ""}`,
-      body: timeframe === "weekly"
-        ? `Across the week, ${shallowOrMeeting.length} block${shallowOrMeeting.length > 1 ? "s are" : " is"} typed as shallow or meeting.`
-        : `${shallowOrMeeting.length} block${shallowOrMeeting.length > 1 ? "s" : ""} typed as shallow or meeting in the current view.`,
-    });
-  }
-
-  if (timeframe === "monthly") {
-    const scheduledHours = data.ledger.scheduledHours;
-    if (scheduledHours.length > 1) {
-      const variance = scheduledHours.reduce((max: number, h: number) => Math.max(max, h), 0) - scheduledHours.reduce((min: number, h: number) => Math.min(min, h), 0);
+  // ── Largest open block today (deep-work opportunity) ────────────────
+  if (ctx.timeframe === "daily" && ctx.days[0]) {
+    const gap = largestGap(ctx.days[0]);
+    if (gap && gap.minutes >= 60) {
       cards.push({
         kind: "opportunity",
-        severity: "insight",
-        title: `Daily hours vary by ${Math.round(variance)}h across the month`,
-        body: `From ${Math.round(Math.min(...scheduledHours))}h to ${Math.round(Math.max(...scheduledHours))}h per day.`,
+        severity: "opportunity",
+        title: `${fmtDur(gap.minutes)} open from ${gap.start} to ${gap.end}`,
+        body: "Your largest free stretch today — a natural slot for a deep-work session or a longer recovery block.",
+        actionable: true,
       });
     }
-    const goalsWithDeadlines = data.goals.filter((g: { kind: string; deadline?: string }) => g.kind === "deadline" && g.deadline);
-    const thisMonth = goalsWithDeadlines.filter((g: { deadline: string }) => g.deadline!.startsWith(new Date().toISOString().slice(0, 7)));
-    if (thisMonth.length > 0) {
+  }
+
+  // ── Empty days in a multi-day window ────────────────────────────────
+  if (ctx.dayCount > 1) {
+    const empty = ctx.days.filter((d) => d.blocks.length === 0);
+    if (empty.length > 0 && empty.length < ctx.dayCount) {
+      const names = empty.map((d) => WEEKDAY_NAMES[d.day]).slice(0, 3).join(", ");
       cards.push({
         kind: "opportunity",
-        severity: "insight",
-        title: `${thisMonth.length} deadline${thisMonth.length > 1 ? "s" : ""} due this month`,
-        body: thisMonth.map((g: { title: string; deadline: string }) => `"${g.title}" (${g.deadline})`).join(", "),
+        severity: "opportunity",
+        title: `${empty.length} open day${empty.length > 1 ? "s" : ""} with nothing scheduled`,
+        body: `${names}${empty.length > 3 ? "…" : ""} ${empty.length > 1 ? "are" : "is"} free — room for a goal block or deliberate rest.`,
+      });
+    }
+  }
+
+  // ── Category balance: where the time actually goes ──────────────────
+  const total = totalMinutes(ctx);
+  if (total > 0) {
+    const byCat = [...minutesByCategory(ctx).entries()].sort((a, b) => b[1] - a[1]);
+    if (byCat.length >= 2) {
+      const [topId, topMin] = byCat[0];
+      const share = Math.round((topMin / total) * 100);
+      if (share >= 40) {
+        cards.push({
+          kind: "opportunity",
+          severity: "insight",
+          title: `Most time goes to ${categoryLabel(data, topId)} (${share}%)`,
+          body: `${fmtDur(topMin)} of ${fmtDur(total)} across ${byCat.length} categories. Worth checking this matches your priorities.`,
+        });
+      }
+    }
+  }
+
+  // ── Monthly: deadlines landing this month ───────────────────────────
+  if (ctx.timeframe === "monthly") {
+    const month = new Date().toISOString().slice(0, 7);
+    const due = data.goals.filter(
+      (g) => g.kind === "deadline" && g.deadline && g.deadline.startsWith(month),
+    );
+    if (due.length > 0) {
+      cards.push({
+        kind: "opportunity",
+        severity: "warning",
+        title: `${due.length} deadline${due.length > 1 ? "s" : ""} due this month`,
+        body: due.map((g) => `"${g.title}" (${g.deadline})`).join(", "),
+        actionable: true,
       });
     }
   }
