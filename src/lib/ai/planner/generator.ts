@@ -15,33 +15,6 @@ export const DEFAULT_PREFERENCES: PlannerPreferences = {
   sleepEnd: "07:00",
 };
 
-function uid(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function rBlock(
-  day: number,
-  start: string,
-  end: string,
-  kind: string,
-  title: string,
-  endsNextDay?: boolean,
-): RoutineBlock {
-  return { id: uid("r"), day, start, end, kind, title, endsNextDay };
-}
-
-function sleepBlocks(sleepStart: string, sleepEnd: string): RoutineBlock[] {
-  const blocks: RoutineBlock[] = [];
-  const goesPastMidnight = sleepStart > sleepEnd;
-  for (let d = 0; d < 7; d++) {
-    blocks.push(rBlock(d, "00:00", sleepEnd, "sleep", "Sleep"));
-    if (goesPastMidnight) {
-      blocks.push(rBlock(d, sleepStart, "23:59", "sleep", "Sleep"));
-    }
-  }
-  return blocks;
-}
-
 function baseCategories(): Category[] {
   return [
     { id: "deep", label: "Deep work", tone: "bronze", description: "Uninterrupted high-cognition work." },
@@ -274,19 +247,16 @@ function buildScheduleData(archetype: Archetype, prefs: PlannerPreferences): Sch
 
   const allCategories = [...base.categories, ...extraFromArchetype, ...userCats];
 
-  const sleepRoutine = sleepBlocks(prefs.sleepStart, prefs.sleepEnd);
-
+  // Sleep is structural (meta.sleepWindow) — never a routine block.
   const existingNonSleep = base.routine.filter((b: RoutineBlock) => b.kind !== "sleep");
   const templateWorkdayStart = base.meta.workdayStart ?? "07:00";
-  const alignedBlocks = shiftBlocksToWorkWindow(
+  const routine = shiftBlocksToWorkWindow(
     existingNonSleep,
     templateWorkdayStart,
     prefs.workHoursStart,
     prefs.sleepEnd,
     prefs.sleepStart,
   );
-
-  const routine = [...sleepRoutine, ...alignedBlocks];
 
   const totalMinutes = archetype.focusRatio > 0 ? Math.round(weekMinutes(prefs.workHoursStart, prefs.workHoursEnd) * archetype.focusRatio) : 0;
   const estimatedFocusHours = Math.round(totalMinutes / 60);

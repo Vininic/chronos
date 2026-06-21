@@ -1,7 +1,7 @@
 import type { PlannerPreferences, PlannerProposal } from "./types";
 import type { ScheduleData, RoutineBlock, Category } from "@/lib/schedule/types";
 import type { LearningProfile } from "@/lib/ai/learning/types";
-import { DAY_LABELS } from "@/lib/schedule/types";
+import { DAY_LABELS, timeToMinutes } from "@/lib/schedule/types";
 import { generateProposals } from "./generator";
 import { loadProfile } from "@/lib/ai/learning/store";
 import { resolveProvider } from "@/lib/ai/core/resolveProvider";
@@ -58,12 +58,10 @@ function computeLedger(schedule: ScheduleData) {
   };
 }
 
-function durationMin(b: { start: string; end: string; endsNextDay?: boolean }): number {
+function durationMin(b: { start: string; end: string }): number {
   const [sh, sm] = b.start.split(":").map(Number);
   const [eh, em] = b.end === "24:00" ? [24, 0] : b.end.split(":").map(Number);
-  let d = (eh * 60 + em) - (sh * 60 + sm);
-  if (d <= 0 || b.endsNextDay) d += 24 * 60;
-  return d;
+  return Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
 }
 
 function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
@@ -83,6 +81,9 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
   for (const dayDef of blueprint.days) {
     const d = dayDef.day;
     for (const b of dayDef.blocks) {
+      // Activities are never crossday. A block whose end is at/before its start
+      // is malformed (LLM slip) — drop it rather than wrapping it past midnight.
+      if (timeToMinutes(b.end) <= timeToMinutes(b.start)) continue;
       routine.push({
         id: uid("r"),
         day: d,
@@ -90,35 +91,12 @@ function blueprintToScheduleData(blueprint: GeminiBlueprint): ScheduleData {
         end: b.end,
         kind: b.kind,
         title: b.title,
-        endsNextDay: b.end <= b.start,
       });
     }
   }
 
-  // Add sleep blocks for each day (two-block pattern: early-morning + evening)
-  const sleepStart = blueprint.meta.sleepStart;
-  const sleepEnd = blueprint.meta.sleepEnd;
-  const goesPastMidnight = sleepStart > sleepEnd;
-  for (let d = 0; d < 7; d++) {
-    routine.push({
-      id: uid("r"),
-      day: d,
-      start: "00:00",
-      end: sleepEnd,
-      kind: "sleep",
-      title: "Sleep",
-    });
-    if (goesPastMidnight) {
-      routine.push({
-        id: uid("r"),
-        day: d,
-        start: sleepStart,
-        end: "23:59",
-        kind: "sleep",
-        title: "Sleep",
-      });
-    }
-  }
+  // Sleep is a structural concept derived from meta.sleepWindow (the agenda
+  // builder renders it). It is never stored as routine blocks.
 
   const schedule: ScheduleData = {
     meta: {
