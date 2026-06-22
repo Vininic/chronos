@@ -49,7 +49,7 @@ function fmtFriendlyDuration(totalMin: number, isPt: boolean) {
 
 export default function Today() {
   const { session } = useAuth();
-  const { data, addRoutine, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, reorderCategory, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
+  const { data, addRoutine, addCommitment, removeCommitment, updateCommitment, updateCategory, resetCategoryNaming, addCategory, removeCategory, reorderCategory, setFocusCategories, removePreset, addGoal, updateGoal, removeGoal, addGoalBlock, removeGoalBlock, updateGoalBlock, toggleGoalBlock, addGoalSubTask, toggleGoalSubTask, getGoalsForDate, generateGoalCommitments } = useSchedule();
   const { bcp47 } = useI18n();
   const t = useT();
   const scheduleText = useScheduleText();
@@ -269,6 +269,7 @@ export default function Today() {
           onAdd={addCategory}
           onRemove={removeCategory}
           onReorder={reorderCategory}
+          onSetFocus={setFocusCategories}
           addRoutine={addRoutine}
           addCommitment={addCommitment}
           todayIso={todayIso}
@@ -959,7 +960,7 @@ function AgendaStatsCard({ agenda, categories, t, isPt }: { agenda: AgendaItem[]
 }
 
 
-function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, onReorder, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: {
+function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAdd, onRemove, onReorder, onSetFocus, addRoutine: _addRoutine, addCommitment: _addCommitment, todayIso: _todayIso }: {
   data: ScheduleData;
   t: ReturnType<typeof useT>;
   isPt: boolean;
@@ -969,6 +970,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   onAdd: ReturnType<typeof useSchedule>["addCategory"];
   onRemove: ReturnType<typeof useSchedule>["removeCategory"];
   onReorder: ReturnType<typeof useSchedule>["reorderCategory"];
+  onSetFocus: ReturnType<typeof useSchedule>["setFocusCategories"];
   addRoutine: ReturnType<typeof useSchedule>["addRoutine"];
   addCommitment: ReturnType<typeof useSchedule>["addCommitment"];
   todayIso: string;
@@ -1005,6 +1007,12 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
   }
 
   function cancelEdit() { setEditingId(null); }
+
+  function toggleFocus(id: string) {
+    const current = data.meta.focusCategoryIds ?? [];
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    onSetFocus(next);
+  }
 
   function handleCreate() {
     const id = createLabel.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -1073,6 +1081,7 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
             const description = scheduleText.categoryDescription(c.id, c.description, c.descriptionCustom);
             const isBuiltin = (BUILTIN_KINDS as readonly string[]).includes(c.id);
             const hasCustom = !!(c.labelCustom || c.descriptionCustom || c.color);
+            const isFocus = (data.meta.focusCategoryIds ?? []).includes(c.id);
 
             return (
               <div
@@ -1146,12 +1155,32 @@ function BlockTypeGallery({ data, t, isPt, scheduleText, onUpdate, onReset, onAd
                         </span>
                         <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: dotHex }} />
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-primary truncate">{label}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-primary truncate">{label}</span>
+                            {isFocus && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/15 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-secondary shrink-0">
+                                <Target className="h-2.5 w-2.5" />
+                                {isPt ? "Foco" : "Focus"}
+                              </span>
+                            )}
+                          </div>
                           {description && <div className="text-xs text-muted-foreground truncate">{description}</div>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="text-[10px] text-muted-foreground/40 uppercase tracking-wide">{c.id}</div>
+                        <button
+                          onClick={() => toggleFocus(c.id)}
+                          className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium leading-none transition-colors hover:bg-muted/40 ${
+                            isFocus ? "text-secondary" : "text-muted-foreground/40 hover:text-secondary/70"
+                          }`}
+                          title={isFocus
+                            ? (isPt ? "Remover dos blocos de foco" : "Remove from focus blocks")
+                            : (isPt ? "Marcar como bloco de foco" : "Mark as focus block")}
+                          aria-pressed={isFocus}
+                        >
+                          <Target className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           onClick={() => setConfigExtCategoryId(c.id)}
                           className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium leading-none transition-colors hover:bg-muted/40 ${

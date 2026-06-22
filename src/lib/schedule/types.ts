@@ -1,5 +1,5 @@
 export type BlockKind = string;
-export const BUILTIN_KINDS = ["deep", "meeting", "ritual", "recovery", "shallow", "sleep"] as const;
+export const BUILTIN_KINDS = ["deep", "meeting", "ritual", "recovery", "shallow"] as const;
 
 /* ─── Workspace types (Phase 1) ─── */
 

@@ -64,7 +64,6 @@ export default function Aetheris() {
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [expandedRecovery, setExpandedRecovery] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [tab, setTab] = useState<TabView>("today");
   const [feedbackTarget, setFeedbackTarget] = useState<Suggestion | null>(null);
@@ -662,10 +661,10 @@ export default function Aetheris() {
                 <button
                   key={tabDef.key}
                   onClick={() => setTab(tabDef.key)}
-                  className={`flex items-center gap-1 px-2 py-1 text-[9px] font-medium uppercase tracking-wider rounded-md transition-colors ${
+                  className={`flex items-center gap-1 px-2 py-1 text-[9px] font-medium uppercase tracking-wider rounded-full border transition-colors ${
                     tab === tabDef.key
-                      ? "bg-secondary/20 text-secondary"
-                      : "text-muted-foreground hover:text-primary hover:bg-secondary/5"
+                      ? "bg-secondary/15 border-secondary/40 text-secondary"
+                      : "border-transparent text-muted-foreground hover:text-primary hover:border-secondary/20 hover:bg-secondary/5"
                   }`}
                 >
                   <tabDef.icon className="h-3 w-3" />
@@ -740,36 +739,17 @@ export default function Aetheris() {
 
                     {/* Recovery warning */}
                     {recoveryIntel.recoveryScore < 50 && (
-                      <div className="border border-red-400/50 rounded-lg p-3">
-                        <button
-                          onClick={() => setExpandedRecovery(!expandedRecovery)}
-                          className="w-full flex items-center justify-between text-left"
-                        >
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                            <span className="text-[11px] font-medium text-primary">
-                              {locale === "pt" ? "Pontuação de recuperação criticamente baixa" : "Recovery score critically low"}
-                            </span>
-                          </div>
-                          <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${expandedRecovery ? "rotate-180" : ""}`} />
-                        </button>
-                        {expandedRecovery && (
-                          <p className="text-[11px] text-muted-foreground mt-1.5 pt-1.5 border-t border-red-400/20">
-                            {recoveryIntel.recommendations[0] ?? (locale === "pt" ? "Considere adicionar blocos de descanso ou reduzir a intensidade." : "Consider adding rest blocks or reducing intensity.")}
-                          </p>
-                        )}
-                      </div>
+                      <AlertCard
+                        severity="critical"
+                        collapsible
+                        title={locale === "pt" ? "Pontuação de recuperação criticamente baixa" : "Recovery score critically low"}
+                        detail={recoveryIntel.recommendations[0] ?? (locale === "pt" ? "Considere adicionar blocos de descanso ou reduzir a intensidade." : "Consider adding rest blocks or reducing intensity.")}
+                      />
                     )}
 
                     {/* Structural conflicts only — no AI insights here */}
                     {optimization.conflicts.slice(0, 3).map((c, i) => (
-                      <div key={i} className="border border-amber-400/30 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                          <span className="text-[11px] font-medium text-primary">Scheduling conflict</span>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground leading-relaxed">{c.detail}</p>
-                      </div>
+                      <AlertCard key={i} severity="warning" title="Scheduling conflict" detail={c.detail} />
                     ))}
 
                     {optimization.conflicts.length === 0 && recoveryIntel.recoveryScore >= 50 && (
@@ -1018,6 +998,52 @@ function MetricBox({ label, value }: { label: string; value: string | number }) 
     <div className="border border-border rounded-lg p-2.5 text-center">
       <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="font-display text-sm text-primary mt-0.5 num">{value}</div>
+    </div>
+  );
+}
+
+// One alert card for both recovery and conflict warnings. Severity drives the
+// color; `collapsible` toggles the detail behind a chevron (recovery) vs. always
+// showing it (structural conflicts). Replaces two near-identical hand-rolled cards.
+const ALERT_TONE = {
+  critical: { border: "border-destructive/40", icon: "text-destructive", divider: "border-destructive/20" },
+  warning: { border: "border-amber-500/30", icon: "text-amber-600 dark:text-amber-400", divider: "border-amber-500/20" },
+} as const;
+
+function AlertCard({
+  severity,
+  title,
+  detail,
+  collapsible,
+}: {
+  severity: keyof typeof ALERT_TONE;
+  title: string;
+  detail?: string;
+  collapsible?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const tone = ALERT_TONE[severity];
+  const showDetail = !!detail && (!collapsible || open);
+  return (
+    <div className={`rounded-lg border p-3 ${tone.border}`}>
+      <button
+        type="button"
+        onClick={collapsible ? () => setOpen(!open) : undefined}
+        className={`w-full flex items-center justify-between text-left ${collapsible ? "" : "cursor-default"}`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <AlertTriangle className={`h-3.5 w-3.5 shrink-0 ${tone.icon}`} />
+          <span className="text-[11px] font-medium text-primary">{title}</span>
+        </div>
+        {collapsible && (
+          <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+        )}
+      </button>
+      {showDetail && (
+        <p className={`text-[11px] text-muted-foreground leading-relaxed mt-1.5 ${collapsible ? `pt-1.5 border-t ${tone.divider}` : ""}`}>
+          {detail}
+        </p>
+      )}
     </div>
   );
 }

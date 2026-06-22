@@ -11,6 +11,7 @@ import { buildExplainability } from "./explainability";
 import { buildSystemPrompt } from "./systemPrompt";
 import { optimizeSchedule } from "../optimization/optimizationEngine";
 import type { OptimizationResult } from "../optimization/optimizationEngine";
+import { filterHallucinatedConflicts } from "./validateConflictClaims";
 import { detectPatterns } from "../pattern/detect";
 import { callGemini } from "./gemini";
 import { compressedTokenEstimate, compressContext } from "../context/serializers";
@@ -139,11 +140,19 @@ export async function runAetherisPipeline(input: AetherisPipelineInput): Promise
 
   const optimization = optimizeSchedule(ctx);
 
+  // Drop AI insights claiming time overlaps when the deterministic, day-aware
+  // checker found none — a cross-day hallucination. Shared with the digest.
+  const safeInsights = filterHallucinatedConflicts(
+    allInsights,
+    optimization.conflicts.length,
+    (i) => `${i.title} ${i.detail} ${i.suggestion ?? ""}`,
+  );
+
   const finalResponse: AetherisResponse = {
     ...geminiResponse,
-    insights: allInsights,
+    insights: safeInsights,
     suggestedActions: filteredActions,
-    explainability: buildExplainability(ctx, allInsights, filteredActions, confidence),
+    explainability: buildExplainability(ctx, safeInsights, filteredActions, confidence),
   };
 
   const compressed = compressContext(ctx);

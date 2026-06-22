@@ -1,6 +1,6 @@
 import type { ScheduleData } from "@/lib/schedule/types";
 import { durationMin, timeToMinutes } from "@/lib/schedule/types";
-import { buildAgendaForDate } from "@/lib/schedule/store";
+import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import type { DigestTimeframe } from "../types";
 
 /** A single concrete block instance on a specific calendar date. */

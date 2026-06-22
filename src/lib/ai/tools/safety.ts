@@ -87,7 +87,7 @@ function checkSleepOverlap(ctx: ScheduleContext, start: string, end: string): Sa
 }
 
 function checkProtectedDeletion(block: { category: string; source: string }): SafetyCheck {
-  const protectedCategories = ["sleep", "recovery"];
+  const protectedCategories = ["recovery"];
   const isProtected = protectedCategories.includes(block.category) || block.source === "commitment";
   return {
     check: "Prevent protected block deletion",

@@ -78,7 +78,9 @@ export function normalizeNamingModel(data: ScheduleData, locale: Locale): Schedu
   // Derive category roles for legacy data: focus from the existing
   // focusCategoryIds list, recovery from the legacy "recovery" id, else neutral.
   const focusIds = new Set(data.meta.focusCategoryIds ?? []);
-  const categories = data.categories.map((c) => {
+  const categories = data.categories
+    .filter((c) => c.id !== "sleep")
+    .map((c) => {
     const labelCustom = c.labelCustom ?? (!isDefaultCategoryLabel(c.id, c.label) ? c.label : undefined);
     const descriptionCustom = c.descriptionCustom ?? (!isDefaultCategoryDescription(c.description) ? c.description : undefined);
     const role: CategoryRole = c.role ?? (focusIds.has(c.id) ? "focus" : c.id === "recovery" ? "recovery" : "neutral");

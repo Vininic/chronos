@@ -986,7 +986,7 @@ const shiftWorkerTemplate: ScheduleTemplate = {
       rBlock(4, "12:00", "13:00", "recovery", "Lunch break"),
       rBlock(4, "13:00", "17:00", "work", "Extended shift"),
       rBlock(4, "17:00", "18:00", "recovery", "Rest"),
-      rBlock(4, "18:00", "19:00", "dinner", "Dinner"),
+      rBlock(4, "18:00", "19:00", "recovery", "Dinner & rest"),
       rBlock(4, "19:00", "21:00", "deep", "Evening focus"),
       rBlock(5, "06:00", "07:00", "ritual", "Morning routine"),
       rBlock(5, "07:00", "08:00", "shallow", "Weekly wrap"),

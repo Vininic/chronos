@@ -108,10 +108,10 @@ AI features degrade gracefully without a key. To use the assistant:
 Honest status for a project still under active development. The planner core is solid; the AI periphery is where the rough edges are.
 
 ### 🔧 In progress
-- **Aetheris chat UI** — mid-rework; currently visually inconsistent / incomplete.
+- **Aetheris chat UI** — ✅ redesigned into one visual language: assistant turns render in a bronze-spined "Aetheris" frame, every tool-call state (proposed / applied / error / undone) shares a single `ActionLedger` component, and the markdown renderer now supports correct heading order, links, and code. Remaining polish tracked under digest below.
 
 ### 🐞 Known issues to fix
-- **Digest is low-signal.** The AI path ignores the selected timeframe and custom date range (daily/weekly/monthly come out identical), always uses Gemini regardless of the chosen provider, and emits cards that are often inaccurate or not actionable. Needs prompt redesign + real per-timeframe scoping.
+- **Digest signal.** The AI path now scopes per timeframe and respects the selected provider, and false cross-day "overlap" cards are filtered out (shared `validateConflictClaims` guard). Card copy can still be hit-or-miss — prompt quality is the remaining work.
 - **AI wastes tokens.** The system prompt is sent twice per call and the full schedule context is serialized into every chat message. Needs trimming / caching.
 - **Fallback isn't really a fallback.** Without a key, Aetheris analysis returns empty cards (the heuristic engines were removed; only the digest still has them). Either restore a heuristic path or message the empty state honestly.
 - **AI surface sprawl.** ~5 of 9 nav entries are AI-related; Audit History / AI Metrics / AI Settings should fold into the Aetheris hub.
@@ -165,14 +165,14 @@ corepack pnpm test
 |---|---|---|
 | **Today page** | 71 KB | Massive, no separation of concerns |
 | **Week page** | 24 KB | Recently rewritten, needs iteration |
-| **Focus page** | 24 KB | "Focus concept" unchecked in checklist |
+| **Focus page** | 24 KB | Focus concept shipped — categories badge + toggle focus blocks in the creator |
 | **Goal system** | ~30 KB | Works well, 44 tests pass |
-| **Planner UI** (builder, merge, proposals) | ~80 KB | Gemini planner not wired into UI yet |
-| **Chat UI** (Aetheris thread) | ~40 KB | "Mid-rework, visually inconsistent" |
-| **Export** (JSON/XLSX/ICS) | 7 KB | Functional, no known bugs |
+| **Planner UI** (builder, merge, proposals) | ~80 KB | Gemini planner wired into the form flow; falls back to heuristics with no key — regression-tested |
+| **Chat UI** (Aetheris thread) | ~40 KB | Redesigned — unified `ActionLedger`, Aetheris frame, richer markdown |
+| **Export** (JSON/XLSX/ICS) | 7 KB | Functional, no known bugs | Neatly formatted exports.
 | **ComposeBlockDialog** | 29 KB | Functional, could use polish |
-| **TimerCard** | 10 KB | Timer section rework unchecked |
-| **Schedule templates** | 47 KB | AI displays false concerns — needs fixing |
+| **TimerCard** | 10 KB | Done — persistent sidebar card, idle/active/session states, render-tested |
+| **Schedule templates** | 47 KB | False AI concerns (phantom sleep debt + cross-day overlap) fixed & regression-tested |
 
 ### 🟠 Needs work (known gaps or missing pieces)
 
@@ -182,7 +182,7 @@ corepack pnpm test
 | **AI Chat service** (chat/service.ts) | 13.4 KB | Prompt building, tool extraction — 0 tests |
 | **AI Tools** (10 modules) | ~29 KB | Validation, safety, execution — 0 tests |
 | **AI Learning** (learning/) | 13 KB | Recommutation logic — 0 tests |
-| **AI Planner** (generator + gemini-planner) | ~33 KB | Heuristic + gemini generators — 0 tests |
+| **AI Planner** (generator + gemini-planner) | ~33 KB | Heuristic + gemini generators — fallback & blueprint paths tested (`gemini-planner.test.ts`) |
 | **AI Adapters** (5 providers) | ~19 KB | No mock or integration tests |
 | **AI Context** (context/) | ~26 KB | Builder untested beyond basics |
 | **AI Scheduling engine** (scheduler.ts) | 6 KB | All 7 rule checks — 0 tests |
@@ -190,9 +190,8 @@ corepack pnpm test
 | **AI Autonomy** | 5.4 KB | 0 tests |
 | **AI Pattern detection** | 3.8 KB | 0 tests |
 | **AI Self-eval / Explainability** | ~5.2 KB | 0 tests |
-| **Digest system** | ~31 KB | Low-signal, ignores timeframe, always Gemini |
-| **Programs** | — | High priority, unstarted |
-| **DayPlanner** | 130 KB | Largest file — needs splitting into grid + drag + blocks |
+| **Digest system** | ~31 KB | Per-timeframe scoping + provider-aware; false-overlap guard added — prompt quality is the remaining gap |
+| **DayPlanner** | 130 KB | Largest file — ponder splitting into grid + drag + blocks |
 
 ### 🔴 Not started / Should delete
 
@@ -207,14 +206,14 @@ corepack pnpm test
 
 ### 📋 Development checklist
 
-From `checklist.md` — 7 items remaining:
+From `checklist.md`:
 
 - [ ] **Continue programs work** (high priority — needs scoping)
-- [ ] **Timer section rework** — pop-up card above profile, relevant blocks, focus hourglass, "start section" integration
-- [ ] **Improve Focus concept** — highlight focus blocks in category creator
+- [x] **Timer section rework** — ✅ done: sidebar TimerCard above profile, relevant blocks, focus hourglass, session integration
+- [x] **Improve Focus concept** — ✅ done: per-category Focus badge + inline toggle in the category creator (writes `meta.focusCategoryIds`)
 - [ ] **Category color picker UI** — small lines on bottom visual oversight
 - [ ] **Remove system-baked instances** — full modularity, no hard-coded categories/blocks
-- [ ] **Fix schedule templates** — AI should not display false concerns, use sleep functions properly
+- [x] **Fix schedule templates** — ✅ done: AI no longer shows false sleep-debt / cross-day-overlap concerns; sleep is structural
 - [x] **Move system to clean architecture** — ✅ done
 
 ### 🔜 Recommended next steps (in order)

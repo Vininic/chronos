@@ -2,6 +2,7 @@ import type { ScheduleData, Goal, Category, WorkspaceStructure } from "@/lib/sch
 import { durationMin, computeStreak } from "@/lib/schedule/types";
 import { calcProgress } from "@/lib/schedule/workspace-engine";
 import { getLogsLastNDays } from "@/lib/schedule/dailyLog";
+import { migrateSleepSchedule } from "@/lib/schedule/sleep";
 import type {
   ScheduleContext,
   AiBlock,
@@ -117,8 +118,11 @@ export function buildContext(
   blocks.sort((a, b) => parseTime(a.start) - parseTime(b.start));
 
   /* ── Sleep ─────────────────────────────────────── */
+  // Templates (and any pre-sleepSchedule data) only set meta.sleepWindow.
+  // Migrate so the AI sees the real sleep window — otherwise avgSleepMin
+  // collapses to 0 and the model reports a phantom ~8h sleep debt.
   const sleepBlocks: AiSleepBlock[] = [];
-  const sleepSchedule = data.meta.sleepSchedule ?? [];
+  const sleepSchedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
 
   for (const entry of sleepSchedule) {
     if (!entry.start || !entry.end) continue;

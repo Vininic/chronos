@@ -15,11 +15,45 @@ export interface CompressedContext {
   autonomy: string;
 }
 
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 function compressBlock(b: AiBlock): string {
   const p = b.hasProgram ? `${b.programName ?? "?"} ${b.programProgress.done}/${b.programProgress.total}` : "";
   const s = b.complete ? "[x]" : b.inProgress ? "[>]" : "[ ]";
   const f = b.isFocus ? " «focus»" : "";
   return `${s} ${b.start}-${b.end} ${b.durationMin}min ${b.category} "${b.title}"${p ? ` {${p}}` : ""}${f}`;
+}
+
+// Group blocks under explicit weekday headers. Routine blocks recur weekly
+// (day 0-6); dated commitments carry no weekday. Without these headers the
+// model sees e.g. five identical "08:00-10:00 deep" lines (Mon-Fri) flattened
+// into one list and hallucinates them as same-time overlaps. The headers make
+// the weekday unmissable so the AI stops inventing cross-day conflicts.
+function serializeBlocksByDay(blocks: AiBlock[]): string {
+  const byDay = new Map<number, AiBlock[]>();
+  const undated: AiBlock[] = [];
+  for (const b of blocks) {
+    if (b.day === undefined) {
+      undated.push(b);
+      continue;
+    }
+    const bucket = byDay.get(b.day);
+    if (bucket) bucket.push(b);
+    else byDay.set(b.day, [b]);
+  }
+
+  const lines: string[] = [];
+  for (let d = 0; d < 7; d++) {
+    const dayBlocks = byDay.get(d);
+    if (!dayBlocks || dayBlocks.length === 0) continue;
+    lines.push(`${DAY_NAMES[d]}:`);
+    for (const b of dayBlocks) lines.push(`  ${compressBlock(b)}`);
+  }
+  if (undated.length > 0) {
+    lines.push("Dated commitments:");
+    for (const b of undated) lines.push(`  ${compressBlock(b)}`);
+  }
+  return lines.join("\n");
 }
 
 function compressGoal(g: AiGoal): string {
@@ -47,7 +81,7 @@ export function compressContext(ctx: ScheduleContext): CompressedContext {
   return {
     owner: ctx.owner,
     cycle: `${ctx.cycle.name} #${ctx.cycle.number} w${ctx.cycle.week}`,
-    blocks: ctx.blocks.map(compressBlock).join("\n"),
+    blocks: serializeBlocksByDay(ctx.blocks),
     sleep: `avg ${Math.round(ctx.sleep.metrics.averageDurationMin / 60 * 10) / 10}h debt ${Math.round(ctx.sleep.metrics.debtMin / 60 * 10) / 10}h`,
     commitments: ctx.commitments.map(compressCommitment).join("\n"),
     goals: ctx.goals.map(compressGoal).join("\n"),

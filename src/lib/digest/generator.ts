@@ -8,6 +8,7 @@ import { callGemini } from "@/lib/ai/core/gemini";
 import { resolveProvider } from "@/lib/ai/core/resolveProvider";
 
 import { optimizeSchedule } from "@/lib/ai/optimization/optimizationEngine";
+import { filterHallucinatedConflicts } from "@/lib/ai/core/validateConflictClaims";
 import { buildDigestContext, type DigestContext } from "./modules/helpers";
 import { recoveryAnalysis } from "./modules/recovery";
 import { productivityAnalysis } from "./modules/productivity";
@@ -183,15 +184,9 @@ export async function generateDigest(
 
   const ai = await aiCards(data, tf);
   if (ai && ai.length > 0) {
-    const validated = ai.filter((card) => {
-      // If the structural check found no real overlaps, suppress any AI card that
-      // claims blocks overlap — that's a hallucination caused by cross-day ambiguity.
-      if (realConflicts === 0) {
-        const text = `${card.title} ${card.body}`.toLowerCase();
-        if (/overlap|simultane|physically impossible|same time|conflict/.test(text)) return false;
-      }
-      return true;
-    });
+    // Suppress AI cards claiming time overlaps when the deterministic, day-aware
+    // checker found none — a cross-day hallucination. Shared with the pipeline.
+    const validated = filterHallucinatedConflicts(ai, realConflicts, (card) => `${card.title} ${card.body}`);
     allCards = validated.length > 0 ? validated : heuristicCards(digestCtx, data);
     generatedBy = validated.length > 0 ? "ai" : "heuristic";
   } else {

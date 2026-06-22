@@ -1,20 +1,123 @@
 ## Final Refinements
 - [ ] Continue to work on programs (High Priority)
-- [ ] Remake timer section; Make pop-up card above profile card; Display relevant blocks; Focus sections accurate hourglass UI; Integrate timers with "start section;"
-- [x] Rethink "System" section; Rethink readding settings tab instead of AI settings; Check relevancy; Check possible new settings to add (e.g. Keybinds, Shortcuts;)
-- [x] Rethink sidebar items; currently, 4 whole tabs dedicated to AI.
-- [x] Complete "Week" page redesign
-- [x] Rethink "Week" page functionality; ponder whether to integrate drag system or not;
-- [x] Move "Weekly" stats from today page into week; create new ones for today and week;
-- [x] Improve Week display/Month display
-- [ ] Improve "Focus" concept; Highlight "Focus" blocks in category creator;
-- [x] Better time search UI on create/edit blocks; Fix weird spacing on boxes when searching; Add smarter searching (ex: typing "4" will result in 4AM and 4PM as topmost options)
-- [x] Improve top-left card; Fix spacing/Out of bounds issue
-- [x] No way to rearrange created categories
-- [x] Top-Left goals meter always on 0% if no goals.
-- [ ] Slight UI oversight in category creator color pickers. Small lines on the bottom.
-- [ ] Remove any trace of system-baked instances (Categories, Goals, Extensions, Blocks, anything.) System should be fully modular.
-- [x] "New block" button tries creating a 1h block in now bar instead of 09:00 default
-- [ ] Move system to clean-architecture (Is it already?)
-- [x] Fix awful footer rendering
-- [ ] Fix schedule templates, make them display no concerns from the AI, make them utilize sleep functions properly.
+- [x] Improve "Focus" concept; Highlight "Focus" blocks in category creator;
+- [x] Fix schedule templates, make them display no concerns from the AI, make them utilize sleep functions properly.
+
+# Local-First & Cloud Architecture
+
+## Current
+- [x] Local persistence
+
+---
+
+## Planned Cloud Features
+- [ ] Authentication
+- [ ] Cross-device sync
+- [ ] Cloud backup
+- [ ] Realtime updates
+- [ ] Conflict resolution
+- [ ] Sync queue system
+- [ ] Background synchronization
+
+---
+
+## Infrastructure
+- [ ] Supabase integration
+- [ ] PostgreSQL schema
+- [ ] Local-first sync layer
+- [ ] Optional online mode
+- [ ] Service worker persistence
+
+---
+
+# Mobile & PWA
+
+## Platform Expansion
+- [ ] Installable PWA (Mobile/Desktop)
+- [ ] Offline support
+- [ ] Mobile layouts
+- [ ] Responsive planner interactions
+- [ ] Mobile timeline UX refinement
+
+---
+
+## Notifications
+- [ ] Daily agenda notifications
+- [ ] Current block notifications
+- [ ] Next block notifications
+- [ ] Context-aware reminders
+- [ ] Persistent planner overlays
+- [ ] Widget-style agenda components
+
+---
+
+## Mobile Ecosystem
+- [ ] Mobile-first notification flow
+- [ ] Home-screen widgets
+- [ ] Background updates
+- [ ] Cross-device continuity
+
+---
+
+# UI / UX / Design
+
+## Landing Page
+- [ ] Full redesign
+- [ ] Cinematic hero section
+- [ ] Interactive planner showcase
+- [ ] Animated timeline previews
+- [ ] Motion-driven sections
+- [ ] Product storytelling
+
+---
+
+## Visual Identity
+- [ ] Premium typography
+- [ ] Spatial consistency
+- [ ] Motion system
+- [ ] Refined hierarchy
+- [ ] Improved dark theme
+- [ ] Advanced transitions
+- [ ] Premium interaction polish
+
+---
+
+## Design Direction
+Inspired by:
+- [ ] Linear
+- [ ] Arc
+- [ ] Raycast
+- [ ] Vercel
+- [ ] Read.cv
+
+---
+
+# Technical Refactors
+
+## Architecture
+- [ ] Planner modularization
+- [ ] Timeline engine cleanup
+- [ ] Better domain separation
+- [ ] Cleaner interaction systems
+- [ ] Unified timeline normalization
+
+---
+
+## State & Performance
+- [ ] Reduce planner complexity
+- [ ] Improve drag stability
+- [ ] Optimize rerenders
+- [ ] Better persistence handling
+- [ ] Optimize interaction performance
+
+---
+
+# Long-Term Vision
+
+- [ ] Fully adaptive planner
+- [ ] Intelligent temporal assistant
+- [ ] AI-generated routines
+- [ ] Autonomous schedule balancing
+- [ ] Cross-platform continuity
+- [ ] Production-ready infrastructure
+- [ ] Fully polished premium experience

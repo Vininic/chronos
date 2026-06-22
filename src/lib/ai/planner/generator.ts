@@ -22,7 +22,6 @@ function baseCategories(): Category[] {
     { id: "ritual", label: "Ritual", tone: "primary-glow", description: "Recurring personal practice." },
     { id: "recovery", label: "Recovery", tone: "emerald", description: "Active rest, walks, breath." },
     { id: "shallow", label: "Shallow", tone: "neutral", description: "Email, admin, low-cost tasks." },
-    { id: "sleep", label: "Sleep", tone: "indigo", description: "Protected rest window." },
   ];
 }
 

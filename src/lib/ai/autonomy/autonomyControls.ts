@@ -17,7 +17,7 @@ export const AUTONOMY_PRESETS: Record<AutonomyLevel, AutonomyConfig> = {
     autoExecuteWriteWithoutConfirmation: false,
     autoExecuteDestructiveWithConfirmation: false,
     maxActionsPerSuggestion: 1,
-    requireApprovalForCategories: ["sleep", "recovery", "fixed_commitment"],
+    requireApprovalForCategories: ["recovery", "fixed_commitment"],
     description: "Only suggest. Never mutate without explicit user confirmation.",
   },
   balanced: {
@@ -26,7 +26,7 @@ export const AUTONOMY_PRESETS: Record<AutonomyLevel, AutonomyConfig> = {
     autoExecuteWriteWithoutConfirmation: true,
     autoExecuteDestructiveWithConfirmation: false,
     maxActionsPerSuggestion: 3,
-    requireApprovalForCategories: ["sleep", "fixed_commitment"],
+    requireApprovalForCategories: ["fixed_commitment"],
     description: "Auto-execute low-risk mutations. Require confirmation for destructive changes.",
   },
   aggressive: {

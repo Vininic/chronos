@@ -1,4 +1,4 @@
-import type { ReportCard, DigestColor } from "@/lib/digest/types";
+import type { ReportCard } from "@/lib/digest/types";
 import { AlertTriangle, Lightbulb, TrendingUp, Target, Info } from "lucide-react";
 
 const SEVERITY_ICONS = {
@@ -9,49 +9,39 @@ const SEVERITY_ICONS = {
   recommendation: Target,
 };
 
+// Severity carries the only color that means something — accent the card by it,
+// in the app's own palette (bronze for actionable, amber for caution, emerald
+// for opportunity), so digests read as part of Chronos rather than a rainbow.
 const SEVERITY_COLORS: Record<string, string> = {
   insight: "text-muted-foreground",
-  warning: "text-amber-500",
-  opportunity: "text-emerald-500",
-  trend: "text-blue-500",
+  warning: "text-amber-600 dark:text-amber-400",
+  opportunity: "text-emerald-600 dark:text-emerald-500",
+  trend: "text-secondary",
   recommendation: "text-secondary",
 };
 
-const CARD_BORDER: Record<DigestColor, string> = {
-  blue: "border-blue-400/30",
-  purple: "border-purple-400/30",
-  amber: "border-amber-400/30",
-  teal: "border-teal-400/30",
+const ACCENT_BAR: Record<string, string> = {
+  insight: "bg-border",
+  warning: "bg-amber-500/50",
+  opportunity: "bg-emerald-500/50",
+  trend: "bg-secondary/50",
+  recommendation: "bg-secondary/50",
 };
 
-const CARD_HEADER: Record<DigestColor, string> = {
-  blue: "text-blue-400",
-  purple: "text-purple-400",
-  amber: "text-amber-400",
-  teal: "text-teal-400",
-};
-
-const ACCENT_BAR: Record<DigestColor, string> = {
-  blue: "bg-blue-500/40",
-  purple: "bg-purple-500/40",
-  amber: "bg-amber-500/40",
-  teal: "bg-teal-500/40",
-};
-
-export function ReportCardView({ card, color }: { card: ReportCard; color: DigestColor }) {
+export function ReportCardView({ card }: { card: ReportCard }) {
   const Icon = SEVERITY_ICONS[card.severity];
   return (
-    <div className={`border rounded-lg overflow-hidden ${CARD_BORDER[color]}`}>
-      <div className={`h-0.5 ${ACCENT_BAR[color]}`} />
+    <div className="chronos-card overflow-hidden rounded-lg border border-border/60">
+      <div className={`h-0.5 ${ACCENT_BAR[card.severity] ?? "bg-border"}`} />
       <div className="p-3">
         <div className="flex items-start gap-2">
           <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${SEVERITY_COLORS[card.severity]}`} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className={`text-[10px] uppercase tracking-wider ${CARD_HEADER[color]}`}>
+              <span className="text-[10px] uppercase tracking-[0.18em] text-secondary">
                 {card.kind.replace("-", " ")}
               </span>
-              <span className={`text-[9px] uppercase ${SEVERITY_COLORS[card.severity]}`}>
+              <span className={`text-[9px] uppercase tracking-wider ${SEVERITY_COLORS[card.severity]}`}>
                 {card.severity}
               </span>
             </div>

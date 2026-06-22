@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo, memo } from "react";
 import type { ChatMessage } from "@/lib/ai/chat/store";
 import type { ScheduleData } from "@/lib/schedule/types";
 import {
-  Brain, CheckCircle2, AlertCircle, Undo2, Loader2, Clock,
+  CheckCircle2, AlertCircle, Undo2, Clock, Sparkles,
 } from "lucide-react";
 import { BlockPill, BlockBadge, BlockSection, extractBlockData, ACTIONS_HEADER_RE } from "./BlockPill";
 
@@ -163,6 +163,24 @@ export function parseActionsSection(content: string): ParsedAction[] {
 
 // ─── Inline renderer ────────────────────────────────────────────────────────
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Escapes first, then applies a small, safe subset of inline markdown: links
+// (http/https only), bold, and inline code. Order matters — links are matched
+// on the escaped string before bold/code so their text can still be emphasized.
+function renderRichHtml(raw: string): string {
+  let html = escapeHtml(raw);
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label: string, url: string) => {
+    const safeUrl = url.replace(/"/g, "%22");
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-secondary underline underline-offset-2 decoration-secondary/40 hover:decoration-secondary">${label}</a>`;
+  });
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
+  html = html.replace(/`([^`]+)`/g, '<code class="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-primary/80">$1</code>');
+  return html;
+}
+
 function renderInline(
   text: string,
   blockByTitle: Map<string, { kind: string }>,
@@ -172,8 +190,7 @@ function renderInline(
   return parts.map((part, i) => {
     if (i % 2 === 0) {
       if (!part) return null;
-      const html = part.replace(/\*\*(.*?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>');
-      return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
+      return <span key={i} dangerouslySetInnerHTML={{ __html: renderRichHtml(part) }} />;
     }
     const block = blockByTitle.get(part.toLowerCase());
     if (!block) return <span key={i}>"{part}"</span>;
@@ -192,31 +209,47 @@ function ChatMarkdown({ text, data }: { text: string; data?: ScheduleData }) {
   const lines = text.split("\n");
   const elements: JSX.Element[] = [];
 
+  let fence: string[] | null = null;
   lines.forEach((line, i) => {
+    // Fenced code blocks (```) — collect lines until the closing fence.
+    if (line.trim().startsWith("```")) {
+      if (fence) {
+        elements.push(
+          <pre key={i} className="my-1.5 overflow-x-auto rounded-md border border-border/50 bg-muted/40 px-3 py-2 font-mono text-[12px] leading-relaxed text-primary/80">
+            {fence.join("\n")}
+          </pre>
+        );
+        fence = null;
+      } else {
+        fence = [];
+      }
+      return;
+    }
+    if (fence) { fence.push(line); return; }
+
     const trimmed = line.trim();
     if (!trimmed) { elements.push(<div key={i} className="h-1.5" />); return; }
 
-    // Horizontal rule
+    // Horizontal rule — a bronze hairline, consistent with the app's dividers.
     if (/^---+$/.test(trimmed)) {
-      elements.push(<hr key={i} className="border-border/50 my-1" />);
+      elements.push(<div key={i} className="bronze-rule my-2 opacity-60" />);
       return;
     }
 
-    // Headings (## and ###)
+    // Headings — ## is the dominant heading (editorial serif), ### a quiet
+    // bronze eyebrow beneath it. (Previously inverted: ### read larger than ##.)
     if (trimmed.startsWith("### ")) {
-      const text = trimmed.slice(4);
       elements.push(
-        <p key={i} className="text-xs font-semibold text-primary/80 uppercase tracking-wider mt-2 mb-0.5">
-          {renderInline(text, blockByTitle, data?.categories)}
+        <p key={i} className="text-[10px] font-medium uppercase tracking-[0.18em] text-secondary mt-2 mb-0.5">
+          {renderInline(trimmed.slice(4), blockByTitle, data?.categories)}
         </p>
       );
       return;
     }
     if (trimmed.startsWith("## ")) {
-      const text = trimmed.slice(3);
       elements.push(
-        <p key={i} className="text-sm font-semibold text-primary mt-2 mb-0.5">
-          {renderInline(text, blockByTitle, data?.categories)}
+        <p key={i} className="font-display text-[15px] leading-snug text-primary mt-2 mb-1">
+          {renderInline(trimmed.slice(3), blockByTitle, data?.categories)}
         </p>
       );
       return;
@@ -224,7 +257,7 @@ function ChatMarkdown({ text, data }: { text: string; data?: ScheduleData }) {
 
     if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
       elements.push(
-        <li key={i} className="text-sm text-primary/90 ml-4 list-disc">
+        <li key={i} className="text-sm text-primary/90 ml-4 list-disc marker:text-secondary/60">
           {renderInline(trimmed.slice(2), blockByTitle, data?.categories)}
         </li>
       );
@@ -232,7 +265,7 @@ function ChatMarkdown({ text, data }: { text: string; data?: ScheduleData }) {
     }
     if (/^\d+\.\s/.test(trimmed)) {
       elements.push(
-        <li key={i} className="text-sm text-primary/90 ml-4 list-decimal">
+        <li key={i} className="text-sm text-primary/90 ml-4 list-decimal marker:text-secondary/60">
           {renderInline(trimmed.replace(/^\d+\.\s/, ""), blockByTitle, data?.categories)}
         </li>
       );
@@ -245,43 +278,81 @@ function ChatMarkdown({ text, data }: { text: string; data?: ScheduleData }) {
     );
   });
 
+  // Unclosed fence — render whatever we collected so streaming code still shows.
+  if (fence && fence.length > 0) {
+    elements.push(
+      <pre key="fence-open" className="my-1.5 overflow-x-auto rounded-md border border-border/50 bg-muted/40 px-3 py-2 font-mono text-[12px] leading-relaxed text-primary/80">
+        {fence.join("\n")}
+      </pre>
+    );
+  }
+
   return <div className="space-y-0.5">{elements}</div>;
 }
 
-// ─── Tool call badge ─────────────────────────────────────────────────────────
+// ─── Unified action ledger ────────────────────────────────────────────────
+// One component family for every tool-call state: proposed (described, not yet
+// run), applied (succeeded), error (failed), undone (reverted). Same frame and
+// layout throughout — the accent is the only thing that changes — so a planned
+// change and an executed one read as two states of one thing, not two designs.
 
-function ToolCallBadge({ call }: { call: NonNullable<ChatMessage["toolCalls"]>[number] }) {
+type LedgerState = "proposed" | "applied" | "error" | "undone";
+
+const LEDGER_META: Record<LedgerState, { label: string; Icon: typeof Clock; border: string; accent: string }> = {
+  proposed: { label: "Proposed",      Icon: Clock,        border: "border-secondary/30",   accent: "text-secondary" },
+  applied:  { label: "Applied",       Icon: CheckCircle2, border: "border-emerald-500/30", accent: "text-emerald-600 dark:text-emerald-400" },
+  error:    { label: "Couldn't apply", Icon: AlertCircle, border: "border-destructive/40", accent: "text-destructive" },
+  undone:   { label: "Undone",        Icon: Undo2,        border: "border-amber-500/30",   accent: "text-amber-600 dark:text-amber-400" },
+};
+
+function ActionLedger({ state, footer, children }: { state: LedgerState; footer?: React.ReactNode; children: React.ReactNode }) {
+  const m = LEDGER_META[state];
   return (
-    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] ${
-      call.undone ? "bg-amber-500/10 text-amber-600"
-        : call.error ? "bg-red-500/10 text-red-600"
-        : "bg-emerald-500/10 text-emerald-600"
-    }`}>
-      {call.undone ? <Undo2 className="h-3 w-3" />
-        : call.error ? <AlertCircle className="h-3 w-3" />
-        : <CheckCircle2 className="h-3 w-3" />}
-      <span className="font-mono">{call.tool}</span>
-      {call.undone && <span className="text-[10px] opacity-70">undone</span>}
+    <div className={`mt-2 overflow-hidden rounded-lg border bg-card/40 ${m.border}`}>
+      <div className="flex items-center gap-1.5 border-b border-border/30 px-3 py-1.5">
+        <m.Icon className={`h-3 w-3 shrink-0 ${m.accent}`} />
+        <span className={`text-[10px] font-medium uppercase tracking-[0.18em] ${m.accent}`}>{m.label}</span>
+        {footer && <div className="ml-auto flex items-center gap-1.5">{footer}</div>}
+      </div>
+      <div className="px-3 py-2.5">{children}</div>
     </div>
   );
 }
 
-// ─── Confirmed change pills ──────────────────────────────────────────────────
+// Compact tool-name chips + optional undo, used in a ledger header or inline.
+function ToolChips({ calls, onUndo }: { calls: NonNullable<ChatMessage["toolCalls"]>; onUndo?: () => void }) {
+  return (
+    <>
+      {calls.map((tc, i) => (
+        <span key={i} className="font-mono text-[10px] text-muted-foreground/70">{tc.tool}</span>
+      ))}
+      {onUndo && (
+        <button
+          onClick={onUndo}
+          className="ml-1 inline-flex items-center gap-1 rounded-full border border-border/50 px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-secondary/40 hover:text-primary"
+        >
+          <Undo2 className="h-3 w-3" /> Undo
+        </button>
+      )}
+    </>
+  );
+}
 
-function ScheduleVisuals({ blocks }: { blocks: ReturnType<typeof extractBlockData> }) {
+// Block pills grouped by change kind — shared by applied and proposed ledgers.
+function BlockGroups({ blocks }: { blocks: ReturnType<typeof extractBlockData> }) {
   if (blocks.length === 0) return null;
   const added    = blocks.filter(b => b.action === "added");
   const removed  = blocks.filter(b => b.action === "removed");
   const modified = blocks.filter(b => b.action === "modified");
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-2.5">
+      {removed.length > 0 && (
+        <BlockSection title="Removed" icon={<AlertCircle className="h-3 w-3 text-destructive" />}
+          items={removed.map((b, i) => <BlockPill key={i} {...b} />)} />
+      )}
       {added.length > 0 && (
         <BlockSection title="Added" icon={<CheckCircle2 className="h-3 w-3 text-emerald-500" />}
           items={added.map((b, i) => <BlockPill key={i} {...b} />)} />
-      )}
-      {removed.length > 0 && (
-        <BlockSection title="Removed" icon={<AlertCircle className="h-3 w-3 text-red-400" />}
-          items={removed.map((b, i) => <BlockPill key={i} {...b} />)} />
       )}
       {modified.length > 0 && (
         <BlockSection title="Modified" icon={<Undo2 className="h-3 w-3 text-amber-500" />}
@@ -291,11 +362,12 @@ function ScheduleVisuals({ blocks }: { blocks: ReturnType<typeof extractBlockDat
   );
 }
 
-// ─── Proposed actions card ───────────────────────────────────────────────────
-// Shown when the AI describes what it plans to do but hasn't executed yet.
-// Renders purely from text — no schedule data dependency for visual output.
+// ─── Proposed actions ─────────────────────────────────────────────────────
+// Body for a "proposed" ActionLedger: what the AI plans to do but hasn't run.
+// Renders purely from text — no schedule data dependency for visual output. The
+// ledger frame supplies the header, so this is just the grouped pill content.
 
-function ActionsCard({
+function ProposedGroups({
   actions,
   rawText,
   categories,
@@ -304,48 +376,32 @@ function ActionsCard({
   rawText?: string;
   categories?: ScheduleData["categories"];
 }) {
-  if (actions.length === 0 && !rawText) return null;
+  if (actions.length === 0) {
+    if (!rawText) return null;
+    return <div className="text-[11px] leading-relaxed whitespace-pre-wrap text-primary/60">{rawText}</div>;
+  }
   const removed  = actions.filter(a => a.kind === "delete");
   const added    = actions.filter(a => a.kind === "create");
   const modified = actions.filter(a => a.kind === "modify");
   return (
-    <div className="mt-2 rounded-xl border border-dashed border-secondary/30 bg-secondary/[0.03] overflow-hidden">
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-dashed border-secondary/20 bg-secondary/[0.04]">
-        <Clock className="h-3 w-3 text-secondary/70" />
-        <span className="text-[10px] uppercase tracking-wider text-secondary/70 font-medium">Proposed</span>
-      </div>
-      {actions.length === 0 && rawText ? (
-        <div className="px-3 py-2.5 text-[11px] text-primary/60 whitespace-pre-wrap leading-relaxed">{rawText}</div>
-      ) : (
-        <div className="px-3 py-2.5 space-y-2.5">
-          {removed.length > 0 && (
-            <BlockSection
-              title="Remove"
-              icon={<AlertCircle className="h-3 w-3 text-red-400" />}
-              items={removed.map((a, i) => (
-                <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="removed" />
-              ))}
-            />
-          )}
-          {added.length > 0 && (
-            <BlockSection
-              title="Add"
-              icon={<CheckCircle2 className="h-3 w-3 text-emerald-500" />}
-              items={added.map((a, i) => (
-                <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="added" />
-              ))}
-            />
-          )}
-          {modified.length > 0 && (
-            <BlockSection
-              title="Modify"
-              icon={<Undo2 className="h-3 w-3 text-amber-500" />}
-              items={modified.map((a, i) => (
-                <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="modified" />
-              ))}
-            />
-          )}
-        </div>
+    <div className="space-y-2.5">
+      {removed.length > 0 && (
+        <BlockSection title="Remove" icon={<AlertCircle className="h-3 w-3 text-destructive" />}
+          items={removed.map((a, i) => (
+            <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="removed" />
+          ))} />
+      )}
+      {added.length > 0 && (
+        <BlockSection title="Add" icon={<CheckCircle2 className="h-3 w-3 text-emerald-500" />}
+          items={added.map((a, i) => (
+            <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="added" />
+          ))} />
+      )}
+      {modified.length > 0 && (
+        <BlockSection title="Modify" icon={<Undo2 className="h-3 w-3 text-amber-500" />}
+          items={modified.map((a, i) => (
+            <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="modified" />
+          ))} />
       )}
     </div>
   );
@@ -366,7 +422,8 @@ function isActionLine(raw: string): boolean {
 
 // ─── Message content ─────────────────────────────────────────────────────────
 
-function ChatMessageContent({ msg, data }: { msg: ChatMessage; data?: ScheduleData }) {
+function ChatMessageContent({ msg, data, onUndo }: { msg: ChatMessage; data?: ScheduleData; onUndo?: () => void }) {
+  const hasToolCalls = (msg.toolCalls?.length ?? 0) > 0;
   const hasWriteCalls = msg.toolCalls?.some(tc => !tc.error && WRITE_TOOLS.has(tc.tool)) ?? false;
   // Only show the actions card when the AI hasn't already executed the changes
   const hasActionsSection = !hasWriteCalls && ACTIONS_HEADER_RE.test(msg.content);
@@ -423,17 +480,80 @@ function ChatMessageContent({ msg, data }: { msg: ChatMessage; data?: ScheduleDa
     }));
   }, [proposedActions, data]);
 
+  // Executed-write state drives the ledger accent: undone wins, then error, else applied.
+  const execState: LedgerState = msg.toolCalls?.some(tc => tc.undone)
+    ? "undone"
+    : msg.toolCalls?.some(tc => tc.error)
+      ? "error"
+      : "applied";
+
   return (
     <>
       {displayText && <ChatMarkdown text={displayText} data={data} />}
-      {confirmedBlocks.length > 0 && <ScheduleVisuals blocks={confirmedBlocks} />}
-      {hasActionsSection && <ActionsCard actions={enrichedActions} rawText={actionsRaw} categories={data?.categories} />}
+
+      {hasWriteCalls ? (
+        <ActionLedger
+          state={execState}
+          footer={<ToolChips calls={msg.toolCalls!} onUndo={execState === "undone" ? undefined : onUndo} />}
+        >
+          {confirmedBlocks.length > 0
+            ? <BlockGroups blocks={confirmedBlocks} />
+            : <p className="text-[11px] text-primary/60">Schedule updated.</p>}
+        </ActionLedger>
+      ) : hasToolCalls ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <ToolChips calls={msg.toolCalls!} onUndo={onUndo} />
+        </div>
+      ) : null}
+
+      {hasActionsSection && (
+        <ActionLedger state="proposed">
+          <ProposedGroups actions={enrichedActions} rawText={actionsRaw} categories={data?.categories} />
+        </ActionLedger>
+      )}
+
       {closingText && (
         <div className="mt-2 opacity-75">
           <ChatMarkdown text={closingText} data={data} />
         </div>
       )}
     </>
+  );
+}
+
+// ─── Aetheris frame & thinking indicator ─────────────────────────────────────
+// Assistant turns aren't bubbles — they're entries in a ledger, marked by a
+// bronze spine and a quiet byline. This is the one shape language the whole
+// thread shares (proposals, tool runs, prose all sit inside it).
+
+function AetherisFrame({ time, children }: { time?: string; children: React.ReactNode }) {
+  return (
+    <div className="relative pl-4">
+      <span
+        aria-hidden
+        className="absolute left-0 top-1 bottom-1 w-px bg-gradient-to-b from-secondary/70 via-secondary/30 to-transparent"
+      />
+      <div className="mb-1 flex items-center gap-1.5">
+        <Sparkles className="h-3 w-3 text-secondary" />
+        <span className="font-display text-[13px] leading-none text-primary">Aetheris</span>
+        {time && <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/70">{time}</span>}
+      </div>
+      <div className="break-words">{children}</div>
+    </div>
+  );
+}
+
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 py-1" aria-label="Aetheris is thinking">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="h-1.5 w-1.5 rounded-full bg-secondary/70 animate-pulse motion-reduce:animate-none"
+          style={{ animationDelay: `${i * 150}ms` }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -448,48 +568,22 @@ interface MessageRowProps {
 // Memoized so historical messages don't re-render during streaming text updates.
 const MessageRow = memo(function MessageRow({ msg, data, onUndo }: MessageRowProps) {
   const isUser = msg.role === "user";
+
+  if (isUser) {
+    return (
+      <div className="flex flex-col items-end">
+        <div className="max-w-[82%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-soft break-words">
+          {msg.content}
+        </div>
+        <span className="mt-1 text-[10px] tabular-nums text-muted-foreground/70">{formatTime(msg.timestamp)}</span>
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      <div className={`h-8 w-8 rounded-full grid place-items-center shrink-0 ${
-        isUser ? "bg-primary text-primary-foreground" : "bg-secondary/20 text-secondary"
-      }`}>
-        {isUser ? <span className="text-xs font-semibold">U</span> : <Brain className="h-4 w-4" />}
-      </div>
-
-      <div className={`max-w-[80%] ${isUser ? "items-end" : "items-start"}`}>
-        <div className={`rounded-2xl px-4 py-2.5 break-words ${
-          isUser
-            ? "bg-primary text-primary-foreground rounded-tr-md"
-            : msg.toolCalls?.length
-              ? "bg-secondary/10 text-primary rounded-tl-md border-l-2 border-secondary/30"
-              : "bg-secondary/10 text-primary rounded-tl-md"
-        }`}>
-          {isUser
-            ? <p className="text-sm">{msg.content}</p>
-            : <ChatMessageContent msg={msg} data={data} />
-          }
-        </div>
-
-        {msg.toolCalls && msg.toolCalls.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {msg.toolCalls.map((tc, idx) => <ToolCallBadge key={idx} call={tc} />)}
-            {onUndo && (
-              <button
-                onClick={() => onUndo(msg.id)}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary px-2 py-1 rounded-md border border-border/50 hover:border-secondary/30 transition-colors"
-              >
-                <Undo2 className="h-3 w-3" />
-                Undo
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className={`text-[10px] text-muted-foreground mt-1 ${isUser ? "text-right" : ""}`}>
-          {formatTime(msg.timestamp)}
-        </div>
-      </div>
-    </div>
+    <AetherisFrame time={formatTime(msg.timestamp)}>
+      <ChatMessageContent msg={msg} data={data} onUndo={onUndo ? () => onUndo(msg.id) : undefined} />
+    </AetherisFrame>
   );
 });
 
@@ -517,32 +611,22 @@ export default function ChatThread({
   if (messages.length === 0 && !loading) return null;
 
   return (
-    <div className="px-4 py-4 space-y-3">
+    <div className="px-4 py-4 space-y-5">
       {messages.map((msg) => (
         <MessageRow key={msg.id} msg={msg} data={data} onUndo={onUndo} />
       ))}
 
       {loading && streamingText && (
-        <div className="flex gap-3">
-          <div className="h-8 w-8 rounded-full bg-secondary/20 grid place-items-center shrink-0">
-            <Brain className="h-4 w-4 text-secondary" />
-          </div>
-          <div className="bg-secondary/10 rounded-2xl rounded-tl-md px-4 py-2.5 max-w-[80%] break-words">
-            <ChatMarkdown text={streamingText} />
-            <span className="inline-block w-0.5 h-3.5 bg-secondary/60 ml-0.5 align-middle animate-pulse" />
-          </div>
-        </div>
+        <AetherisFrame>
+          <ChatMarkdown text={streamingText} data={data} />
+          <span className="inline-block h-3.5 w-0.5 ml-0.5 align-middle bg-secondary/70 animate-pulse motion-reduce:animate-none" />
+        </AetherisFrame>
       )}
 
       {loading && !streamingText && (
-        <div className="flex gap-3">
-          <div className="h-8 w-8 rounded-full bg-secondary/20 grid place-items-center shrink-0">
-            <Brain className="h-4 w-4 text-secondary" />
-          </div>
-          <div className="bg-secondary/10 rounded-2xl rounded-tl-md px-4 py-3">
-            <Loader2 className="h-4 w-4 animate-spin text-secondary" />
-          </div>
-        </div>
+        <AetherisFrame>
+          <ThinkingDots />
+        </AetherisFrame>
       )}
 
       <div ref={bottomRef} />

@@ -20,7 +20,7 @@ export interface AgendaItem {
   sleepBoundary?: boolean;
 }
 
-export function buildAgendaForDate(data: ScheduleData, date: Date): AgendaItem[] {
+export function buildAgendaForDate(data: ScheduleData, date: Date, sleepLabel = "Sleep"): AgendaItem[] {
   const day = date.getDay();
   const iso = date.toISOString().slice(0, 10);
   const prevDay = (day + 6) % 7;
@@ -83,7 +83,7 @@ export function buildAgendaForDate(data: ScheduleData, date: Date): AgendaItem[]
       }));
     });
 
-  const sleepTitle = data.categories.find((c) => c.id === "sleep")?.label ?? "Sleep";
+  const sleepTitle = sleepLabel;
   const sleepSchedule = data.meta.sleepSchedule ?? migrateSleepSchedule(data);
   const sleepEntry = getSleepWindowForDay(sleepSchedule, day);
   const sleepSegments = data.meta.enforceSleepBoundary === false || !sleepEntry || sleepEntry.start === sleepEntry.end
