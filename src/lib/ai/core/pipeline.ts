@@ -43,11 +43,11 @@ export interface AetherisPipelineResult {
 
 const WRITE_ACTION_PREFIXES = ["add_", "move_", "create_", "update_", "delete_", "remove_", "rebalance_", "schedule_", "auto_fit_"];
 
-function isWriteAction(action: string): boolean {
+export function isWriteAction(action: string): boolean {
   return WRITE_ACTION_PREFIXES.some((p) => action.startsWith(p));
 }
 
-function filterByAutonomy(
+export function filterByAutonomy(
   actions: ActionProposal[],
   suggestions: Suggestion[],
   autonomy: AutonomyLevel,

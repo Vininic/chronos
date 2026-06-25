@@ -32,7 +32,7 @@ function fallbackSummary(ctx: ScheduleContext): ExecutiveSummary {
   };
 }
 
-function fallbackAnalysis(ctx: ScheduleContext, autonomy: AutonomyLevel): GeminiAnalysisResult {
+export function fallbackAnalysis(ctx: ScheduleContext, autonomy: AutonomyLevel): GeminiAnalysisResult {
   const genAt = new Date().toISOString();
   const response: AetherisResponse = {
     version: 1,
@@ -140,12 +140,13 @@ function summarizeLearningProfile(): string {
 }
 
 function buildAnalysisPrompt(ctx: ScheduleContext, autonomy: AutonomyLevel, promptSuffix?: string): string {
-  const systemPrompt = buildSystemPrompt(autonomy);
+  // The system prompt is delivered once via the provider's `systemPrompt` option in
+  // callGemini — do NOT duplicate it into the prompt body (that doubled token cost).
   const compressed = compressContext(ctx);
   const serialized = JSON.stringify(compressed, null, 2);
   const learningSummary = summarizeLearningProfile();
 
-  const sections = [systemPrompt, "", "## Schedule Data", "", serialized];
+  const sections = ["## Schedule Data", "", serialized];
   if (learningSummary) {
     sections.push("", "## Learning Profile (historical patterns)", "", learningSummary);
   }
@@ -252,7 +253,7 @@ export async function callGemini(
   }
 }
 
-function processResponse(rawText: string, ctx: ScheduleContext, autonomy: AutonomyLevel): GeminiAnalysisResult {
+export function processResponse(rawText: string, ctx: ScheduleContext, autonomy: AutonomyLevel): GeminiAnalysisResult {
   const parsed = parseJSONResponse(rawText);
   const validation = validateResponseStructure(parsed);
 

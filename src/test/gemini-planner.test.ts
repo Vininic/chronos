@@ -5,7 +5,7 @@ import type { PlannerPreferences } from "@/lib/ai/planner/types";
 // generateGeminiProposals resolves its provider through this module — mock it so
 // we can drive the no-provider, bad-output, thrown-error, and happy paths
 // deterministically without any network or settings dependency.
-const resolveProvider = vi.fn<[], LLMProvider | null>();
+const resolveProvider = vi.fn<() => LLMProvider | null>();
 vi.mock("@/lib/ai/core/resolveProvider", () => ({
   resolveProvider: () => resolveProvider(),
 }));

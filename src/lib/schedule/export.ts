@@ -15,7 +15,7 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function exportToXLSX(data: ScheduleData, filename = "chronos-schedule.xlsx", locale: Locale = "en") {
+export function buildScheduleWorkbook(data: ScheduleData, locale: Locale = "en"): XLSX.WorkBook {
   const dict = DICTIONARIES[locale];
   const headers = dict.chronos.store.export.headers;
   const sheets = dict.chronos.store.export.sheets;
@@ -85,7 +85,11 @@ export function exportToXLSX(data: ScheduleData, filename = "chronos-schedule.xl
   wsMeta["!cols"] = [{ wch: 22 }, { wch: 40 }];
   XLSX.utils.book_append_sheet(wb, wsMeta, sheets.metadata);
 
-  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  return wb;
+}
+
+export function exportToXLSX(data: ScheduleData, filename = "chronos-schedule.xlsx", locale: Locale = "en") {
+  const out = XLSX.write(buildScheduleWorkbook(data, locale), { bookType: "xlsx", type: "array" });
   download(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
 }
 
@@ -108,7 +112,7 @@ function localDateTime(date: Date, time: string): Date {
 }
 const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 
-export function exportToICS(data: ScheduleData, filename = "chronos-schedule.ics") {
+export function buildICS(data: ScheduleData): string {
   const now = new Date();
   const stamp = fmtICSDate(now);
   const lines: string[] = [
@@ -154,14 +158,21 @@ export function exportToICS(data: ScheduleData, filename = "chronos-schedule.ics
     );
   }
   lines.push("END:VCALENDAR");
-  const blob = new Blob([lines.filter(Boolean).join("\r\n")], { type: "text/calendar;charset=utf-8" });
-  download(blob, filename);
+  return lines.filter(Boolean).join("\r\n");
+}
+
+export function exportToICS(data: ScheduleData, filename = "chronos-schedule.ics") {
+  download(new Blob([buildICS(data)], { type: "text/calendar;charset=utf-8" }), filename);
 }
 
 function escapeICS(s: string) {
   return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
+export function serializeScheduleJSON(data: ScheduleData): string {
+  return JSON.stringify(data, null, 2);
+}
+
 export function exportToJSON(data: ScheduleData, filename = "chronos-schedule.json") {
-  download(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), filename);
+  download(new Blob([serializeScheduleJSON(data)], { type: "application/json" }), filename);
 }

@@ -128,10 +128,10 @@ export function buildChatPrompt(
   const compressed = compressContext(ctx);
   const serialized = JSON.stringify(compressed, null, 2);
 
-  const toolsDesc = buildToolSchema();
-  const systemPrompt = PromptBuilder.chatSystemPrompt(version).replace("{tools}", toolsDesc);
-
-  const sections = [systemPrompt, "", "## Current Schedule Data", "", serialized];
+  // The system prompt (tool schema + autonomy) is delivered once via the provider's
+  // `systemPrompt` option in processChatMessage / streamChatMessage — do NOT duplicate
+  // it into the prompt body (that doubled every request's token cost).
+  const sections = ["## Current Schedule Data", "", serialized];
 
   const profile = loadProfile();
   const prefsText = formatPreferencesForPrompt(profile.userPreferences);

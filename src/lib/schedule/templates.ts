@@ -1,4 +1,4 @@
-import type { ScheduleData, RoutineBlock } from "./types";
+import type { ScheduleData, RoutineBlock, Commitment, Goal } from "./types";
 
 export function createEmptySchedule(owner?: string): ScheduleData {
   return {
@@ -1023,6 +1023,236 @@ const shiftWorkerTemplate: ScheduleTemplate = {
   }),
 };
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Creative templates — these showcase the FULL data model, not just routine
+   blocks: real-world bookings as dated commitments, weekly/monthly targets as
+   goals, and floating chores as loose (undated) commitments linked to a goal.
+   Authoring rules that keep `optimizeSchedule` conflict-free for every template:
+     • routine lives on weekdays 1–6 (never day 0) in tight windows,
+     • dated commitments use globally non-overlapping time slots,
+     • loose commitments omit `date` (skipped from the timeline entirely).
+   ────────────────────────────────────────────────────────────────────────── */
+
+function dayFromNow(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** A dated commitment — renders on the timeline on its calendar day. */
+function commit(date: string, start: string, end: string, kind: string, title: string): Commitment {
+  return { id: uid("c"), date, start, end, kind, title };
+}
+
+/** A loose (undated) commitment — a floating obligation, tracked via a goal. */
+function looseCommit(id: string, start: string, end: string, kind: string, title: string): Commitment {
+  return { id, start, end, kind, title };
+}
+
+function tGoal(g: Partial<Goal> & Pick<Goal, "kind" | "tracking" | "period" | "title" | "target">): Goal {
+  return {
+    id: uid("g"),
+    weight: 1,
+    startDate: dayFromNow(0),
+    createdAt: new Date().toISOString(),
+    blocks: [],
+    subTasks: [],
+    looseCommitmentIds: [],
+    ...g,
+  };
+}
+
+const barbershopTemplate: ScheduleTemplate = {
+  id: "barbershop",
+  name: "The Chair · Barbershop",
+  description: "A barber's week: standing shop hours as routine, every client booked as a dated commitment, plus floating chores as loose commitments behind an upkeep goal.",
+  workload: "intense",
+  focusRatio: 0.55,
+  recoveryRatio: 0.12,
+  generate: () => ({
+    meta: {
+      version: 5,
+      owner: "You",
+      cycle: { name: "general", number: 1, week: 1, progress: 0 },
+      workdayStart: "09:00",
+      workdayEnd: "19:00",
+      sleepWindow: { start: "23:00", end: "07:00" },
+      enforceSleepBoundary: true,
+      focusCategoryIds: ["client"],
+    },
+    categories: [
+      { id: "shop", label: "Shop", tone: "slate", description: "Open, setup, close, clean.", role: "neutral" },
+      { id: "client", label: "Client", tone: "bronze", description: "Time in the chair with a client.", role: "focus" },
+      { id: "break", label: "Break", tone: "emerald", description: "Lunch and breathers between clients.", role: "recovery" },
+      { id: "admin", label: "Admin", tone: "neutral", description: "Bookings, supplies, social media.", role: "neutral" },
+    ],
+    routine: [1, 2, 3, 4, 5, 6].flatMap((d) => [
+      rBlock(d, "09:00", "09:30", "shop", "Open & setup"),
+      rBlock(d, "13:00", "14:00", "break", "Lunch"),
+      rBlock(d, "18:30", "19:00", "shop", "Close & clean"),
+    ]),
+    commitments: [
+      commit(dayFromNow(1), "10:00", "10:45", "client", "Cut — João"),
+      commit(dayFromNow(2), "11:00", "11:45", "client", "Beard — Pedro"),
+      commit(dayFromNow(3), "14:30", "15:30", "client", "Cut + beard — Caio"),
+      commit(dayFromNow(4), "15:45", "16:30", "client", "Fade — Rafa"),
+      commit(dayFromNow(5), "16:45", "17:30", "client", "Cut — Lucas"),
+      looseCommit("c-bar-restock", "10:00", "10:30", "admin", "Restock blades & oils"),
+      looseCommit("c-bar-reels", "10:00", "10:45", "admin", "Film 3 Instagram reels"),
+    ],
+    presets: [],
+    suggestions: [],
+    goals: [
+      tGoal({ kind: "numeric", tracking: "category", categoryId: "client", period: "weekly", title: "30 cuts this week", target: 30, unit: "cuts" }),
+      tGoal({ kind: "deadline", tracking: "none", period: "total", title: "Shop upkeep", target: 2, looseCommitmentIds: ["c-bar-restock", "c-bar-reels"] }),
+    ],
+    ledger: { compositionScore: 0, metrics: [], scheduledHours: [0, 0, 0, 0, 0, 0, 0] },
+    progressSnapshots: [],
+  }),
+};
+
+const personalTrainerTemplate: ScheduleTemplate = {
+  id: "personal-trainer",
+  name: "Coach's Week · Personal Trainer",
+  description: "A trainer's split: own workout and programming as routine, each client session booked as a commitment, with weekly session and self-training goals.",
+  workload: "intense",
+  focusRatio: 0.5,
+  recoveryRatio: 0.15,
+  generate: () => ({
+    meta: {
+      version: 5,
+      owner: "You",
+      cycle: { name: "general", number: 1, week: 1, progress: 0 },
+      workdayStart: "06:00",
+      workdayEnd: "20:00",
+      sleepWindow: { start: "22:30", end: "06:00" },
+      enforceSleepBoundary: true,
+      focusCategoryIds: ["session"],
+    },
+    categories: [
+      { id: "session", label: "Session", tone: "coral", description: "1:1 client training.", role: "focus" },
+      { id: "self", label: "Self-training", tone: "lime", description: "Your own workouts.", role: "focus" },
+      { id: "admin", label: "Programming", tone: "slate", description: "Plans, check-ins, invoicing.", role: "neutral" },
+      { id: "recovery", label: "Recovery", tone: "emerald", description: "Mobility and rest.", role: "recovery" },
+    ],
+    routine: [1, 2, 3, 4, 5].flatMap((d) => [
+      rBlock(d, "06:00", "07:00", "self", "Own workout"),
+      rBlock(d, "12:30", "13:30", "recovery", "Lunch & mobility"),
+      rBlock(d, "18:00", "19:00", "admin", "Programming & check-ins"),
+    ]),
+    commitments: [
+      commit(dayFromNow(1), "07:30", "08:30", "session", "PT — Ana"),
+      commit(dayFromNow(1), "09:00", "10:00", "session", "PT — Bruno"),
+      commit(dayFromNow(2), "10:15", "11:15", "session", "PT — Carla"),
+      commit(dayFromNow(3), "14:00", "15:00", "session", "PT — Diego"),
+      commit(dayFromNow(4), "16:00", "17:00", "session", "PT — Elena"),
+    ],
+    presets: [],
+    suggestions: [],
+    goals: [
+      tGoal({ kind: "numeric", tracking: "category", categoryId: "session", period: "weekly", title: "20 client sessions", target: 20, unit: "sessions" }),
+      tGoal({ kind: "duration", tracking: "category", categoryId: "self", period: "weekly", title: "Own training 5h", target: 300, unit: "min" }),
+    ],
+    ledger: { compositionScore: 0, metrics: [], scheduledHours: [0, 0, 0, 0, 0, 0, 0] },
+    progressSnapshots: [],
+  }),
+};
+
+const parentHomeTemplate: ScheduleTemplate = {
+  id: "parent-home",
+  name: "Home Base · Parent & Household",
+  description: "Running a household: school runs and a remote-work block as routine, appointments and pickups as dated commitments, and home chores as loose commitments behind a projects goal.",
+  workload: "moderate",
+  focusRatio: 0.35,
+  recoveryRatio: 0.2,
+  generate: () => ({
+    meta: {
+      version: 5,
+      owner: "You",
+      cycle: { name: "general", number: 1, week: 1, progress: 0 },
+      workdayStart: "07:00",
+      workdayEnd: "21:00",
+      sleepWindow: { start: "23:00", end: "06:30" },
+      enforceSleepBoundary: true,
+      focusCategoryIds: ["work"],
+    },
+    categories: [
+      { id: "family", label: "Family", tone: "peach", description: "School runs, meals, together time.", role: "neutral" },
+      { id: "work", label: "Work", tone: "bronze", description: "Remote work block.", role: "focus" },
+      { id: "errand", label: "Errand", tone: "slate", description: "Appointments and logistics.", role: "neutral" },
+      { id: "self", label: "Self", tone: "rose", description: "Rest and self-care.", role: "recovery" },
+    ],
+    routine: [1, 2, 3, 4, 5].flatMap((d) => [
+      rBlock(d, "07:30", "08:15", "family", "School run"),
+      rBlock(d, "09:00", "12:00", "work", "Remote work"),
+      rBlock(d, "18:00", "19:00", "family", "Dinner & family"),
+    ]),
+    commitments: [
+      commit(dayFromNow(1), "14:00", "14:45", "errand", "Pediatrician — Mia"),
+      commit(dayFromNow(2), "15:30", "16:30", "errand", "Soccer pickup"),
+      commit(dayFromNow(3), "13:00", "13:30", "errand", "Parent-teacher meeting"),
+      commit(dayFromNow(5), "19:30", "21:00", "self", "Date night"),
+      looseCommit("c-home-tap", "09:00", "09:30", "errand", "Fix the leaky tap"),
+      looseCommit("c-home-passport", "09:00", "09:45", "errand", "Renew Mia's passport"),
+    ],
+    presets: [],
+    suggestions: [],
+    goals: [
+      tGoal({ kind: "duration", tracking: "category", categoryId: "family", period: "weekly", title: "Family time 12h", target: 720, unit: "min" }),
+      tGoal({ kind: "deadline", tracking: "none", period: "total", title: "Home projects", target: 2, looseCommitmentIds: ["c-home-tap", "c-home-passport"] }),
+    ],
+    ledger: { compositionScore: 0, metrics: [], scheduledHours: [0, 0, 0, 0, 0, 0, 0] },
+    progressSnapshots: [],
+  }),
+};
+
+const musicianTemplate: ScheduleTemplate = {
+  id: "musician",
+  name: "On Tour · Musician",
+  description: "A gigging musician: daily practice as routine, rehearsals, sessions and shows as dated commitments, with monthly gig and weekly practice goals plus a songwriting goal.",
+  workload: "intense",
+  focusRatio: 0.5,
+  recoveryRatio: 0.12,
+  generate: () => ({
+    meta: {
+      version: 5,
+      owner: "You",
+      cycle: { name: "general", number: 1, week: 1, progress: 0 },
+      workdayStart: "10:00",
+      workdayEnd: "23:30",
+      sleepWindow: { start: "02:00", end: "10:00" },
+      enforceSleepBoundary: true,
+      focusCategoryIds: ["practice", "gig"],
+    },
+    categories: [
+      { id: "practice", label: "Practice", tone: "violet", description: "Instrument and technique.", role: "focus" },
+      { id: "gig", label: "Gig", tone: "coral", description: "Rehearsals, sessions, shows.", role: "focus" },
+      { id: "writing", label: "Writing", tone: "sky", description: "Songwriting and arranging.", role: "focus" },
+      { id: "recovery", label: "Recovery", tone: "emerald", description: "Vocal rest and downtime.", role: "recovery" },
+    ],
+    routine: [1, 2, 3, 4, 5, 6].flatMap((d) => [
+      rBlock(d, "10:00", "12:00", "practice", "Morning practice"),
+      rBlock(d, "12:00", "12:30", "recovery", "Vocal rest"),
+    ]),
+    commitments: [
+      commit(dayFromNow(2), "13:00", "16:00", "gig", "Studio session"),
+      commit(dayFromNow(3), "19:00", "21:00", "gig", "Band rehearsal"),
+      commit(dayFromNow(5), "21:30", "23:30", "gig", "Show — Blue Note"),
+      commit(dayFromNow(6), "16:30", "18:00", "writing", "Co-write session"),
+      looseCommit("c-mus-songs", "13:00", "15:00", "writing", "Finish 2 new songs"),
+    ],
+    presets: [],
+    suggestions: [],
+    goals: [
+      tGoal({ kind: "numeric", tracking: "category", categoryId: "gig", period: "monthly", title: "6 gigs this month", target: 6, unit: "gigs" }),
+      tGoal({ kind: "duration", tracking: "category", categoryId: "practice", period: "weekly", title: "Practice 12h", target: 720, unit: "min" }),
+      tGoal({ kind: "deadline", tracking: "none", period: "total", title: "Write new songs", target: 2, looseCommitmentIds: ["c-mus-songs"] }),
+    ],
+    ledger: { compositionScore: 0, metrics: [], scheduledHours: [0, 0, 0, 0, 0, 0, 0] },
+    progressSnapshots: [],
+  }),
+};
+
 export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
   productivityTemplate,
   balancedTemplate,
@@ -1034,4 +1264,8 @@ export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
   earlyBirdTemplate,
   nightOwlTemplate,
   shiftWorkerTemplate,
+  barbershopTemplate,
+  personalTrainerTemplate,
+  parentHomeTemplate,
+  musicianTemplate,
 ];

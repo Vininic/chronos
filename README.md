@@ -112,13 +112,13 @@ Honest status for a project still under active development. The planner core is 
 
 ### 🐞 Known issues to fix
 - **Digest signal.** The AI path now scopes per timeframe and respects the selected provider, and false cross-day "overlap" cards are filtered out (shared `validateConflictClaims` guard). Card copy can still be hit-or-miss — prompt quality is the remaining work.
-- **AI wastes tokens.** The system prompt is sent twice per call and the full schedule context is serialized into every chat message. Needs trimming / caching.
-- **Fallback isn't really a fallback.** Without a key, Aetheris analysis returns empty cards (the heuristic engines were removed; only the digest still has them). Either restore a heuristic path or message the empty state honestly.
-- **AI surface sprawl.** ~5 of 9 nav entries are AI-related; Audit History / AI Metrics / AI Settings should fold into the Aetheris hub.
-- **Dead weight.** Remove the unused `@opencode-ai/sdk` dependency; collapse the two hourglass implementations into one; drop the orphaned `schedule.json` seed.
+- **AI wastes tokens.** ✅ Fixed — the system prompt is no longer sent twice (the duplicate copy was removed from the prompt body; it's delivered once via the provider's system channel). Per-message context caching remains a smaller optimization.
+- **Fallback isn't really a fallback.** ✅ Fixed — without a key, the Aetheris analysis surface now shows an honest "AI analysis is unavailable — add an API key in AI Settings" call-to-action instead of a misleading "No issues detected".
+- **AI surface sprawl.** The AI subsystem is still large (~60 files), but the navigation is **already consolidated**: only 2 of 7 sidebar entries are AI (Aetheris, Planner). Audit History + AI Metrics render as tabs *inside* the Aetheris hub, and AI Settings lives in the Settings page. Remaining work is pruning dead modules (done: `autonomy/`, `suggestions/`, orphaned `AISettings.tsx`), not nav.
+- **Dead weight.** ✅ Done — deleted the dead `src/lib/ai/autonomy/` module (zero imports), the empty `src/lib/ai/suggestions/index.ts`, the orphaned `src/data/schedule.json` seed, the legacy `package-lock.json`, and the orphaned `src/pages/dashboard/AISettings.tsx`. (`@opencode-ai/sdk` was already gone.)
 
 ### 🗺️ Planned
-- **Focus & Timer rework** — ✅ done: persistent sidebar **TimerCard** (above the profile), a single Focus-page hourglass, free-input duration + quick presets, and an inline session view (no modal). ⏳ Remaining cleanup: delete the now-unused `Hourglass3D` (three.js) and drop the `three` / `@react-three/*` dependencies.
+- **Focus & Timer rework** — ✅ done: persistent sidebar **TimerCard** (above the profile), free-input duration + quick presets, and an inline session view (no modal). **Two hourglasses by design:** the 3D `Hourglass3D` (three.js) powers the Focus page, Login, and Landing hero; the lightweight SVG `MiniHourglass` lives inside the TimerCard. `three` / `@react-three/*` stay — they are not dead weight.
 - **Week / Month views** — redesign; decide whether the drag system extends there. Move "weekly" stats out of Today.
 - **Landing page** — full redesign.
 - **Smaller polish** — category reordering; smarter time-search on block create/edit (e.g. typing `4` surfaces 4 AM/4 PM); top-left card spacing; footer rendering; remove any remaining hard-coded seed instances so the system is fully data-driven.
@@ -134,7 +134,7 @@ Honest status for a project still under active development. The planner core is 
 corepack pnpm test
 ```
 
-138 tests across cross-day scheduling, goal-progress math, AI context building, prompt regression, and the workspace engine.
+**305 tests** across the schedule domain, goal-progress math (44), AI context + chat-prompt, the full AI core (pipeline, tools, safety, scheduler, gemini, adapters, learning, pattern), digest, export, schedule services, prompt regression, planner constraints/drag, and the workspace engine.
 
 ---
 
@@ -149,7 +149,7 @@ corepack pnpm test
 | System | Size | Notes |
 |---|---|---|
 | **Schedule domain** (types, helpers, sleep, agenda, ledger, suggestions) | ~42 KB | Pure functions, zero framework deps |
-| **Schedule services** (ScheduleService, Validator, Migrator) | ~38 KB | Clean architecture, fully extracted |
+| **Schedule services** (ScheduleService, Validator, Migrator) | ~38 KB | Clean architecture; Validator + Migrator tested (`schedule-services.test.ts`) |
 | **Schedule React adapter** (store.tsx) | 440 lines | Thin wiring layer, all logic delegated |
 | **Repository port + impl** (LocalStorage) | ~1.6 KB | Interface + impl, swappable |
 | **Auth** (local fake) | 1.7 KB | Simple, stable |
@@ -163,13 +163,13 @@ corepack pnpm test
 
 | System | Size | Issues |
 |---|---|---|
-| **Today page** | 71 KB | Massive, no separation of concerns |
+| **Today page** | 71 KB | Massive — 8 components in one file + an inline `BlockTypeGallery` category editor (~380 lines); weekly stats already moved out |
 | **Week page** | 24 KB | Recently rewritten, needs iteration |
 | **Focus page** | 24 KB | Focus concept shipped — categories badge + toggle focus blocks in the creator |
 | **Goal system** | ~30 KB | Works well, 44 tests pass |
 | **Planner UI** (builder, merge, proposals) | ~80 KB | Gemini planner wired into the form flow; falls back to heuristics with no key — regression-tested |
-| **Chat UI** (Aetheris thread) | ~40 KB | Redesigned — unified `ActionLedger`, Aetheris frame, richer markdown |
-| **Export** (JSON/XLSX/ICS) | 7 KB | Functional, no known bugs | Neatly formatted exports.
+| **Chat UI** (Aetheris hub) | ~128 KB | `Aetheris.tsx` (52 KB) + `components/chat/*` + `components/digest/*`; unified `ActionLedger`, Aetheris frame, richer markdown |
+| **Export** (JSON/XLSX/ICS) | 7 KB | ✅ Tested — pure builders (`buildICS` / `buildScheduleWorkbook` / `serializeScheduleJSON`) covered by `export.test.ts` |
 | **ComposeBlockDialog** | 29 KB | Functional, could use polish |
 | **TimerCard** | 10 KB | Done — persistent sidebar card, idle/active/session states, render-tested |
 | **Schedule templates** | 47 KB | False AI concerns (phantom sleep debt + cross-day overlap) fixed & regression-tested |
@@ -178,28 +178,28 @@ corepack pnpm test
 
 | System | Size | Issues |
 |---|---|---|
-| **AI Pipeline** (core/pipeline.ts) | 5.9 KB | Central orchestration — 0 tests |
-| **AI Chat service** (chat/service.ts) | 13.4 KB | Prompt building, tool extraction — 0 tests |
-| **AI Tools** (10 modules) | ~29 KB | Validation, safety, execution — 0 tests |
-| **AI Learning** (learning/) | 13 KB | Recommutation logic — 0 tests |
-| **AI Planner** (generator + gemini-planner) | ~33 KB | Heuristic + gemini generators — fallback & blueprint paths tested (`gemini-planner.test.ts`) |
-| **AI Adapters** (5 providers) | ~19 KB | No mock or integration tests |
-| **AI Context** (context/) | ~26 KB | Builder untested beyond basics |
-| **AI Scheduling engine** (scheduler.ts) | 6 KB | All 7 rule checks — 0 tests |
-| **AI Optimization** | 3.8 KB | 0 tests |
-| **AI Autonomy** | 5.4 KB | 0 tests |
-| **AI Pattern detection** | 3.8 KB | 0 tests |
-| **AI Self-eval / Explainability** | ~5.2 KB | 0 tests |
-| **Digest system** | ~31 KB | Per-timeframe scoping + provider-aware; false-overlap guard added — prompt quality is the remaining gap |
-| **DayPlanner** | 130 KB | Largest file — ponder splitting into grid + drag + blocks |
+| **AI Pipeline** (core/pipeline.ts) | 5.9 KB | ✅ autonomy filter tested (`ai-pipeline.test.ts`) |
+| **AI Chat service** (chat/service.ts) | 13.4 KB | ✅ tool extraction + prompt build tested; token-waste fixed (system prompt sent once) |
+| **AI Tools** (10 modules) | ~29 KB | ✅ registry, safety, block/goal execution tested (`ai-tools` + `ai-safety-scheduler`) |
+| **AI Learning** (learning/) | 13 KB | ✅ persistence + pattern detection tested (`ai-learning-pattern.test.ts`) |
+| **AI Planner** (generator + gemini-planner) | ~33 KB | ✅ heuristic + gemini paths tested (`gemini-planner.test.ts`) |
+| **AI Adapters** (5 providers) | ~19 KB | ✅ OpenAI contract test w/ mocked fetch (`ai-adapters.test.ts`) |
+| **AI Context** (context/) | ~26 KB | ✅ ~46 tests (`ai-context` + `template-ai-context`) — well covered |
+| **AI Scheduling engine** (scheduler.ts) | 6 KB | ✅ all 7 rule checks tested (`ai-safety-scheduler.test.ts`) |
+| **AI Optimization** | 3.8 KB | ✅ exercised via `template-ai-context.test.ts` |
+| **AI Pattern detection** | 3.8 KB | ✅ tested (`ai-learning-pattern.test.ts`) |
+| **AI Self-eval / Explainability** | ~5.2 KB | ✅ tested (`ai-pipeline` + `prompt-regression`) |
+| **Digest system** | ~31 KB | ✅ provider-aware + per-timeframe; 8 heuristic modules tested (`digest.test.ts`); prompt quality is the remaining gap |
+| **DayPlanner** | 130 KB | ⏳ Largest file — still to split into grid + drag + blocks |
 
 ### 🔴 Not started / Should delete
 
 | System | Size | Issues |
 |---|---|---|
-| **AI suggestions/index.ts** | 0 B | Empty placeholder |
-| **Hourglass3D** (Three.js) | 17 KB | Unused — delete + drop three/react-three deps |
-| **schedule.json** (root data/) | 5 KB | Orphaned stale seed — delete |
+| **AI suggestions/index.ts** | 0 B | Empty placeholder — delete |
+| **AI Autonomy** (`autonomy/`) | 5.4 KB | Dead code — zero imports anywhere; delete |
+| **schedule.json** (`src/data/`) | 5 KB | Orphaned stale seed — delete (store imports only `-en`/`-pt`) |
+| **package-lock.json** | — | Legacy lockfile — delete (pnpm is canonical) |
 | **PWA / offline** | — | Not started |
 | **Cloud sync** | — | Not started |
 | **Push notifications** | — | Not started |
@@ -215,12 +215,20 @@ From `checklist.md`:
 - [ ] **Remove system-baked instances** — full modularity, no hard-coded categories/blocks
 - [x] **Fix schedule templates** — ✅ done: AI no longer shows false sleep-debt / cross-day-overlap concerns; sleep is structural
 - [x] **Move system to clean architecture** — ✅ done
+- [x] **Fix type foundation** — ✅ `tsc -p tsconfig.app.json` green (4 errors → 0)
+- [x] **Test the AI core** — ✅ +126 contract tests → **305 total** (safety, scheduler, tools, pipeline, gemini, adapters, learning, pattern, digest, export, services, stores)
+- [x] **Honest AI empty-state** — ✅ no-key CTA on the Aetheris analysis surface (no fake "all clear")
+- [x] **Trim dead code** — ✅ deleted `autonomy/`, empty `suggestions/`, orphaned `schedule.json` + `AISettings.tsx`, legacy `package-lock.json`
+- [x] **Creative schedule templates** — ✅ added 4 domain templates (Barbershop, Personal Trainer, Parent & Household, Musician) that showcase flexible commitments + goals + loose obligations, not just routine blocks
 
 ### 🔜 Recommended next steps (in order)
 
-1. **Split DayPlanner** (130 KB → grid + drag handler + block renderer + orchestration)
-2. **Test AI core** — pipeline, chat service, at least one adapter contract test
-3. **Close checklist** — fix high-impact unchecked items (programs, timer, templates)
-4. **Fix digest** — respect provider choice, fix timeframe granularity, improve empty state
-5. **Housekeeping** — delete Hourglass3D + three deps, orphaned schedule.json, empty suggestions/index.ts
-6. **Update AGENTS.md** — stale reference to "line 340 of README.md"*
+1. ✅ **Fix type foundation** — done (`tsc` 4 errors → 0)
+2. ✅ **Test AI core** — done: +126 contract tests → **305 total** (pipeline, chat, tools, safety, scheduler, adapters, digest, export, services, stores)
+3. ✅ **Honest empty-state** — done: no-key CTA on the Aetheris analysis surface
+4. ✅ **Housekeeping** — done: dead code deleted (`autonomy/`, `suggestions/`, `schedule.json`, `package-lock.json`, orphaned `AISettings.tsx`); **kept** Hourglass3D (in use)
+5. ✅ **Update AGENTS.md** — done
+6. ⏳ **Split DayPlanner** (130 KB → grid + drag handler + block renderer + orchestration) — next up
+7. ⏳ **Close checklist** — programs work, category color picker, remove system-baked instances
+8. ⏳ **Digest prompt quality** — the one remaining digest gap
+9. 🔭 **PWA · cloud sync · push notifications** — not started (future build)

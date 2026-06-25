@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildContext, summarizeBlocks } from "@/lib/ai/context";
 import { validateContext } from "@/lib/ai/context/validation";
 import { compressContext, compressedTokenEstimate } from "@/lib/ai/context/serializers";
+import { buildChatPrompt } from "@/lib/ai/chat/service";
 import type { ScheduleData } from "@/lib/schedule/types";
 
 const MINIMAL_SCHEDULE: ScheduleData = {
@@ -213,5 +214,21 @@ describe("ScheduleContext — compression", () => {
     const compressed = compressContext(ctx);
     const estimate = compressedTokenEstimate(compressed);
     expect(estimate).toBeGreaterThan(0);
+  });
+});
+
+describe("buildChatPrompt — system prompt is not duplicated into the body", () => {
+  // Regression guard: the system prompt (persona + tool schema + autonomy) is sent
+  // once via the provider's `systemPrompt` option. It must NOT also be baked into the
+  // prompt body, which previously doubled the token cost of every chat request.
+  it("leads the body with schedule data, not the persona", () => {
+    const body = buildChatPrompt(MINIMAL_SCHEDULE, []);
+    expect(body.startsWith("## Current Schedule Data")).toBe(true);
+    expect(body).not.toContain("schedule assistant");
+  });
+
+  it("still serializes the schedule context into the body", () => {
+    const body = buildChatPrompt(MINIMAL_SCHEDULE, []);
+    expect(body).toContain("Test User");
   });
 });

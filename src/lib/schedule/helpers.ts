@@ -1,6 +1,6 @@
-import type { Commitment, RoutineBlock, Locale } from "./types";
+import type { Commitment, RoutineBlock } from "./types";
 import { timeToMinutes } from "./types";
-import { DICTIONARIES } from "@/lib/i18n/dictionaries";
+import { DICTIONARIES, type Locale } from "@/lib/i18n/dictionaries";
 
 export function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;

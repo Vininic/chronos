@@ -1,7 +1,7 @@
-import type { RoutineBlock, ScheduleData, Suggestion, Locale } from "./types";
+import type { RoutineBlock, ScheduleData, Suggestion } from "./types";
 import { timeToMinutes } from "./types";
 import { sortedDayBlocks, findGap, getDayLabel } from "./helpers";
-import { DICTIONARIES } from "@/lib/i18n/dictionaries";
+import { DICTIONARIES, type Locale } from "@/lib/i18n/dictionaries";
 
 export function generateLocalSuggestions(data: ScheduleData, locale: Locale = "en"): Suggestion[] {
   const sugg = DICTIONARIES[locale].chronos.store.suggestions;

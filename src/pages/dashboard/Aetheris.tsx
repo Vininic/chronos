@@ -17,7 +17,7 @@ import { useChatStore, type ChatMessage } from "@/lib/ai/chat/store";
 import { streamChatMessage, extractToolCalls, stripToolCallsFromText } from "@/lib/ai/chat/service";
 import { globalToolRegistry, registerAllTools } from "@/lib/ai/tools";
 import { getProviderRegistration } from "@/lib/ai/core/registry";
-import { loadSettingsSync, useAISettings } from "@/lib/ai/settings/store";
+import { loadSettingsSync, useAISettings, isProviderConfigured } from "@/lib/ai/settings/store";
 import {
   Sparkles, Brain, Coffee, Target, AlertTriangle, ChevronDown, ChevronUp,
   Loader2, MessageSquare, Send, Plus, Trash2, PanelRightOpen, PanelRightClose,
@@ -430,6 +430,10 @@ export default function Aetheris() {
     const model = s.models[s.providerId] ?? reg?.defaultModel ?? "";
     return `Powered by ${name}${model ? " · " + model : ""} · AI can make mistakes`;
   }, []);
+
+  // Whether an AI provider is actually usable. When false, the analysis pipeline
+  // falls back to empty cards — we must say so honestly rather than imply "all clear".
+  const aiConfigured = useMemo(() => isProviderConfigured(loadSettingsSync().providerId), []);
 
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
 
@@ -922,7 +926,19 @@ export default function Aetheris() {
                       </div>
                     )}
                     {insights.filter(i => i.severity !== "critical" && i.type !== "recovery").length === 0 && suggestions.length === 0 && optimization.conflicts.length === 0 && (
-                      <p className="text-[11px] text-muted-foreground/40 text-center py-4">No issues detected</p>
+                      aiConfigured ? (
+                        <p className="text-[11px] text-muted-foreground/40 text-center py-4">No issues detected</p>
+                      ) : (
+                        <div className="text-center py-6 px-4 space-y-1.5">
+                          <p className="text-[12px] text-muted-foreground">AI analysis is unavailable — no provider key configured.</p>
+                          <button
+                            onClick={() => navigate("/dashboard/settings")}
+                            className="text-[11px] font-medium text-bronze hover:underline"
+                          >
+                            Add an API key in AI Settings →
+                          </button>
+                        </div>
+                      )
                     )}
                   </>
                 )}
