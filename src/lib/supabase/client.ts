@@ -7,14 +7,22 @@ export interface SupabaseConfig {
   anonKey: string;
 }
 
+function envConfig(): SupabaseConfig | null {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  return url && anonKey ? { url, anonKey } : null;
+}
+
 export function loadSupabaseConfig(): SupabaseConfig | null {
+  // A user-supplied (BYO) project overrides the hosted default; otherwise fall back
+  // to the build-time env project so a hosted deploy connects out of the box.
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as SupabaseConfig;
+    if (raw) return JSON.parse(raw) as SupabaseConfig;
   } catch {
-    return null;
+    /* ignore */
   }
+  return envConfig();
 }
 
 export function saveSupabaseConfig(config: SupabaseConfig): void {

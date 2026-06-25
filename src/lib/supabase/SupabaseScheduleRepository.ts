@@ -3,7 +3,8 @@ import type { ScheduleRepository } from "../schedule/ports/ScheduleRepository";
 import { STORAGE_KEY as LOCAL_STORAGE_KEY, LEGACY_STORAGE_KEYS } from "../schedule/ports/ScheduleRepository";
 import { getSupabaseClient } from "./client";
 
-const TABLE = "schedules";
+const TABLE = "user_data";
+const KEY = "schedule"; // the schedule is one row in the generic user_data KV table
 
 export class SupabaseScheduleRepository implements ScheduleRepository {
   async loadRaw(): Promise<ScheduleData | null> {
@@ -16,35 +17,31 @@ export class SupabaseScheduleRepository implements ScheduleRepository {
 
     const { data, error } = await supabase
       .from(TABLE)
-      .select("data")
+      .select("value")
       .eq("user_id", userId)
-      .single();
+      .eq("key", KEY)
+      .maybeSingle();
 
-    if (error || !data) return this.fallbackToLocal();
-    return data.data as ScheduleData;
+    if (error) return this.fallbackToLocal();
+    return (data?.value as ScheduleData) ?? this.fallbackToLocal();
   }
 
   async save(data: ScheduleData): Promise<void> {
+    // Always mirror locally first so an offline reload (PWA) still has the latest.
+    this.saveLocal(data);
+
     const supabase = getSupabaseClient();
-    if (!supabase) {
-      this.saveLocal(data);
-      return;
-    }
+    if (!supabase) return;
 
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id;
-    if (!userId) {
-      this.saveLocal(data);
-      return;
-    }
+    if (!userId) return;
 
-    const { error } = await supabase
+    // `version` is a monotonic client stamp used by the realtime echo-guard (Phase D);
+    // `updated_at` is set server-side by the touch trigger.
+    await supabase
       .from(TABLE)
-      .upsert({ user_id: userId, data, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-
-    if (error) {
-      this.saveLocal(data);
-    }
+      .upsert({ user_id: userId, key: KEY, value: data, version: Date.now() }, { onConflict: "user_id,key" });
   }
 
   async hasData(): Promise<boolean> {
@@ -57,8 +54,9 @@ export class SupabaseScheduleRepository implements ScheduleRepository {
 
     const { count, error } = await supabase
       .from(TABLE)
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId);
+      .select("key", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("key", KEY);
 
     if (error || count === null) return this.hasLocal();
     return count > 0;
@@ -74,7 +72,7 @@ export class SupabaseScheduleRepository implements ScheduleRepository {
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id;
     if (userId) {
-      await supabase.from(TABLE).delete().eq("user_id", userId);
+      await supabase.from(TABLE).delete().eq("user_id", userId).eq("key", KEY);
     }
     this.clearLocal();
   }

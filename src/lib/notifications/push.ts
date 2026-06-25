@@ -1,4 +1,28 @@
+import { getSupabaseClient } from "@/lib/supabase/client";
+
 const SUBSCRIPTION_KEY = "chronos.push.subscription";
+
+/** Store the device's subscription server-side so the notify Edge Function can reach it. */
+async function storeSubscriptionRemotely(sub: PushSubscriptionJSON): Promise<void> {
+  const sb = getSupabaseClient();
+  if (!sb || !sub.endpoint) return;
+  const { data: { session } } = await sb.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return;
+  await sb.from("push_subscriptions").upsert(
+    { user_id: userId, endpoint: sub.endpoint, subscription: sub },
+    { onConflict: "user_id,endpoint" },
+  );
+}
+
+async function removeSubscriptionRemotely(endpoint: string): Promise<void> {
+  const sb = getSupabaseClient();
+  if (!sb) return;
+  const { data: { session } } = await sb.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return;
+  await sb.from("push_subscriptions").delete().eq("user_id", userId).eq("endpoint", endpoint);
+}
 
 export interface PushState {
   supported: boolean;
@@ -47,7 +71,9 @@ export async function subscribeToPush(vapidPublicKey: string): Promise<boolean> 
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
     });
 
-    localStorage.setItem(SUBSCRIPTION_KEY, JSON.stringify(subscription.toJSON()));
+    const json = subscription.toJSON();
+    localStorage.setItem(SUBSCRIPTION_KEY, JSON.stringify(json));
+    await storeSubscriptionRemotely(json);
     return true;
   } catch {
     return false;
@@ -61,6 +87,7 @@ export async function unsubscribeFromPush(): Promise<boolean> {
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     if (subscription) {
+      await removeSubscriptionRemotely(subscription.endpoint);
       await subscription.unsubscribe();
     }
     localStorage.removeItem(SUBSCRIPTION_KEY);

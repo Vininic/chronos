@@ -1,4 +1,4 @@
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { Component, useMemo, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -22,10 +22,10 @@ import { TimerProvider } from "@/lib/timer/TimerContext";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
-import { getSupabaseClient, hasSupabaseConfig } from "@/lib/supabase/client";
 import { SupabaseScheduleRepository } from "@/lib/supabase/SupabaseScheduleRepository";
 import { LocalStorageScheduleRepository } from "@/lib/schedule/infrastructure/LocalStorageScheduleRepository";
 import type { ScheduleRepository } from "@/lib/schedule/ports/ScheduleRepository";
+import { useSyncEngine } from "@/lib/sync/userDataSync";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) { super(props); this.state = { error: null }; }
@@ -46,25 +46,22 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function ScheduleProviderWithRepo({ children }: { children: ReactNode }) {
-  const [repo, setRepo] = useState<ScheduleRepository>(new LocalStorageScheduleRepository());
-
-  useEffect(() => {
-    (async () => {
-      if (hasSupabaseConfig()) {
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            setRepo(new SupabaseScheduleRepository());
-            return;
-          }
-        }
-      }
-      setRepo(new LocalStorageScheduleRepository());
-    })();
-  }, []);
-
+  // React to auth: once a Supabase project is configured AND the user is signed in,
+  // use the cloud repository. Switching is reactive (no full reload needed); the
+  // store's hydration guard prevents the local seed from clobbering the remote.
+  const { session, isCloud } = useAuth();
+  const repo = useMemo<ScheduleRepository>(
+    () => (isCloud && session ? new SupabaseScheduleRepository() : new LocalStorageScheduleRepository()),
+    [isCloud, session?.email],
+  );
   return <ScheduleProvider repo={repo}>{children}</ScheduleProvider>;
+}
+
+/** Mirrors the non-schedule user stores (learning, chat, digests, settings…) to the
+ *  cloud when signed in. Renders nothing; must live inside AuthProvider. */
+function SyncEngineMount() {
+  useSyncEngine();
+  return null;
 }
 
 const App = () => (
@@ -79,6 +76,7 @@ const App = () => (
           <BrowserRouter>
             <AuthProvider>
               <ScheduleProviderWithRepo>
+                <SyncEngineMount />
                 <TimerProvider>
                 <Routes>
               <Route path="/" element={<Index />} />

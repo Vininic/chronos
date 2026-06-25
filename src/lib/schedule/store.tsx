@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from "react";
 import seedEn from "@/data/schedule-en.json";
 import seedPt from "@/data/schedule-pt.json";
 import type { Category, CategoryRole, Commitment, Goal, GoalBlock, Preset, RoutineBlock, ScheduleData, SleepCut, SleepScheduleEntry } from "./types";
@@ -128,22 +128,41 @@ export function ScheduleProvider({ children, repo }: { children: ReactNode; repo
 
   const withDerivedLocale = useCallback((d: ScheduleData, regen = false) => withDerived(d, regen, locale), [locale]);
 
+  // Guards the save effect: we must not persist the seed/local state before the
+  // initial async load resolves, or it would clobber a freshly-loaded remote schedule.
+  const hydratedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
+    let cancelled = false;
+    hydratedRef.current = false; // re-hydrate whenever the repo (local ↔ cloud) changes
     (async () => {
       try {
         const stored = await repoInstance.loadRaw();
-        if (stored) {
+        if (!cancelled && stored) {
           const loaded = ensureCategories(normalizeNamingModel(stored, locale));
           setData(withDerivedLocale(loaded, true));
         }
       } catch {
         // fall back to seed
+      } finally {
+        if (!cancelled) hydratedRef.current = true;
       }
     })();
+    return () => { cancelled = true; };
   }, [repoInstance, locale, withDerivedLocale]);
 
+  // Persist on change — but only after hydration (anti-clobber), and debounced so a
+  // burst of edits is a single write instead of one full-schedule upsert per keystroke.
   useEffect(() => {
-    repoInstance.save(data).catch(() => {});
+    if (!hydratedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      repoInstance.save(data).catch(() => {});
+    }, 800);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [data, repoInstance]);
 
   const addRoutine = useCallback((b: Omit<RoutineBlock, "id">) => {
