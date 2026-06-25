@@ -3,7 +3,7 @@ import type { ScheduleRepository } from "../ports/ScheduleRepository";
 import { STORAGE_KEY, LEGACY_STORAGE_KEYS } from "../ports/ScheduleRepository";
 
 export class LocalStorageScheduleRepository implements ScheduleRepository {
-  loadRaw(): ScheduleData | null {
+  async loadRaw(): Promise<ScheduleData | null> {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
         ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean)
@@ -17,7 +17,7 @@ export class LocalStorageScheduleRepository implements ScheduleRepository {
     return null;
   }
 
-  save(data: ScheduleData): void {
+  async save(data: ScheduleData): Promise<void> {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
@@ -25,7 +25,7 @@ export class LocalStorageScheduleRepository implements ScheduleRepository {
     }
   }
 
-  hasData(): boolean {
+  async hasData(): Promise<boolean> {
     try {
       return localStorage.getItem(STORAGE_KEY) !== null
         || LEGACY_STORAGE_KEYS.some((key) => localStorage.getItem(key) !== null);
@@ -34,7 +34,7 @@ export class LocalStorageScheduleRepository implements ScheduleRepository {
     }
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     try {
       localStorage.removeItem(STORAGE_KEY);
       for (const key of LEGACY_STORAGE_KEYS) {

@@ -52,26 +52,21 @@ import {
   replaceSchedule as svcReplaceSchedule,
 } from "./services/ScheduleService";
 
-const repo: ScheduleRepository = new LocalStorageScheduleRepository();
-
 function getSeedForLocale(locale: Locale): ScheduleData {
   return locale === "pt" ? (seedPt as unknown as ScheduleData) : (seedEn as unknown as ScheduleData);
 }
 
-function load(locale: Locale = "en"): ScheduleData {
-  try {
-    const stored = repo.loadRaw();
-    if (stored) {
-      const data = normalizeNamingModel(stored, locale);
-      for (const b of data.routine) {
-        if (b.kind !== "sleep" && !data.categories.some((c) => c.id === b.kind)) {
-          const label = b.kind.charAt(0).toUpperCase() + b.kind.slice(1);
-          data.categories.push({ id: b.kind, label, tone: "neutral", description: `${label} activities.` });
-        }
-      }
-      return data;
+function ensureCategories(data: ScheduleData): ScheduleData {
+  for (const b of data.routine) {
+    if (b.kind !== "sleep" && !data.categories.some((c) => c.id === b.kind)) {
+      const label = b.kind.charAt(0).toUpperCase() + b.kind.slice(1);
+      data.categories.push({ id: b.kind, label, tone: "neutral", description: `${label} activities.` });
     }
-  } catch { /* ignore parse errors */ }
+  }
+  return data;
+}
+
+function seedData(locale: Locale): ScheduleData {
   return normalizeNamingModel(getSeedForLocale(locale), locale);
 }
 
@@ -124,25 +119,32 @@ interface Ctx {
 
 const ScheduleCtx = createContext<Ctx | null>(null);
 
-export function ScheduleProvider({ children }: { children: ReactNode }) {
+export function ScheduleProvider({ children, repo }: { children: ReactNode; repo?: ScheduleRepository }) {
   const { locale } = useI18n();
-  const [data, setData] = useState<ScheduleData>(() => {
-    const initial = load(locale);
-    return withDerived(initial, true, locale);
-  });
+  const repoInstance = useMemo(() => repo ?? new LocalStorageScheduleRepository(), [repo]);
+  const [data, setData] = useState<ScheduleData>(() =>
+    withDerived(seedData(locale), true, locale)
+  );
 
   const withDerivedLocale = useCallback((d: ScheduleData, regen = false) => withDerived(d, regen, locale), [locale]);
 
   useEffect(() => {
-    repo.save(data);
-  }, [data]);
+    (async () => {
+      try {
+        const stored = await repoInstance.loadRaw();
+        if (stored) {
+          const loaded = ensureCategories(normalizeNamingModel(stored, locale));
+          setData(withDerivedLocale(loaded, true));
+        }
+      } catch {
+        // fall back to seed
+      }
+    })();
+  }, [repoInstance, locale, withDerivedLocale]);
 
   useEffect(() => {
-    if (!repo.hasData()) {
-      const newSeed = load(locale);
-      setData(withDerivedLocale(newSeed, true));
-    }
-  }, [locale, data, withDerivedLocale]);
+    repoInstance.save(data).catch(() => {});
+  }, [data, repoInstance]);
 
   const addRoutine = useCallback((b: Omit<RoutineBlock, "id">) => {
     const result = svcAddRoutine(data, b);

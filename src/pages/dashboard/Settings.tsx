@@ -10,13 +10,17 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, CheckCircle2, Key, RefreshCw, RotateCcw, Sun, Moon, Trash2, Wifi, WifiOff, Keyboard, Globe } from "lucide-react";
+import { AlertCircle, Bell, CheckCircle2, Cloud, Key, RefreshCw, RotateCcw, Sun, Moon, Trash2, Wifi, WifiOff, Keyboard, Globe } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { useAISettings } from "@/lib/ai/settings/store";
 import { getRegisteredProviders, testProviderConnection, createProviderFromSettings } from "@/lib/ai/core/registry";
 import type { ProviderId } from "@/lib/ai/core/provider";
 import { getAllShortcuts, getEffectiveBinding, setCustomBinding, resetBinding, resetAllBindings, useBindings, formatBinding } from "@/lib/keyboard/shortcuts";
 import type { ShortcutBinding } from "@/lib/keyboard/shortcuts";
+import { hasSupabaseConfig, loadSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig } from "@/lib/supabase/client";
+import type { SupabaseConfig } from "@/lib/supabase/client";
+import { getPushState, requestPermission, subscribeToPush, unsubscribeFromPush, getVapidPublicKey, setVapidPublicKey, clearVapidPublicKey } from "@/lib/notifications/push";
+import type { PushState } from "@/lib/notifications/push";
 
 export default function Settings() {
   const t = useT();
@@ -24,6 +28,13 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { bindings, refresh } = useBindings();
   const [capturing, setCapturing] = useState<string | null>(null);
+  const existingConfig = loadSupabaseConfig();
+  const [supabaseUrl, setSupabaseUrl] = useState(existingConfig?.url ?? "");
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(existingConfig?.anonKey ?? "");
+  const isSupabaseConnected = hasSupabaseConfig();
+  const [pushState, setPushState] = useState<PushState>(getPushState);
+  const existingVapidKey = getVapidPublicKey();
+  const [vapidKey, setVapidKey] = useState(existingVapidKey ?? "");
 
   const handleCapture = (id: string) => {
     setCapturing(id);
@@ -165,6 +176,129 @@ export default function Settings() {
               Reset all to defaults
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Cloud Sync */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Cloud className="h-4 w-4 text-muted-foreground" />
+            Cloud Sync
+          </CardTitle>
+          <CardDescription>Sync your schedule across devices via Supabase. Requires a Supabase project.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label>Supabase URL</Label>
+            <Input value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} placeholder="https://your-project.supabase.co" />
+          </div>
+          <div className="grid gap-2">
+            <Label>Anon Key</Label>
+            <Input type="password" value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiIs..." />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button onClick={() => {
+              if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
+                toast({ title: "Missing fields", description: "Both URL and anon key are required.", variant: "destructive" });
+                return;
+              }
+              saveSupabaseConfig({ url: supabaseUrl.trim(), anonKey: supabaseAnonKey.trim() });
+              toast({ title: "Supabase configured", description: "Reloading to connect..." });
+              setTimeout(() => window.location.reload(), 1000);
+            }}>
+              <Cloud className="h-4 w-4 mr-1.5" />
+              Save & Connect
+            </Button>
+            {isSupabaseConnected && (
+              <Button variant="outline" onClick={() => {
+                clearSupabaseConfig();
+                setSupabaseUrl("");
+                setSupabaseAnonKey("");
+                toast({ title: "Supabase disconnected", description: "Reloading to disconnect..." });
+                setTimeout(() => window.location.reload(), 1000);
+              }}>
+                Disconnect
+              </Button>
+            )}
+            {isSupabaseConnected && (
+              <Badge variant="outline" className="text-green-500 border-green-500/30 ml-auto">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Connected
+              </Badge>
+            )}
+          </div>
+          {isSupabaseConnected && (
+            <p className="text-xs text-muted-foreground">
+              Your schedule will sync to Supabase on every change. A page reload may be required after changing connection settings.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Push Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            Push Notifications
+          </CardTitle>
+          <CardDescription>Receive notifications for upcoming blocks, goals, and reminders.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!pushState.supported && (
+            <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
+          )}
+          {pushState.supported && (
+            <>
+              <div className="grid gap-2">
+                <Label>VAPID Public Key</Label>
+                <Input value={vapidKey} onChange={(e) => setVapidKey(e.target.value)} placeholder="BEl62iUY..." />
+                <p className="text-xs text-muted-foreground">Required for push notifications. Generate from your push service provider.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button disabled={!vapidKey.trim() || pushState.permission === "denied"} onClick={async () => {
+                  if (pushState.permission === "default") {
+                    const result = await requestPermission();
+                    if (result !== "granted") {
+                      toast({ title: "Permission denied", description: "Allow notifications in your browser settings to enable push.", variant: "destructive" });
+                      return;
+                    }
+                    setPushState((prev) => ({ ...prev, permission: result }));
+                  }
+                  setVapidPublicKey(vapidKey.trim());
+                  const ok = await subscribeToPush(vapidKey.trim());
+                  if (ok) {
+                    setPushState((prev) => ({ ...prev, subscribed: true }));
+                    toast({ title: "Subscribed", description: "You will now receive push notifications." });
+                  } else {
+                    toast({ title: "Subscription failed", description: "Could not subscribe to push. Check your VAPID key.", variant: "destructive" });
+                  }
+                }}>
+                  <Bell className="h-4 w-4 mr-1.5" />
+                  {pushState.subscribed ? "Resubscribe" : "Subscribe"}
+                </Button>
+                {pushState.subscribed && (
+                  <Button variant="outline" onClick={async () => {
+                    await unsubscribeFromPush();
+                    setPushState((prev) => ({ ...prev, subscribed: false }));
+                    toast({ title: "Unsubscribed", description: "Push notifications disabled." });
+                  }}>
+                    Unsubscribe
+                  </Button>
+                )}
+                {pushState.subscribed && (
+                  <Badge variant="outline" className="text-green-500 border-green-500/30 ml-auto">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Subscribed
+                  </Badge>
+                )}
+              </div>
+              {pushState.permission === "denied" && (
+                <p className="text-xs text-destructive">Notifications blocked. Enable them in your browser settings.</p>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

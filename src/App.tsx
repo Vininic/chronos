@@ -1,9 +1,10 @@
-import { Component, type ReactNode } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PwaUpdateWatcher } from "@/components/PwaUpdateWatcher";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
@@ -21,6 +22,10 @@ import { TimerProvider } from "@/lib/timer/TimerContext";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+import { getSupabaseClient, hasSupabaseConfig } from "@/lib/supabase/client";
+import { SupabaseScheduleRepository } from "@/lib/supabase/SupabaseScheduleRepository";
+import { LocalStorageScheduleRepository } from "@/lib/schedule/infrastructure/LocalStorageScheduleRepository";
+import type { ScheduleRepository } from "@/lib/schedule/ports/ScheduleRepository";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) { super(props); this.state = { error: null }; }
@@ -40,6 +45,28 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return session ? children : <Navigate to="/login" replace />;
 }
 
+function ScheduleProviderWithRepo({ children }: { children: ReactNode }) {
+  const [repo, setRepo] = useState<ScheduleRepository>(new LocalStorageScheduleRepository());
+
+  useEffect(() => {
+    (async () => {
+      if (hasSupabaseConfig()) {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            setRepo(new SupabaseScheduleRepository());
+            return;
+          }
+        }
+      }
+      setRepo(new LocalStorageScheduleRepository());
+    })();
+  }, []);
+
+  return <ScheduleProvider repo={repo}>{children}</ScheduleProvider>;
+}
+
 const App = () => (
   <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
@@ -48,9 +75,10 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          <PwaUpdateWatcher />
           <BrowserRouter>
             <AuthProvider>
-              <ScheduleProvider>
+              <ScheduleProviderWithRepo>
                 <TimerProvider>
                 <Routes>
               <Route path="/" element={<Index />} />
@@ -67,7 +95,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
                 </Routes>
                 </TimerProvider>
-              </ScheduleProvider>
+              </ScheduleProviderWithRepo>
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>
