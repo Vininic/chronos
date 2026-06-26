@@ -401,13 +401,11 @@ function AISettingsContent() {
               {connectionError && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {connectionError}</p>}
             </div>
           )}
-          {settings.providerId === "gemini-local" && import.meta.env.VITE_GEMINI_API_KEY && (
-            <div className="rounded bg-secondary/5 border border-secondary/10 px-2.5 py-2">
-              <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-green-500" />
-                Using default key from environment — ready to use.
-              </p>
-            </div>
+          {settings.providerId === "gemini-local" && !settings.apiKeys["gemini-local"] && (
+            <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3 text-amber-500" />
+              No API key configured. Enter a key above or switch providers.
+            </p>
           )}
           {settings.providerId === "ollama" && (
             <div className="grid gap-2">

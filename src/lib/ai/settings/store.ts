@@ -161,9 +161,6 @@ export function loadSettingsSync(): AISettings {
 }
 
 export function getApiKeyForProvider(providerId: ProviderId): string {
-  if (providerId === "gemini-local" && typeof import.meta !== "undefined") {
-    return import.meta.env.VITE_GEMINI_API_KEY ?? "";
-  }
   const settings = loadSettings();
   return settings.apiKeys[providerId] ?? "";
 }

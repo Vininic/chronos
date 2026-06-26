@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, memo } from "react";
+import { useRef, useEffect, useMemo, memo, type ReactNode } from "react";
 import type { ChatMessage } from "@/lib/ai/chat/store";
 import type { ScheduleData } from "@/lib/schedule/types";
 import {
@@ -170,15 +170,40 @@ function escapeHtml(s: string): string {
 // Escapes first, then applies a small, safe subset of inline markdown: links
 // (http/https only), bold, and inline code. Order matters — links are matched
 // on the escaped string before bold/code so their text can still be emphasized.
-function renderRichHtml(raw: string): string {
-  let html = escapeHtml(raw);
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label: string, url: string) => {
-    const safeUrl = url.replace(/"/g, "%22");
-    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-secondary underline underline-offset-2 decoration-secondary/40 hover:decoration-secondary">${label}</a>`;
-  });
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-primary">$1</strong>');
-  html = html.replace(/`([^`]+)`/g, '<code class="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-primary/80">$1</code>');
-  return html;
+// Returns ReactNode[] instead of raw HTML to avoid dangerouslySetInnerHTML.
+function renderRichHtml(raw: string): ReactNode[] {
+  const escaped = escapeHtml(raw);
+  const nodes: ReactNode[] = [];
+  const combined = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(\*\*([^*]+)\*\*)|(`([^`]+)`)/g;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = combined.exec(escaped)) !== null) {
+    if (m.index > lastIndex) {
+      nodes.push(escaped.slice(lastIndex, m.index));
+    }
+    if (m[1]) {
+      const url = m[3].replace(/"/g, "%22");
+      nodes.push(
+        <a key={m.index} href={url} target="_blank" rel="noopener noreferrer"
+          className="text-secondary underline underline-offset-2 decoration-secondary/40 hover:decoration-secondary">
+          {m[2]}
+        </a>
+      );
+    } else if (m[4]) {
+      nodes.push(<strong key={m.index} className="font-semibold text-primary">{m[5]}</strong>);
+    } else if (m[6]) {
+      nodes.push(
+        <code key={m.index} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-primary/80">
+          {m[7]}
+        </code>
+      );
+    }
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < escaped.length) {
+    nodes.push(escaped.slice(lastIndex));
+  }
+  return nodes;
 }
 
 function renderInline(
@@ -190,7 +215,7 @@ function renderInline(
   return parts.map((part, i) => {
     if (i % 2 === 0) {
       if (!part) return null;
-      return <span key={i} dangerouslySetInnerHTML={{ __html: renderRichHtml(part) }} />;
+      return <span key={i}>{renderRichHtml(part)}</span>;
     }
     const block = blockByTitle.get(part.toLowerCase());
     if (!block) return <span key={i}>"{part}"</span>;
