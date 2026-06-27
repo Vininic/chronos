@@ -170,18 +170,6 @@ export default function Login() {
                     className="h-11 bg-card border-border"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cloud-name" className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    {L.name}
-                  </Label>
-                  <Input
-                    id="cloud-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={L.namePlaceholder}
-                    className="h-11 bg-card border-border"
-                  />
-                </div>
                 <Button type="submit" disabled={loading} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary-deep">
                   {loading ? (
                     <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> {L.signingIn}</>
