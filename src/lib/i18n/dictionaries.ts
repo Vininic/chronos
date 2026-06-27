@@ -247,7 +247,7 @@ const pt = {
         scratch: "Começar do zero",
         scratchDesc: "Uma agenda limpa para você construir.",
         template: "Usar modelo",
-        templateDesc: "Escolha entre 10 modelos prontos.",
+        templateDesc: "Comece a partir de um modelo pronto.",
         aiPlan: "Plano guiado",
         aiPlanDesc: "Preencha preferências e receba sugestões de planos.",
         config: "Configuração",

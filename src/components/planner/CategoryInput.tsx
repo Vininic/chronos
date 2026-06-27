@@ -13,7 +13,9 @@ export default function CategoryInput({
   value,
   onChange,
   placeholder = "Add category...",
-  baseCategories = ["Deep Work", "Meeting", "Ritual", "Recovery", "Shallow", "Sleep"],
+  // "Sleep" is intentionally excluded — sleep is a structural part of the system
+  // (the sleep window / boundary), never a user-created routine category.
+  baseCategories = ["Deep Work", "Meeting", "Ritual", "Recovery", "Shallow", "Focus", "Study", "Exercise"],
 }: CategoryInputProps) {
   const [inputValue, setInputValue] = useState("");
 
