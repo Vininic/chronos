@@ -22,7 +22,7 @@ type PageState = "builder" | "form" | "generating" | "proposals" | "merge" | "ex
 export default function PlannerPage() {
   const t = useT();
   const { locale } = useI18n();
-  const { data, replace, resetToSeed } = useSchedule();
+  const { data, replace } = useSchedule();
   const { profile } = useLearningProfile();
   const { createSession } = useChatStore();
   const navigate = useNavigate();
@@ -110,7 +110,20 @@ export default function PlannerPage() {
   }
 
   function handleDeletePlan() {
-    resetToSeed();
+    // "Remove plan" must EMPTY the schedule (keep meta: owner, workday, sleep) —
+    // not resetToSeed(), which re-seeds the default sample plan and made this button
+    // appear to do nothing.
+    replace({
+      ...data,
+      categories: [],
+      routine: [],
+      commitments: [],
+      presets: [],
+      suggestions: [],
+      goals: [],
+      progressSnapshots: [],
+      ledger: { compositionScore: 0, metrics: [], scheduledHours: [] },
+    });
     setConfirmDelete(false);
     setState("empty");
   }
