@@ -527,6 +527,10 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
             </div>
           );
         })()}
+        {/* One relative wrapper (height = timelineHeight) must contain BOTH the grid
+            and the absolute blocks layer so the blocks position against the timeline,
+            not a distant ancestor. */}
+        <div className="relative" style={{ height: timelineHeight }}>
         <TimelineGrid
           isToday={isToday}
           projectedNowMin={projectedNowMin}
@@ -597,6 +601,7 @@ export const DayPlanner = forwardRef<DayPlannerHandle, DayPlannerProps>(function
               <div className="mt-3"><ComposeBlockDialog defaultDay={selectedDate.getDay()} defaultDateIso={selectedDateIso} /></div>
             </div>
           )}
+        </div>
         </div>
       </div>
 

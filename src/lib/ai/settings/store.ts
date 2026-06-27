@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ProviderId } from "../core/provider";
 import { getRegisteredProviders } from "../core/registry";
+import { isAiProxyAvailable } from "../core/adapters/geminiProxy";
 
 export const STORAGE_KEY = "chronos.ai-settings.v1";
 
@@ -166,6 +167,8 @@ export function getApiKeyForProvider(providerId: ProviderId): string {
 }
 
 export function isProviderConfigured(providerId: ProviderId): boolean {
+  // gemini-local has no client key by design — it depends on the hosted proxy (Supabase).
+  if (providerId === "gemini-local") return isAiProxyAvailable();
   const registered = getRegisteredProviders().find((p) => p.id === providerId);
   if (!registered?.requiresApiKey) return true;
   return !!getApiKeyForProvider(providerId);

@@ -14,6 +14,7 @@ import { AlertCircle, Bell, CheckCircle2, Cloud, Key, RefreshCw, RotateCcw, Sun,
 import { toast } from "@/components/ui/use-toast";
 import { useAISettings } from "@/lib/ai/settings/store";
 import { getRegisteredProviders, testProviderConnection, createProviderFromSettings } from "@/lib/ai/core/registry";
+import { isAiProxyAvailable } from "@/lib/ai/core/adapters/geminiProxy";
 import type { ProviderId } from "@/lib/ai/core/provider";
 import { getAllShortcuts, getEffectiveBinding, setCustomBinding, resetBinding, resetAllBindings, useBindings, formatBinding } from "@/lib/keyboard/shortcuts";
 import type { ShortcutBinding } from "@/lib/keyboard/shortcuts";
@@ -401,10 +402,13 @@ function AISettingsContent() {
               {connectionError && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {connectionError}</p>}
             </div>
           )}
-          {settings.providerId === "gemini-local" && !settings.apiKeys["gemini-local"] && (
+          {settings.providerId === "gemini-local" && (
             <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3 text-amber-500" />
-              No API key configured. Enter a key above or switch providers.
+              {isAiProxyAvailable() ? (
+                <><CheckCircle2 className="h-3 w-3 text-green-500" /> Using the hosted Gemini proxy — no key needed.</>
+              ) : (
+                <><AlertCircle className="h-3 w-3 text-amber-500" /> Hosted AI isn’t configured. Add a key for another provider below, or deploy the ai-proxy function.</>
+              )}
             </p>
           )}
           {settings.providerId === "ollama" && (

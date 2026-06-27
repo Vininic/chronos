@@ -1,5 +1,6 @@
 import type { LLMProvider, LLMProviderConfig, ProviderId } from "./provider";
 import { GeminiAdapter } from "./adapters/gemini";
+import { GeminiProxyAdapter, isAiProxyAvailable } from "./adapters/geminiProxy";
 import { OpenAIAdapter } from "./adapters/openai";
 import { AnthropicAdapter } from "./adapters/anthropic";
 import { OllamaAdapter } from "./adapters/ollama";
@@ -20,8 +21,8 @@ export interface ProviderRegistration {
 const PROVIDER_REGISTRY = new Map<ProviderId, ProviderRegistration>([
   ["gemini-local", {
     id: "gemini-local",
-    name: "Gemini (Local)",
-    adapter: GeminiAdapter,
+    name: "Gemini (Hosted)",
+    adapter: GeminiProxyAdapter,
     defaultModel: "gemini-3.1-flash-lite",
     requiresApiKey: false,
     capabilities: { streaming: true, functionCalling: true },
@@ -111,6 +112,9 @@ export function resolveFallbackProvider(
     if (!registration) continue;
 
     if (registration.requiresApiKey && !apiKeys[id]) continue;
+    // gemini-local routes through the hosted proxy (Supabase). Skip it when no project
+    // is configured, so the chain falls through to a usable keyed provider.
+    if (id === "gemini-local" && !isAiProxyAvailable()) continue;
 
     const provider = createProvider(id, {
       apiKey: apiKeys[id] ?? "",

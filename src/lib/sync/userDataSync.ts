@@ -157,7 +157,9 @@ export function useSyncEngine(): void {
   const { session, isCloud } = useAuth();
 
   useEffect(() => {
-    if (!isCloud || !session) return;
+    // Only sync for a real cloud account (signed in with an email) — never for a
+    // local guest session, even when a Supabase project is configured.
+    if (!isCloud || !session?.email) return;
     let interval: ReturnType<typeof setInterval> | undefined;
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;

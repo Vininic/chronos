@@ -46,13 +46,16 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function ScheduleProviderWithRepo({ children }: { children: ReactNode }) {
-  // React to auth: once a Supabase project is configured AND the user is signed in,
-  // use the cloud repository. Switching is reactive (no full reload needed); the
-  // store's hydration guard prevents the local seed from clobbering the remote.
+  // React to auth: the cloud repository is used ONLY for a real cloud account (a
+  // session with an email, i.e. signed in via Supabase). A local "guest" session
+  // (name only) always stays on the local repository, even when a Supabase project
+  // is configured. Switching is reactive (no full reload needed); the store's
+  // hydration guard prevents the local seed from clobbering the remote.
   const { session, isCloud } = useAuth();
+  const cloudAccount = isCloud && !!session?.email;
   const repo = useMemo<ScheduleRepository>(
-    () => (isCloud && session ? new SupabaseScheduleRepository() : new LocalStorageScheduleRepository()),
-    [isCloud, session?.email],
+    () => (cloudAccount ? new SupabaseScheduleRepository() : new LocalStorageScheduleRepository()),
+    [cloudAccount],
   );
   return <ScheduleProvider repo={repo}>{children}</ScheduleProvider>;
 }

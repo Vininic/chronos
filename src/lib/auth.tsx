@@ -37,7 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: user.email,
         });
       } else {
-        setSession(null);
+        // No Supabase session. Preserve a local "guest" session (name only, no email) —
+        // it must survive even when a Supabase project is configured. Only clear a
+        // previously signed-in cloud session (the INITIAL_SESSION/SIGNED_OUT case).
+        setSession((prev) => (prev?.email ? null : prev));
       }
     });
     return () => subscription.unsubscribe();

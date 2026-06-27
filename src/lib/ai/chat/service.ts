@@ -315,6 +315,9 @@ export async function* streamChatMessage(
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("429") || msg.includes("quota") || msg.includes("Quota exceeded") || msg.includes("rate_limit") || msg.includes("RESOURCE_EXHAUSTED")) {
       yield "I'm sorry, but the AI service is currently unavailable because the API quota has been exceeded. Please wait a while and try again, or configure a different AI provider in Settings.";
+    } else if (msg.includes("hosted AI isn't available") || msg.includes("ai-proxy") || msg.includes("Supabase")) {
+      // Hosted Gemini proxy not deployed/reachable — guide the user to BYO key.
+      yield "The hosted AI isn't available right now. Add your own API key in AI Settings to chat with Aetheris.";
     } else {
       yield "I'm sorry, I encountered an error while processing your request. Please try again.";
     }
