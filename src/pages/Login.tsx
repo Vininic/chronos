@@ -27,9 +27,7 @@ export default function Login() {
 
   function enterLocal(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) { toast({ title: L.needsName }); return; }
-    void signIn(trimmed);
+    void signIn(name.trim() || "Visitante");
     toast({ title: L.welcomeBack, description: L.welcomeBackDesc });
     navigate("/dashboard");
   }
@@ -49,11 +47,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function guest() {
-    void signIn("Visitante");
-    navigate("/dashboard");
   }
 
   return (
@@ -126,13 +119,6 @@ export default function Login() {
                   {L.enter} <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </form>
-
-              <button
-                onClick={guest}
-                className="mt-3 w-full h-11 rounded-md border border-border bg-card hover:bg-secondary/10 transition-colors text-sm text-muted-foreground"
-              >
-                {L.continueAsGuest}
-              </button>
 
               <p className="mt-8 text-[11px] text-muted-foreground text-center leading-relaxed">
                 {L.localOnly}
