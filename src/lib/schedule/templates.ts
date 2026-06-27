@@ -51,7 +51,7 @@ function rBlock(
   return { id: uid("r"), day, start, end, kind, title, endsNextDay };
 }
 
-function baseCategories(): { id: string; label: string; tone: string; description: string }[] {
+export function baseCategories(): { id: string; label: string; tone: string; description: string }[] {
   return [
     { id: "deep", label: "Deep work", tone: "bronze", description: "Uninterrupted high-cognition work." },
     { id: "meeting", label: "Meeting", tone: "midnight", description: "Synchronous collaboration." },

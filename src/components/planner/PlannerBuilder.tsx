@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useT } from "@/lib/i18n/I18nProvider";
-import { SCHEDULE_TEMPLATES, createEmptySchedule } from "@/lib/schedule/templates";
+import { SCHEDULE_TEMPLATES, createEmptySchedule, baseCategories } from "@/lib/schedule/templates";
 import type { ScheduleTemplate } from "@/lib/schedule/templates";
 import type { PlannerProposal, PlannerPreferences } from "@/lib/ai/planner/types";
 import type { LearningProfile } from "@/lib/ai/learning/types";
@@ -44,8 +44,11 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
   function handleStartPointChoice(choice: "scratch" | "template" | "ai") {
     setStartPoint(choice);
     if (choice === "scratch") {
-      setGeneratedSchedule(createEmptySchedule());
-      setEditedCategories("");
+      // "From scratch" still seeds the base category palette so the plan is never
+      // empty (0 categories made Apply look broken). Blocks are added on the timeline.
+      const base = { ...createEmptySchedule(), categories: baseCategories() };
+      setGeneratedSchedule(base);
+      setEditedCategories(base.categories.map((c) => c.label).join(", "));
       setStep(3);
     } else if (choice === "template") {
       setSelectedTemplate(null);
@@ -93,8 +96,9 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
 
   function handleRegenerate() {
     if (startPoint === "scratch") {
-      setGeneratedSchedule(createEmptySchedule());
-      setEditedCategories("");
+      const base = { ...createEmptySchedule(), categories: baseCategories() };
+      setGeneratedSchedule(base);
+      setEditedCategories(base.categories.map((c) => c.label).join(", "));
     } else if (startPoint === "template" && selectedTemplate) {
       const s = selectedTemplate.generate();
       setGeneratedSchedule(s);
