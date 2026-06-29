@@ -33,7 +33,7 @@ useEffect(() => subscribe(setAetherisCount), []);
     { to: "/dashboard/planner",  label: t.chronos.nav.planner,  icon: Wand2 },
   ];
   const meta = [
-    { to: "/dashboard/settings", label: "Settings", icon: Settings2 },
+    { to: "/dashboard/settings", label: t.chronos.nav.settings, icon: Settings2 },
     { to: "/dashboard/about",     label: t.chronos.nav.about, icon: CircleHelp },
   ];
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();

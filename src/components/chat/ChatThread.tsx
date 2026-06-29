@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, memo, type ReactNode } from "react";
-import type { ChatMessage } from "@/lib/ai/chat/store";
+import type { ChatMessage, FileAttachment } from "@/lib/ai/chat/store";
 import type { ScheduleData } from "@/lib/schedule/types";
 import {
   CheckCircle2, AlertCircle, Undo2, Clock, Sparkles,
@@ -598,7 +598,14 @@ const MessageRow = memo(function MessageRow({ msg, data, onUndo }: MessageRowPro
     return (
       <div className="flex flex-col items-end">
         <div className="max-w-[82%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-soft break-words">
-          {msg.content}
+          {msg.content !== "(file upload)" && <span>{msg.content}</span>}
+          {msg.attachments && msg.attachments.length > 0 && (
+            <div className="mt-1.5 space-y-1">
+              {msg.attachments.map((a) => (
+                <FileAttachmentPill key={a.id} attachment={a} />
+              ))}
+            </div>
+          )}
         </div>
         <span className="mt-1 text-[10px] tabular-nums text-muted-foreground/70">{formatTime(msg.timestamp)}</span>
       </div>
@@ -611,6 +618,20 @@ const MessageRow = memo(function MessageRow({ msg, data, onUndo }: MessageRowPro
     </AetherisFrame>
   );
 });
+
+// ─── File attachment pill ─────────────────────────────────────────────────────
+
+function FileAttachmentPill({ attachment }: { attachment: FileAttachment }) {
+  const kindIcons: Record<string, string> = { image: "🖼", spreadsheet: "📊", json: "📋", calendar: "📅", text: "📄", other: "📎" };
+  const label = `${kindIcons[attachment.kind] ?? "📎"} ${attachment.name}`;
+
+  return (
+    <div className="flex items-center gap-1.5 rounded-lg border border-primary-foreground/20 bg-primary-foreground/10 px-2 py-1 text-[11px] leading-none">
+      <span className="truncate">{label}</span>
+      <span className="text-[9px] opacity-60 num shrink-0">({(attachment.size / 1024).toFixed(0)}KB)</span>
+    </div>
+  );
+}
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 

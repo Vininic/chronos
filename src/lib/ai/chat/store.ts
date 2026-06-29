@@ -4,6 +4,15 @@ export const CHAT_STORAGE_KEY = "chronos.chat.v1";
 
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 
+export interface FileAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  data: string;
+  kind: "image" | "spreadsheet" | "json" | "calendar" | "text" | "other";
+}
+
 export interface ToolCallAction {
   tool: string;
   params: Record<string, unknown>;
@@ -19,6 +28,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   toolCalls?: ToolCallAction[];
+  attachments?: FileAttachment[];
 }
 
 export interface ChatSession {

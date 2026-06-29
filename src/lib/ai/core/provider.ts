@@ -6,11 +6,18 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>;
 }
 
+export interface FilePart {
+  type: "text" | "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface GenerateOptions {
   systemPrompt?: string;
   tools?: ToolDefinition[];
   temperature?: number;
   maxTokens?: number;
+  fileParts?: FilePart[];
 }
 
 export interface GenerateResult {

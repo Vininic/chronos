@@ -1,5 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { LLMProvider, LLMProviderConfig, GenerateOptions, GenerateResult, ProviderId } from "../provider";
+import { GoogleGenerativeAI, type GenerateContentRequest } from "@google/generative-ai";
+import type { LLMProvider, LLMProviderConfig, GenerateOptions, GenerateResult, ProviderId, FilePart } from "../provider";
 
 export class GeminiAdapter implements LLMProvider {
   readonly id: ProviderId = "gemini";
@@ -22,24 +22,38 @@ export class GeminiAdapter implements LLMProvider {
     return { ...this.configData };
   }
 
-  async generateContent(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
-    const model = this.client.getGenerativeModel({
-      model: this.configData.model ?? this.defaultModel,
-    });
-
-    const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
+  private request(prompt: string, options?: GenerateOptions): GenerateContentRequest {
+    const contents: GenerateContentRequest["contents"] = [];
     if (options?.systemPrompt) {
       contents.push({ role: "user", parts: [{ text: options.systemPrompt }] });
     }
-    contents.push({ role: "user", parts: [{ text: prompt }] });
-
-    const result = await model.generateContent({
+    const parts: GenerateContentRequest["contents"][number]["parts"] = [];
+    if (options?.fileParts) {
+      for (const fp of options.fileParts) {
+        if (fp.type === "image") {
+          parts.push({ inlineData: { mimeType: fp.mimeType, data: fp.data } });
+        } else {
+          parts.push({ text: fp.data });
+        }
+      }
+    }
+    parts.push({ text: prompt });
+    contents.push({ role: "user", parts });
+    return {
       contents,
       generationConfig: {
         temperature: options?.temperature ?? 0.7,
         maxOutputTokens: options?.maxTokens ?? 4096,
       },
+    };
+  }
+
+  async generateContent(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
+    const model = this.client.getGenerativeModel({
+      model: this.configData.model ?? this.defaultModel,
     });
+
+    const result = await model.generateContent(this.request(prompt, options));
 
     const response = result.response;
     return {
@@ -58,19 +72,7 @@ export class GeminiAdapter implements LLMProvider {
       model: this.configData.model ?? this.defaultModel,
     });
 
-    const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
-    if (options?.systemPrompt) {
-      contents.push({ role: "user", parts: [{ text: options.systemPrompt }] });
-    }
-    contents.push({ role: "user", parts: [{ text: prompt }] });
-
-    const result = await model.generateContentStream({
-      contents,
-      generationConfig: {
-        temperature: options?.temperature ?? 0.7,
-        maxOutputTokens: options?.maxTokens ?? 4096,
-      },
-    });
+    const result = await model.generateContentStream(this.request(prompt, options));
 
     for await (const chunk of result.stream) {
       yield chunk.text();

@@ -13,11 +13,12 @@ import { safeKindStyle } from "@/components/dashboard/widgets";
 import { runAetherisPipeline, type AetherisPipelineResult } from "@/lib/ai/core/pipeline";
 import type { Insight, Suggestion, RecoveryAnalysis } from "@/lib/ai/core/schemas";
 import type { OptimizationResult } from "@/lib/ai/optimization/optimizationEngine";
-import { useChatStore, type ChatMessage } from "@/lib/ai/chat/store";
+import { useChatStore, type ChatMessage, type FileAttachment } from "@/lib/ai/chat/store";
 import { streamChatMessage, extractToolCalls, stripToolCallsFromText } from "@/lib/ai/chat/service";
 import { globalToolRegistry, registerAllTools } from "@/lib/ai/tools";
 import { getProviderRegistration } from "@/lib/ai/core/registry";
 import { loadSettingsSync, useAISettings, isProviderConfigured } from "@/lib/ai/settings/store";
+import { workbookToText } from "@/lib/schedule/import";
 import {
   Sparkles, Brain, Coffee, Target, AlertTriangle, ChevronDown, ChevronUp,
   Loader2, MessageSquare, Send, Plus, Trash2, PanelRightOpen, PanelRightClose,
@@ -64,6 +65,8 @@ export default function Aetheris() {
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [tab, setTab] = useState<TabView>("today");
   const [feedbackTarget, setFeedbackTarget] = useState<Suggestion | null>(null);
@@ -178,6 +181,108 @@ export default function Aetheris() {
     },
   });
 
+  // File reading utilities
+  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+  function readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsText(file);
+    });
+  }
+
+  function readFileAsDataURL(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  const SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  const SUPPORTED_SPREADSHEET_TYPES = [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+  ];
+  const SUPPORTED_TEXT_TYPES = ["application/json", "text/calendar", "text/plain"];
+
+  function inferKind(mimeType: string): FileAttachment["kind"] {
+    if (SUPPORTED_IMAGE_TYPES.includes(mimeType)) return "image";
+    if (SUPPORTED_SPREADSHEET_TYPES.includes(mimeType)) return "spreadsheet";
+    if (mimeType === "application/json") return "json";
+    if (mimeType === "text/calendar") return "calendar";
+    return "other";
+  }
+
+  async function processFile(file: File): Promise<FileAttachment | { error: string }> {
+    if (file.size > MAX_FILE_SIZE) {
+      return { error: `${t.chronos.aetheris.fileTooLarge} (${file.name})` };
+    }
+
+    const kind = inferKind(file.type);
+    const base: Omit<FileAttachment, "data" | "kind"> & { kind: FileAttachment["kind"] | "other" } = {
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: file.name,
+      mimeType: file.type,
+      size: file.size,
+      kind: kind === "other" ? "other" : kind,
+    };
+
+    try {
+      if (kind === "image") {
+        const dataUrl = await readFileAsDataURL(file);
+        const base64 = dataUrl.split(",")[1];
+        return { ...base, kind: "image", data: base64 };
+      }
+      if (kind === "spreadsheet") {
+        if (file.type === "text/csv") {
+          const text = await readFileAsText(file);
+          return { ...base, kind: "spreadsheet", data: text };
+        }
+        const buf = await readFileAsArrayBuffer(file);
+        const text = await workbookToText(buf);
+        return { ...base, kind: "spreadsheet", data: text };
+      }
+      if (kind === "json" || kind === "calendar" || kind === "other") {
+        const text = await readFileAsText(file);
+        return { ...base, kind, data: text };
+      }
+      return { error: `${t.chronos.aetheris.fileUnsupported} (${file.name})` };
+    } catch {
+      return { error: `Failed to process ${file.name}` };
+    }
+  }
+
+  async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files?.length) return;
+    for (const file of Array.from(files)) {
+      const result = await processFile(file);
+      if ("error" in result) {
+        toast({ title: result.error, variant: "destructive" });
+      } else {
+        setAttachments((prev) => [...prev, result]);
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
   // Register tools once (the mutators read from dataRef at call time)
   useEffect(() => {
     registerAllTools(data, mutatorsRef.current);
@@ -266,18 +371,20 @@ export default function Aetheris() {
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || loading || !activeSessionId) return;
+    if ((!text && attachments.length === 0) || loading || !activeSessionId) return;
 
+    const pendingAttachments = [...attachments];
+    setAttachments([]);
     setInput("");
     setLoading(true);
     setStreamingText("");
 
-    addMessage(activeSessionId, { role: "user", content: text });
+    addMessage(activeSessionId, { role: "user", content: text || "(file upload)", attachments: pendingAttachments });
 
     let fullResponse = "";
 
     try {
-      const stream = streamChatMessage(data, activeSession.messages, text, settings.autonomy);
+      const stream = streamChatMessage(data, activeSession.messages, text, settings.autonomy, pendingAttachments);
       for await (const chunk of stream) {
         fullResponse += chunk;
         setStreamingText(fullResponse);
@@ -619,7 +726,48 @@ export default function Aetheris() {
                 </DropdownMenu>
               </div>
             </div>
+            {/* Attachment preview */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-3 pb-1">
+                {attachments.map((a) => {
+                  const kindIcons: Record<string, string> = { image: "🖼", spreadsheet: "📊", json: "📋", calendar: "📅", text: "📄", other: "📎" };
+                  return (
+                    <span
+                      key={a.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground"
+                    >
+                      <span>{kindIcons[a.kind] ?? "📎"}</span>
+                      <span className="truncate max-w-[120px]">{a.name}</span>
+                      <span className="text-[9px] text-muted-foreground/50 num">({(a.size / 1024).toFixed(0)}KB)</span>
+                      <button
+                        onClick={() => removeAttachment(a.id)}
+                        className="ml-0.5 h-3.5 w-3.5 rounded-full grid place-items-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        title={t.chronos.aetheris.fileRemove}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
             <div className="flex items-center gap-2 px-3 py-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.csv,.json,.ics,.jpg,.jpeg,.png,.gif,.webp"
+                multiple
+                className="hidden"
+                onChange={handleFilePick}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                className="h-8 w-8 rounded-md grid place-items-center text-muted-foreground/50 hover:text-primary hover:bg-secondary/10 transition-colors shrink-0 disabled:opacity-30"
+                title={t.chronos.aetheris.fileUpload}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
               <input
                 type="text"
                 value={input}
@@ -631,7 +779,7 @@ export default function Aetheris() {
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || loading}
+                disabled={(!input.trim() && attachments.length === 0) || loading}
                 className="h-8 w-8 rounded-md bg-primary grid place-items-center text-primary-foreground disabled:opacity-30 hover:bg-primary-deep transition-colors shrink-0"
               >
                 {loading ? (

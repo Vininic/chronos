@@ -1,7 +1,8 @@
 import type { ScheduleData } from "@/lib/schedule/types";
 import { buildContext } from "../context/buildContext";
 import { compressContext } from "../context/serializers";
-import type { ChatMessage } from "./store";
+import type { ChatMessage, FileAttachment } from "./store";
+import type { FilePart } from "../core/provider";
 import { createProviderFromSettings, resolveFallbackProvider, getProviderRegistration } from "../core/registry";
 import { loadSettingsSync, getApiKeyForProvider } from "../settings/store";
 import { globalToolRegistry, type ToolDefinition } from "../tools/registry";
@@ -103,9 +104,29 @@ function describeToolParams(tool: ToolDefinition): string {
   return "";
 }
 
+function formatMessageAttachments(msg: ChatMessage): string {
+  if (!msg.attachments?.length) return "";
+  return msg.attachments.map((a) => {
+    const kindLabels: Record<string, string> = { image: "Image", spreadsheet: "Spreadsheet", json: "JSON", calendar: "Calendar", text: "Text", other: "File" };
+    const kind = kindLabels[a.kind] ?? "File";
+    if (a.kind === "image") {
+      return `[Attached ${kind}: ${a.name} (${a.mimeType}) — included as image for visual analysis]`;
+    }
+    if (a.kind === "spreadsheet") {
+      return `[Attached ${kind}: ${a.name}]\nExtracted content:\n${a.data.slice(0, 8000)}`;
+    }
+    if (a.kind === "json") {
+      return `[Attached ${kind}: ${a.name}]\nContent:\n${a.data.slice(0, 5000)}`;
+    }
+    return `[Attached ${kind}: ${a.name} — ${a.size} bytes]`;
+  }).join("\n\n");
+}
+
 function formatMessageForPrompt(msg: ChatMessage): string {
   const role = msg.role === "assistant" ? "Aetheris" : "User";
   let text = `${role}: ${msg.content}`;
+  const att = formatMessageAttachments(msg);
+  if (att) text += "\n" + att;
   if (msg.toolCalls?.length) {
     const calls = msg.toolCalls.map((tc) => {
       const status = tc.undone ? " [UNDONE]" : "";
@@ -116,6 +137,16 @@ function formatMessageForPrompt(msg: ChatMessage): string {
     text += "\n" + calls.join("\n");
   }
   return text;
+}
+
+export function buildFileParts(attachments: FileAttachment[]): FilePart[] {
+  const parts: FilePart[] = [];
+  for (const a of attachments) {
+    if (a.kind === "image") {
+      parts.push({ type: "image", data: a.data, mimeType: a.mimeType });
+    }
+  }
+  return parts;
 }
 
 export function buildChatPrompt(
@@ -266,10 +297,11 @@ export async function* streamChatMessage(
   messages: ChatMessage[],
   userMessage: string,
   autonomy?: "conservative" | "balanced" | "aggressive",
+  attachments?: FileAttachment[],
 ): AsyncIterable<string> {
   const fullMessages: ChatMessage[] = [
     ...messages,
-    { id: "pending-user", role: "user", content: userMessage, timestamp: new Date().toISOString() },
+    { id: "pending-user", role: "user", content: userMessage, timestamp: new Date().toISOString(), attachments },
   ];
   const version = selectPromptVersion(messages);
   const prompt = buildChatPrompt(data, fullMessages, version);
@@ -280,6 +312,7 @@ export async function* streamChatMessage(
   const modelName = settings.models[providerId];
   const reg = getProviderRegistration(providerId);
   const apiKey = settings.apiKeys[providerId] || getApiKeyForProvider(providerId);
+  const fileParts = attachments ? buildFileParts(attachments) : undefined;
   let provider;
 
   if (reg && !reg.requiresApiKey || apiKey) {
@@ -306,6 +339,7 @@ export async function* streamChatMessage(
       systemPrompt,
       temperature: 0.5,
       maxTokens: 4096,
+      fileParts,
     });
 
     for await (const chunk of stream) {

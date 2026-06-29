@@ -11,6 +11,7 @@ import { registerCategoryTools } from "./categoryTools";
 import { registerProgramTools } from "./programTools";
 import { registerSessionTools } from "./sessionTools";
 import { registerRegenerateTools } from "./regenerateTools";
+import { registerExportTools } from "./exportTools";
 
 export type { ToolDefinition, ToolResult } from "./registry";
 export { globalToolRegistry } from "./registry";
@@ -49,4 +50,5 @@ export function registerAllTools(
   registerProgramTools(mutators);
   registerSessionTools(ctx, mutators);
   registerRegenerateTools();
+  registerExportTools(() => data);
 }

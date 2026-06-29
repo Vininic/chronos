@@ -1,4 +1,4 @@
-import type { LLMProvider, LLMProviderConfig, GenerateOptions, GenerateResult, ProviderId } from "../provider";
+import type { LLMProvider, LLMProviderConfig, GenerateOptions, GenerateResult, ProviderId, FilePart } from "../provider";
 
 export class OpenAIAdapter implements LLMProvider {
   readonly id: ProviderId = "openai";
@@ -19,12 +19,26 @@ export class OpenAIAdapter implements LLMProvider {
     return { ...this.configData };
   }
 
+  private buildContent(prompt: string, fileParts?: FilePart[]): string | { type: "text" | "image_url"; text?: string; image_url?: { url: string } }[] {
+    if (!fileParts || fileParts.length === 0) return prompt;
+    const content: { type: "text" | "image_url"; text?: string; image_url?: { url: string } }[] = [];
+    for (const fp of fileParts) {
+      if (fp.type === "image") {
+        content.push({ type: "image_url", image_url: { url: `data:${fp.mimeType};base64,${fp.data}` } });
+      } else {
+        content.push({ type: "text", text: fp.data });
+      }
+    }
+    content.push({ type: "text", text: prompt });
+    return content;
+  }
+
   async generateContent(prompt: string, options?: GenerateOptions): Promise<GenerateResult> {
     const body: Record<string, unknown> = {
       model: this.configData.model ?? this.defaultModel,
       messages: [
         ...(options?.systemPrompt ? [{ role: "system", content: options.systemPrompt }] : []),
-        { role: "user", content: prompt },
+        { role: "user", content: this.buildContent(prompt, options?.fileParts) },
       ],
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 4096,
@@ -66,7 +80,7 @@ export class OpenAIAdapter implements LLMProvider {
       model: this.configData.model ?? this.defaultModel,
       messages: [
         ...(options?.systemPrompt ? [{ role: "system", content: options.systemPrompt }] : []),
-        { role: "user", content: prompt },
+        { role: "user", content: this.buildContent(prompt, options?.fileParts) },
       ],
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 4096,
