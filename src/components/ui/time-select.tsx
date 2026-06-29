@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -82,7 +82,29 @@ export function TimeSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const listRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const wheelCleanup = useRef<(() => void) | null>(null);
+
+  // The list is portaled to <body>, so inside a modal dialog the dialog's
+  // scroll-lock eats wheel events over it. Attach a non-passive wheel handler
+  // the moment the list mounts (a callback ref — `open`-keyed effects fire
+  // before the portaled node exists) and drive the scroll ourselves.
+  const setListRef = useCallback((node: HTMLDivElement | null) => {
+    listRef.current = node;
+    wheelCleanup.current?.();
+    wheelCleanup.current = null;
+    if (node) {
+      const onWheel = (e: WheelEvent) => {
+        const atTop = node.scrollTop <= 0;
+        const atBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+        if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) return;
+        node.scrollTop += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+        e.preventDefault();
+      };
+      node.addEventListener("wheel", onWheel, { passive: false });
+      wheelCleanup.current = () => node.removeEventListener("wheel", onWheel);
+    }
+  }, []);
 
   const groups = useMemo(() => {
     const lo = min != null ? toMin(min) : 0;
@@ -157,7 +179,7 @@ export function TimeSelect({
             value={search}
             onValueChange={setSearch}
           />
-          <CommandList ref={listRef} className="max-h-[300px]">
+          <CommandList ref={setListRef} className="max-h-[300px]">
             <CommandEmpty>No time found.</CommandEmpty>
             {filteredGroups.map((group, i) => (
               <Fragment key={group.hour}>

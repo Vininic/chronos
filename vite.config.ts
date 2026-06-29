@@ -28,9 +28,12 @@ export default defineConfig(({ mode }) => ({
         background_color: "#0d0d0d",
         display: "standalone",
         icons: [
-          { src: "/pwa-192x192.svg", sizes: "192x192", type: "image/svg+xml" },
-          { src: "/pwa-512x512.svg", sizes: "512x512", type: "image/svg+xml" },
-          { src: "/pwa-512x512.svg", sizes: "512x512", type: "image/svg+xml", purpose: "maskable" },
+          // PNGs are required for installability (Android "Add to home screen",
+          // desktop Chrome/Edge "Install app"). SVG kept as a scalable extra.
+          { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/pwa-512x512.svg", sizes: "512x512", type: "image/svg+xml", purpose: "any" },
         ],
       },
       workbox: {

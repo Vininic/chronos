@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { SCHEDULE_TEMPLATES, createEmptySchedule, baseCategories } from "@/lib/schedule/templates";
 import type { ScheduleTemplate } from "@/lib/schedule/templates";
@@ -11,10 +12,8 @@ import CategoryInput from "./CategoryInput";
 import DraftWeekPreview from "./DraftWeekPreview";
 import BedtimeWakeControl from "./BedtimeWakeControl";
 import SleepRibbon from "./SleepRibbon";
-import PlannerDraftChat from "./PlannerDraftChat";
-import { isProviderConfigured, loadSettingsSync } from "@/lib/ai/settings/store";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Check, Sparkles, FileText, Wand2, Merge } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Sparkles, FileText, Wand2, Merge } from "lucide-react";
 
 interface PlannerBuilderProps {
   onApply: (schedule: ScheduleData) => void;
@@ -29,6 +28,7 @@ const WORKLOAD_STYLES: Record<ScheduleTemplate["workload"], { badge: string; bar
 
 export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuilderProps) {
   const t = useT();
+  const navigate = useNavigate();
   const { locale } = useI18n();
   const isPt = locale === "pt";
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -46,9 +46,6 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
   const [merging, setMerging] = useState(false);
 
   const b = t.chronos.plannerPage.builder;
-  // The visual chat only appears when an AI provider is usable. Without one,
-  // the Planner stays fully functional via templates / manual edits.
-  const aiUsable = isProviderConfigured(loadSettingsSync().providerId);
 
   function handleStartPointChoice(choice: "scratch" | "template" | "ai") {
     setStartPoint(choice);
@@ -175,6 +172,13 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
       }
       onApply({ ...generatedSchedule, categories });
     }
+  }
+
+  // Conversational tweaks are handled by Aetheris against the live schedule —
+  // apply the plan first, then hand off so its edits are real (not draft-only).
+  function handleApplyAndChat() {
+    handleApply();
+    navigate("/dashboard/aetheris");
   }
 
   async function handleMerge() {
@@ -599,11 +603,21 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
                 />
               </div>
 
-              {aiUsable && (
-                <div className="chronos-card p-5">
-                  <PlannerDraftChat draft={generatedSchedule} onDraftChange={setGeneratedSchedule} />
+              <div className="chronos-card p-5">
+                <div className="flex items-center gap-1.5 mb-2 text-sm font-medium text-primary">
+                  <Sparkles className="h-4 w-4 text-secondary" />
+                  {isPt ? "Personalizar por conversa" : "Personalize via chat"}
                 </div>
-              )}
+                <p className="text-xs text-muted-foreground mb-3">
+                  {isPt
+                    ? "Ajustes em linguagem natural acontecem no Aetheris, sobre sua agenda já aplicada — lá ele edita de verdade, não só uma prévia."
+                    : "Natural-language tweaks happen in Aetheris, on your applied schedule — there it makes real edits, not just a preview."}
+                </p>
+                <Button variant="outline" className="w-full" onClick={handleApplyAndChat}>
+                  {isPt ? "Aplicar e abrir o Aetheris" : "Apply & open Aetheris"}
+                  <ArrowRight className="h-4 w-4 ml-1.5" />
+                </Button>
+              </div>
             </div>
           </div>
 

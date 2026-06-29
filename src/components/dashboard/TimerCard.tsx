@@ -7,6 +7,7 @@ import { buildAgendaForDate } from "@/lib/schedule/agenda";
 import { calcProgress } from "@/lib/schedule/workspace-engine";
 import { timeToMinutes } from "@/lib/schedule/types";
 import { safeKindStyle } from "@/components/dashboard/widgets";
+import { useT } from "@/lib/i18n/I18nProvider";
 
 function MiniHourglass({ ratio, size = 30 }: { ratio: number; size?: number }) {
   const r = Math.max(0, Math.min(1, ratio));
@@ -55,6 +56,7 @@ export function TimerCard() {
   const navigate = useNavigate();
   const timer = useTimer();
   const { data } = useSchedule();
+  const t = useT();
 
   const { activeSession, currentWorkspaceBlock } = useMemo(() => {
     const agenda = buildAgendaForDate(data, new Date());
@@ -141,7 +143,7 @@ export function TimerCard() {
             <Hourglass className="h-4.5 w-4.5 text-sidebar-foreground/20 group-hover/timer:text-sidebar-foreground/35 transition-colors" />
           </div>
           <div className="flex-1 min-w-0 text-[11px] text-sidebar-foreground/35 italic group-hover/timer:text-sidebar-foreground/50 transition-colors">
-            No timer active
+            {t.chronos.widgets.noTimerActive}
           </div>
         </button>
 

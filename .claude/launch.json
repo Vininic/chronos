@@ -5,8 +5,8 @@
       "name": "chronos",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--host", "127.0.0.1"],
-      "port": 4173,
-      "autoPort": true
+      "port": 8080,
+      "autoPort": false
     }
   ]
 }

@@ -1,5 +1,19 @@
 # HANDOFF — Planner redesign (draft + visual chat)
 
+> **Update — refinements round (post-redesign).** The in-Planner *visual chat*
+> (`PlannerDraftChat`) was **removed**: the hosted model narrated "Actions taken…"
+> as prose without emitting `[TOOL:…]` markers, so the draft never changed. It is
+> replaced by an **"Apply & open Aetheris"** handoff — Aetheris edits the live
+> schedule with the real tool registry, so its edits are actually effective.
+> `src/lib/ai/tools/draftExecutor.ts` (+ its tests) are retained but no longer
+> wired into the UI. Also in this round: Settings page is fully i18n'd; the
+> TimeSelect wheel-scroll works inside dialogs (callback-ref non-passive handler);
+> daytime "breaks" (naps) are selectable in the awake window and persist;
+> **XLSX export/import now uses `exceljs`** (colored day-planner grid + legend
+> sheets + machine-readable round-trip) and lives on the Settings → *Data &
+> portability* card alongside an AI-assisted import; PWA now ships PNG icons so
+> it is installable. `xlsx` (SheetJS) was removed.
+
 > Scope of this handoff: **redesign the Planner** into a non-destructive *draft* flow
 > with a live week preview and an Aetheris-powered *visual chat* to personalize, applied
 > only at the end. Everything else in the app is shipped and green.

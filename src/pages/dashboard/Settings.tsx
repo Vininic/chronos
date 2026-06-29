@@ -22,9 +22,11 @@ import { hasSupabaseConfig, loadSupabaseConfig, saveSupabaseConfig, clearSupabas
 import type { SupabaseConfig } from "@/lib/supabase/client";
 import { getPushState, requestPermission, subscribeToPush, unsubscribeFromPush, getVapidPublicKey, setVapidPublicKey, clearVapidPublicKey } from "@/lib/notifications/push";
 import type { PushState } from "@/lib/notifications/push";
+import DataPortabilityCard from "@/components/dashboard/DataPortabilityCard";
 
 export default function Settings() {
   const t = useT();
+  const s = t.chronos.settingsPage;
   const { locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const { bindings, refresh } = useBindings();
@@ -56,8 +58,8 @@ export default function Settings() {
     setCustomBinding(capturing, binding);
     setCapturing(null);
     refresh();
-    toast({ title: "Shortcut updated" });
-  }, [capturing, refresh]);
+    toast({ title: s.shortcuts.updated });
+  }, [capturing, refresh, s]);
 
   useEffect(() => {
     if (capturing) {
@@ -69,9 +71,9 @@ export default function Settings() {
   return (
     <div className="max-w-2xl mx-auto space-y-8 py-2">
       <div>
-        <h1 className="font-display text-2xl text-primary tracking-tight">Settings</h1>
+        <h1 className="font-display text-2xl text-primary tracking-tight">{s.title}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Configure your preferences, AI providers, and keyboard shortcuts.
+          {s.subtitle}
         </p>
       </div>
 
@@ -80,13 +82,13 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Globe className="h-4 w-4 text-muted-foreground" />
-            General
+            {s.general.title}
           </CardTitle>
-          <CardDescription>Language, appearance, and default preferences.</CardDescription>
+          <CardDescription>{s.general.desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-2">
-            <Label>Language</Label>
+            <Label>{s.general.language}</Label>
             <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -104,7 +106,7 @@ export default function Settings() {
           <Separator />
 
           <div>
-            <Label>Theme</Label>
+            <Label>{s.general.theme}</Label>
             <div className="flex items-center gap-2 mt-2">
               <Button
                 variant={theme === "light" ? "default" : "outline"}
@@ -113,7 +115,7 @@ export default function Settings() {
                 className="flex items-center gap-2"
               >
                 <Sun className="h-4 w-4" />
-                Light
+                {s.general.light}
               </Button>
               <Button
                 variant={theme === "dark" ? "default" : "outline"}
@@ -122,21 +124,24 @@ export default function Settings() {
                 className="flex items-center gap-2"
               >
                 <Moon className="h-4 w-4" />
-                Dark
+                {s.general.dark}
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* Data & Portability */}
+      <DataPortabilityCard />
+
       {/* Keyboard Shortcuts */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Keyboard className="h-4 w-4 text-muted-foreground" />
-            Keyboard Shortcuts
+            {s.shortcuts.title}
           </CardTitle>
-          <CardDescription>Customize keyboard shortcuts. Click a shortcut to rebind, press Escape to cancel.</CardDescription>
+          <CardDescription>{s.shortcuts.desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {getAllShortcuts().map((def) => {
@@ -148,7 +153,7 @@ export default function Settings() {
                 <div className="flex items-center gap-2">
                   {capturing === def.id ? (
                     <span className="text-xs text-secondary animate-pulse px-3 py-1 rounded border border-secondary/40 bg-secondary/5">
-                      Press keys...
+                      {s.shortcuts.pressKeys}
                     </span>
                   ) : (
                     <button
@@ -162,7 +167,7 @@ export default function Settings() {
                     <button
                       onClick={() => { resetBinding(def.id); refresh(); }}
                       className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
-                      title="Reset to default"
+                      title={s.shortcuts.resetOne}
                     >
                       <RotateCcw className="h-3 w-3" />
                     </button>
@@ -172,9 +177,9 @@ export default function Settings() {
             );
           })}
           <div className="pt-2">
-            <Button variant="ghost" size="sm" onClick={() => { resetAllBindings(); refresh(); toast({ title: "All shortcuts reset" }); }}>
+            <Button variant="ghost" size="sm" onClick={() => { resetAllBindings(); refresh(); toast({ title: s.shortcuts.allReset }); }}>
               <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Reset all to defaults
+              {s.shortcuts.resetAll}
             </Button>
           </div>
         </CardContent>
@@ -185,53 +190,53 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Cloud className="h-4 w-4 text-muted-foreground" />
-            Cloud Sync
+            {s.cloud.title}
           </CardTitle>
-          <CardDescription>Sync your schedule across devices via Supabase. Requires a Supabase project.</CardDescription>
+          <CardDescription>{s.cloud.desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2">
-            <Label>Supabase URL</Label>
+            <Label>{s.cloud.url}</Label>
             <Input value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} placeholder="https://your-project.supabase.co" />
           </div>
           <div className="grid gap-2">
-            <Label>Anon Key</Label>
+            <Label>{s.cloud.anonKey}</Label>
             <Input type="password" value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiIs..." />
           </div>
           <div className="flex items-center gap-3">
             <Button onClick={() => {
               if (!supabaseUrl.trim() || !supabaseAnonKey.trim()) {
-                toast({ title: "Missing fields", description: "Both URL and anon key are required.", variant: "destructive" });
+                toast({ title: s.cloud.missingTitle, description: s.cloud.missingDesc, variant: "destructive" });
                 return;
               }
               saveSupabaseConfig({ url: supabaseUrl.trim(), anonKey: supabaseAnonKey.trim() });
-              toast({ title: "Supabase configured", description: "Reloading to connect..." });
+              toast({ title: s.cloud.savedTitle, description: s.cloud.savedDesc });
               setTimeout(() => window.location.reload(), 1000);
             }}>
               <Cloud className="h-4 w-4 mr-1.5" />
-              Save & Connect
+              {s.cloud.connect}
             </Button>
             {isSupabaseConnected && (
               <Button variant="outline" onClick={() => {
                 clearSupabaseConfig();
                 setSupabaseUrl("");
                 setSupabaseAnonKey("");
-                toast({ title: "Supabase disconnected", description: "Reloading to disconnect..." });
+                toast({ title: s.cloud.removedTitle, description: s.cloud.removedDesc });
                 setTimeout(() => window.location.reload(), 1000);
               }}>
-                Disconnect
+                {s.cloud.disconnect}
               </Button>
             )}
             {isSupabaseConnected && (
               <Badge variant="outline" className="text-green-500 border-green-500/30 ml-auto">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
-                Connected
+                {s.cloud.connected}
               </Badge>
             )}
           </div>
           {isSupabaseConnected && (
             <p className="text-xs text-muted-foreground">
-              Your schedule will sync to Supabase on every change. A page reload may be required after changing connection settings.
+              {s.cloud.note}
             </p>
           )}
         </CardContent>
@@ -242,27 +247,27 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Bell className="h-4 w-4 text-muted-foreground" />
-            Push Notifications
+            {s.push.title}
           </CardTitle>
-          <CardDescription>Receive notifications for upcoming blocks, goals, and reminders.</CardDescription>
+          <CardDescription>{s.push.desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!pushState.supported && (
-            <p className="text-sm text-muted-foreground">Push notifications are not supported in this browser.</p>
+            <p className="text-sm text-muted-foreground">{s.push.unsupported}</p>
           )}
           {pushState.supported && (
             <>
               <div className="grid gap-2">
-                <Label>VAPID Public Key</Label>
+                <Label>{s.push.vapid}</Label>
                 <Input value={vapidKey} onChange={(e) => setVapidKey(e.target.value)} placeholder="BEl62iUY..." />
-                <p className="text-xs text-muted-foreground">Required for push notifications. Generate from your push service provider.</p>
+                <p className="text-xs text-muted-foreground">{s.push.vapidNote}</p>
               </div>
               <div className="flex items-center gap-3">
                 <Button disabled={!vapidKey.trim() || pushState.permission === "denied"} onClick={async () => {
                   if (pushState.permission === "default") {
                     const result = await requestPermission();
                     if (result !== "granted") {
-                      toast({ title: "Permission denied", description: "Allow notifications in your browser settings to enable push.", variant: "destructive" });
+                      toast({ title: s.push.deniedTitle, description: s.push.deniedDesc, variant: "destructive" });
                       return;
                     }
                     setPushState((prev) => ({ ...prev, permission: result }));
@@ -271,32 +276,32 @@ export default function Settings() {
                   const ok = await subscribeToPush(vapidKey.trim());
                   if (ok) {
                     setPushState((prev) => ({ ...prev, subscribed: true }));
-                    toast({ title: "Subscribed", description: "You will now receive push notifications." });
+                    toast({ title: s.push.subscribedTitle, description: s.push.subscribedDesc });
                   } else {
-                    toast({ title: "Subscription failed", description: "Could not subscribe to push. Check your VAPID key.", variant: "destructive" });
+                    toast({ title: s.push.failedTitle, description: s.push.failedDesc, variant: "destructive" });
                   }
                 }}>
                   <Bell className="h-4 w-4 mr-1.5" />
-                  {pushState.subscribed ? "Resubscribe" : "Subscribe"}
+                  {pushState.subscribed ? s.push.resubscribe : s.push.subscribe}
                 </Button>
                 {pushState.subscribed && (
                   <Button variant="outline" onClick={async () => {
                     await unsubscribeFromPush();
                     setPushState((prev) => ({ ...prev, subscribed: false }));
-                    toast({ title: "Unsubscribed", description: "Push notifications disabled." });
+                    toast({ title: s.push.unsubscribedTitle, description: s.push.unsubscribedDesc });
                   }}>
-                    Unsubscribe
+                    {s.push.unsubscribe}
                   </Button>
                 )}
                 {pushState.subscribed && (
                   <Badge variant="outline" className="text-green-500 border-green-500/30 ml-auto">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Subscribed
+                    {s.push.subscribed}
                   </Badge>
                 )}
               </div>
               {pushState.permission === "denied" && (
-                <p className="text-xs text-destructive">Notifications blocked. Enable them in your browser settings.</p>
+                <p className="text-xs text-destructive">{s.push.blocked}</p>
               )}
             </>
           )}
@@ -310,6 +315,7 @@ export default function Settings() {
 }
 
 function AISettingsContent() {
+  const s = useT().chronos.settingsPage;
   const {
     settings,
     updateProvider,
@@ -345,10 +351,10 @@ function AISettingsContent() {
       });
       const result = await testProviderConnection(provider);
       setConnectionStatus((prev) => ({ ...prev, [providerId]: result.ok ? "ok" : "error" }));
-      if (!result.ok) setConnectionError(result.error ?? "Connection failed");
+      if (!result.ok) setConnectionError(result.error ?? s.ai.connectionFailed);
     } catch {
       setConnectionStatus((prev) => ({ ...prev, [providerId]: "error" }));
-      setConnectionError("Connection failed");
+      setConnectionError(s.ai.connectionFailed);
     }
   };
 
@@ -356,12 +362,12 @@ function AISettingsContent() {
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Active Provider</CardTitle>
-          <CardDescription>Choose which AI provider powers Aetheris analysis and suggestions.</CardDescription>
+          <CardTitle className="text-base">{s.ai.activeProvider}</CardTitle>
+          <CardDescription>{s.ai.activeProviderDesc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2">
-            <Label>Provider</Label>
+            <Label>{s.ai.provider}</Label>
             <Select value={settings.providerId} onValueChange={(v) => updateProvider(v as ProviderId)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -371,8 +377,8 @@ function AISettingsContent() {
                   <SelectItem key={p.id} value={p.id}>
                     <span className="flex items-center gap-2">
                       {p.name}
-                      {p.capabilities.functionCalling ? <Badge variant="outline" className="text-[10px] px-1 py-0">tools</Badge> : null}
-                      {!p.requiresApiKey ? <Badge variant="secondary" className="text-[10px] px-1 py-0">free</Badge> : null}
+                      {p.capabilities.functionCalling ? <Badge variant="outline" className="text-[10px] px-1 py-0">{s.ai.tools}</Badge> : null}
+                      {!p.requiresApiKey ? <Badge variant="secondary" className="text-[10px] px-1 py-0">{s.ai.free}</Badge> : null}
                     </span>
                   </SelectItem>
                 ))}
@@ -380,15 +386,15 @@ function AISettingsContent() {
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label>Model</Label>
+            <Label>{s.ai.model}</Label>
             <Input value={settings.models[settings.providerId] ?? currentProviderInfo?.defaultModel ?? ""}
               onChange={(e) => setModel(settings.providerId, e.target.value)}
               placeholder={currentProviderInfo?.defaultModel ?? "model-name"} />
-            {currentProviderInfo && <p className="text-xs text-muted-foreground">Default: {currentProviderInfo.defaultModel}</p>}
+            {currentProviderInfo && <p className="text-xs text-muted-foreground">{s.ai.default}: {currentProviderInfo.defaultModel}</p>}
           </div>
           {currentProviderInfo?.requiresApiKey && (
             <div className="grid gap-2">
-              <Label>API Key</Label>
+              <Label>{s.ai.apiKey}</Label>
               <div className="flex gap-2">
                 <Input type="password" value={settings.apiKeys[settings.providerId] ?? ""}
                   onChange={(e) => setApiKey(settings.providerId, e.target.value)} placeholder="sk-..." />
@@ -405,15 +411,15 @@ function AISettingsContent() {
           {settings.providerId === "gemini-local" && (
             <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
               {isAiProxyAvailable() ? (
-                <><CheckCircle2 className="h-3 w-3 text-green-500" /> Using the hosted Gemini proxy — no key needed.</>
+                <><CheckCircle2 className="h-3 w-3 text-green-500" /> {s.ai.proxyOk}</>
               ) : (
-                <><AlertCircle className="h-3 w-3 text-amber-500" /> Hosted AI isn’t configured. Add a key for another provider below, or deploy the ai-proxy function.</>
+                <><AlertCircle className="h-3 w-3 text-amber-500" /> {s.ai.proxyMissing}</>
               )}
             </p>
           )}
           {settings.providerId === "ollama" && (
             <div className="grid gap-2">
-              <Label>Base URL</Label>
+              <Label>{s.ai.baseUrl}</Label>
               <Input value={settings.baseUrls[settings.providerId] ?? ""}
                 onChange={(e) => setBaseUrl(settings.providerId, e.target.value)}
                 placeholder="http://localhost:11434" />
@@ -425,8 +431,8 @@ function AISettingsContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Provider API Keys</CardTitle>
-          <CardDescription>Set API keys for all providers. Keys are stored locally in your browser.</CardDescription>
+          <CardTitle className="text-base">{s.ai.keysTitle}</CardTitle>
+          <CardDescription>{s.ai.keysDesc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {providers.filter((p) => p.requiresApiKey).map((p) => (
@@ -452,38 +458,37 @@ function AISettingsContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Features</CardTitle>
-          <CardDescription>Enable or disable AI features.</CardDescription>
+          <CardTitle className="text-base">{s.features.title}</CardTitle>
+          <CardDescription>{s.features.desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <FeatureToggle id="proactive" label="Proactive Mode"
-            description="Allow Aetheris to proactively analyze your schedule and push suggestions."
+          <FeatureToggle id="proactive" label={s.features.proactive}
+            description={s.features.proactiveDesc}
             checked={settings.featureToggles.proactiveMode}
             onChange={(v) => setFeatureToggle("proactiveMode", v)} />
           <Separator />
-          <FeatureToggle id="function-calling" label="Function Calling"
-            description="Allow AI to directly modify your schedule (create, move, delete blocks)."
+          <FeatureToggle id="function-calling" label={s.features.functionCalling}
+            description={s.features.functionCallingDesc}
             checked={settings.featureToggles.functionCalling}
             onChange={(v) => setFeatureToggle("functionCalling", v)} />
           <Separator />
-          <FeatureToggle id="learning" label="Learning Profile"
-            description="Track your patterns over time for personalized suggestions."
+          <FeatureToggle id="learning" label={s.features.learning}
+            description={s.features.learningDesc}
             checked={settings.featureToggles.learning}
             onChange={(v) => setFeatureToggle("learning", v)} />
           <Separator />
-          <FeatureToggle id="auto-suggestions" label="Auto Suggestions"
-            description="Automatically generate schedule suggestions based on gaps and imbalances."
+          <FeatureToggle id="auto-suggestions" label={s.features.autoSuggestions}
+            description={s.features.autoSuggestionsDesc}
             checked={settings.featureToggles.autoSuggestions}
             onChange={(v) => setFeatureToggle("autoSuggestions", v)} />
           <Separator />
-          <FeatureToggle id="digest-auto" label="Digest Generation"
-            description="Automatically generate daily reports. When off, generate manually from the Reports panel."
+          <FeatureToggle id="digest-auto" label={s.features.digestAuto}
+            description={s.features.digestAutoDesc}
             checked={settings.featureToggles.digestAuto}
             onChange={(v) => setFeatureToggle("digestAuto", v)} />
           <div className="pt-2 px-1">
             <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
-              Reports are generated using AI when a provider is configured, or structural analysis as fallback.
-              Each report is labeled accordingly. Configure a provider above to enable AI-powered reports.
+              {s.features.reportsNote}
             </p>
           </div>
         </CardContent>
@@ -491,27 +496,27 @@ function AISettingsContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Privacy Controls</CardTitle>
-          <CardDescription>Manage your local AI data.</CardDescription>
+          <CardTitle className="text-base">{s.privacy.title}</CardTitle>
+          <CardDescription>{s.privacy.desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Chat History</p>
-              <p className="text-xs text-muted-foreground">Clear all Aetheris chat messages.</p>
+              <p className="text-sm font-medium">{s.privacy.chatHistory}</p>
+              <p className="text-xs text-muted-foreground">{s.privacy.chatHistoryDesc}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => { clearChatHistory(); toast({ title: "Chat history cleared" }); }}>
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Clear
+            <Button variant="outline" size="sm" onClick={() => { clearChatHistory(); toast({ title: s.privacy.chatCleared }); }}>
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> {s.privacy.clear}
             </Button>
           </div>
           <Separator />
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Learning Profile</p>
-              <p className="text-xs text-muted-foreground">Reset all tracked patterns and preferences.</p>
+              <p className="text-sm font-medium">{s.privacy.learningProfile}</p>
+              <p className="text-xs text-muted-foreground">{s.privacy.learningProfileDesc}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => { resetLearningProfile(); toast({ title: "Learning profile reset" }); }}>
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Reset
+            <Button variant="outline" size="sm" onClick={() => { resetLearningProfile(); toast({ title: s.privacy.learningReset }); }}>
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> {s.privacy.reset}
             </Button>
           </div>
         </CardContent>
@@ -519,9 +524,9 @@ function AISettingsContent() {
 
       <div className="flex items-center justify-between pb-8">
         <p className="text-xs text-muted-foreground">
-          All data is stored locally in your browser. No data is sent to any server except the configured AI provider.
+          {s.footerNote}
         </p>
-        <Button variant="ghost" size="sm" onClick={resetSettings}>Reset all settings</Button>
+        <Button variant="ghost" size="sm" onClick={resetSettings}>{s.resetAll}</Button>
       </div>
     </>
   );

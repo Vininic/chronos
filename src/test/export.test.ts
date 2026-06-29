@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import * as XLSX from "xlsx";
-import { buildICS, buildScheduleWorkbook, serializeScheduleJSON } from "@/lib/schedule/export";
+import ExcelJS from "exceljs";
+import { buildICS, buildStyledWorkbook, serializeScheduleJSON, CHRONOS_XLSX_FORMAT } from "@/lib/schedule/export";
+import { parseChronosWorkbook } from "@/lib/schedule/import";
 import type { ScheduleData } from "@/lib/schedule/types";
 
 const DATA = {
@@ -48,18 +49,73 @@ describe("buildICS", () => {
   });
 });
 
-describe("buildScheduleWorkbook", () => {
-  it("creates the five expected sheets", () => {
-    const wb = buildScheduleWorkbook(DATA, "en");
-    expect(wb.SheetNames).toHaveLength(5);
+describe("buildStyledWorkbook", () => {
+  it("includes a visual Day Planner plus legend and machine-readable sheets", () => {
+    const wb = buildStyledWorkbook(DATA, "en");
+    const names = wb.worksheets.map((w) => w.name);
+    expect(names).toContain("Day Planner");
+    expect(names).toContain("Block Types");
+    expect(names).toContain("Goals");
+    expect(names).toContain("Workplans");
+    expect(names).toContain("Routine");
+    expect(names).toContain("Commitments");
+    expect(names).toContain("Categories");
+    expect(names).toContain("Metadata");
   });
 
-  it("writes one routine row per block and only deep-work blocks to the focus sheet", () => {
-    const wb = buildScheduleWorkbook(DATA, "en");
-    const routineRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    expect(routineRows).toHaveLength(2);
-    const focusRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[2]]);
-    expect(focusRows).toHaveLength(1); // only the "deep" block
+  it("writes one Routine data row per block (plus a header row)", () => {
+    const wb = buildStyledWorkbook(DATA, "en");
+    const routine = wb.getWorksheet("Routine")!;
+    expect(routine.rowCount).toBe(1 + DATA.routine.length);
+  });
+
+  it("paints the Day Planner block cells with a solid fill", () => {
+    const wb = buildStyledWorkbook(DATA, "en");
+    const planner = wb.getWorksheet("Day Planner")!;
+    // r1 is a Monday (day 1 → column 3) block; some painted cell must have a fill.
+    let painted = false;
+    planner.eachRow((row) => {
+      const cell = row.getCell(3);
+      if (cell.fill && (cell.fill as { pattern?: string }).pattern === "solid") painted = true;
+    });
+    expect(painted).toBe(true);
+  });
+
+  it("stamps the round-trip format marker into the Metadata sheet", () => {
+    const wb = buildStyledWorkbook(DATA, "en");
+    const meta = wb.getWorksheet("Metadata")!;
+    const values: string[] = [];
+    meta.eachRow((row) => values.push(String(row.getCell(2).value)));
+    expect(values).toContain(CHRONOS_XLSX_FORMAT);
+  });
+});
+
+describe("XLSX round-trip (parseChronosWorkbook)", () => {
+  it("re-imports routine, commitments and categories from its own export", async () => {
+    const wb = buildStyledWorkbook(DATA, "en");
+    const buf = await wb.xlsx.writeBuffer();
+    const back = await parseChronosWorkbook(buf as ArrayBuffer);
+    expect(back).not.toBeNull();
+    expect(back!.routine).toHaveLength(DATA.routine.length);
+    expect(back!.routine.map((r) => r.title)).toContain("Deep, Work");
+    expect(back!.routine.find((r) => r.title === "Deep, Work")?.start).toBe("10:00");
+    expect(back!.commitments).toHaveLength(DATA.commitments.length);
+    expect(back!.categories.map((c) => c.id)).toEqual(expect.arrayContaining(["deep", "recovery"]));
+  });
+
+  it("round-trips through the Portuguese (translated sheet names) export", async () => {
+    const wb = buildStyledWorkbook(DATA, "pt");
+    const buf = await wb.xlsx.writeBuffer();
+    const back = await parseChronosWorkbook(buf as ArrayBuffer);
+    expect(back).not.toBeNull();
+    expect(back!.routine).toHaveLength(DATA.routine.length);
+  });
+
+  it("returns null for a workbook without the Chronos marker", async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("Sheet1").addRow(["foo", "bar"]);
+    const buf = await wb.xlsx.writeBuffer();
+    expect(await parseChronosWorkbook(buf as ArrayBuffer)).toBeNull();
   });
 });
 

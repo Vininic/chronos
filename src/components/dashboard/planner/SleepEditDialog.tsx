@@ -43,8 +43,8 @@ export function SleepEditDialog({
   const [hasWakeTime, setHasWakeTime] = useState(
     sleepWindow.end !== "00:00" && sleepWindow.start !== sleepWindow.end,
   );
-  const [breakStart, setBreakStart] = useState("02:00");
-  const [breakEnd, setBreakEnd] = useState("08:00");
+  const [breakStart, setBreakStart] = useState("13:00");
+  const [breakEnd, setBreakEnd] = useState("13:30");
   const [editingBreak, setEditingBreak] = useState<{ date: string; start: string; end: string } | null>(null);
   const [applyToAllDays, setApplyToAllDays] = useState(false);
 
@@ -114,25 +114,37 @@ export function SleepEditDialog({
     }
     return Math.max(0, gross - overlapMin);
   })();
+  // A break is a daytime nap that "cuts" the awake day — it lives OUTSIDE the
+  // night sleep window. Offer times in the awake portion (the complement of the
+  // sleep segments over the 24h day), not inside sleep.
+  const awakeRanges = useMemo(() => {
+    const segs = [...sleepSegments].sort((a, b) => a.start - b.start);
+    const gaps: Array<{ start: number; end: number }> = [];
+    let cursor = 0;
+    for (const seg of segs) {
+      if (seg.start > cursor) gaps.push({ start: cursor, end: seg.start });
+      cursor = Math.max(cursor, seg.end);
+    }
+    if (cursor < 24 * 60) gaps.push({ start: cursor, end: 24 * 60 });
+    return gaps.length > 0 ? gaps : [{ start: 0, end: 24 * 60 }];
+  }, [sleepSegments]);
   const breakStartOptions = useMemo(() => {
     const dayOptions = sleepTimeOptions.filter((time) => time !== "24:00");
-    const ranges = sleepSegments.length > 0 ? sleepSegments : [{ start: 0, end: 24 * 60 }];
     return dayOptions.filter((time) => {
       const min = timeToMinutes(time);
-      return ranges.some((segment) => min >= segment.start && min + SNAP <= segment.end);
+      return awakeRanges.some((range) => min >= range.start && min + SNAP <= range.end);
     });
-  }, [sleepTimeOptions, sleepSegments]);
+  }, [sleepTimeOptions, awakeRanges]);
   const breakEndOptions = useMemo(() => {
     const dayOptions = sleepTimeOptions.filter((time) => time !== "24:00");
     const startMin = timeToMinutes(breakStart);
-    const ranges = sleepSegments.length > 0 ? sleepSegments : [{ start: 0, end: 24 * 60 }];
-    const activeRange = ranges.find((segment) => startMin >= segment.start && startMin < segment.end);
+    const activeRange = awakeRanges.find((range) => startMin >= range.start && startMin < range.end);
     if (!activeRange) return dayOptions.filter((time) => timeToMinutes(time) > startMin);
     return dayOptions.filter((time) => {
       const endMin = timeToMinutes(time);
       return endMin > startMin && endMin <= activeRange.end;
     });
-  }, [sleepTimeOptions, sleepSegments, breakStart]);
+  }, [sleepTimeOptions, awakeRanges, breakStart]);
   const canSaveBreak =
     breakDurMin > 0 &&
     breakStartOptions.includes(breakStart) &&
@@ -292,10 +304,15 @@ export function SleepEditDialog({
 
           <div className="space-y-2 rounded-md border border-dashed border-border/60 bg-muted/20 p-3">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              {bcp47.toLowerCase().startsWith("pt") ? "Pausas de sono neste dia" : "Sleep breaks for this day"}
+              {isPt ? "Pausa no dia (cochilo)" : "Daytime break (nap)"}
             </div>
+            <p className="text-[10px] text-muted-foreground/70 -mt-1">
+              {isPt
+                ? "Um intervalo dentro do dia desperto, independente do sono noturno — colapsa esse trecho na timeline."
+                : "A gap inside your awake day, independent of night sleep — collapses that span in the timeline."}
+            </p>
             {sleepCuts.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground">{bcp47.toLowerCase().startsWith("pt") ? "Nenhuma pausa cadastrada." : "No sleep breaks yet."}</p>
+              <p className="text-[11px] text-muted-foreground">{isPt ? "Nenhuma pausa cadastrada." : "No breaks yet."}</p>
             ) : (
               <div className="space-y-1.5">
                 {sleepCuts.map((cut) => (
