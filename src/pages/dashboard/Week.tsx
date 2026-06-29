@@ -17,18 +17,39 @@ import { TimeSelect } from "@/components/ui/time-select";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import BedtimeWakeControl from "@/components/planner/BedtimeWakeControl";
+import { getSleepWindowForDay } from "@/lib/schedule/sleep";
+import { Moon } from "lucide-react";
 
 type TabId = "week" | "month";
 
 export default function Week() {
-  const { data, removeRoutine, updateRoutine, addGoal, updateGoal, removeGoal, addGoalBlock, toggleGoalBlock, toggleGoalSubTask, addGoalSubTask, generateGoalCommitments } = useSchedule();
+  const { data, removeRoutine, updateRoutine, updateSleepSchedule, updateSleepWindow, setSleepBoundaryEnforced, addGoal, updateGoal, removeGoal, addGoalBlock, toggleGoalBlock, toggleGoalSubTask, addGoalSubTask, generateGoalCommitments } = useSchedule();
   const t = useT();
   const { bcp47 } = useI18n();
   const fmtDur = useFmtDur();
   const scheduleText = useScheduleText();
   const [editItem, setEditItem] = useState<RoutineBlock | null>(null);
   const [tab, setTab] = useState<TabId>("week");
+  const [editSleep, setEditSleep] = useState(false);
+  const [pendingSleep, setPendingSleep] = useState({ bedtime: "22:30", wake: "07:00" });
   const isPt = bcp47.toLowerCase().startsWith("pt");
+
+  const sleepSchedule = data.meta.sleepSchedule ?? [data.meta.sleepWindow ?? { start: "22:30", end: "07:00" }];
+  const sleepWin = getSleepWindowForDay(sleepSchedule, new Date().getDay()) ?? sleepSchedule[0] ?? { start: "22:30", end: "07:00" };
+  const bedtime = sleepWin.start ?? "22:30";
+  const wake = sleepWin.end ?? "07:00";
+
+  function handleSaveSleep(next: { bedtime: string; wake: string }) {
+    // The Week sleep control sets one consistent pattern for every day — write
+    // both the schedule (single all-days entry) and the legacy window, and make
+    // sure the boundary is enforced again.
+    updateSleepSchedule([{ start: next.bedtime, end: next.wake }]);
+    updateSleepWindow({ start: next.bedtime, end: next.wake });
+    setSleepBoundaryEnforced(true);
+    setEditSleep(false);
+    toast({ title: t.common.save });
+  }
 
   function patchRoutine(id: string, patch: Record<string, unknown>, successTitle = t.common.save) {
     const err = updateRoutine(id, patch);
@@ -218,6 +239,28 @@ export default function Week() {
             <OptimizationStrip />
           </div>
 
+          {/* Sleep window — bedtime/wake, edited with the same control as the planner */}
+          <div className="mb-6 chronos-card p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-muted grid place-items-center">
+                <Moon className="h-4 w-4 text-secondary" />
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-secondary">{isPt ? "Sono" : "Sleep"}</div>
+                <div className="text-sm text-primary font-medium num">
+                  {isPt ? "Deitar" : "Bedtime"} {bedtime} · {isPt ? "Acordar" : "Wake"} {wake}
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setPendingSleep({ bedtime, wake }); setEditSleep(true); }}
+            >
+              {isPt ? "Editar sono" : "Edit sleep"}
+            </Button>
+          </div>
+
           {/* Weekly routine grid */}
           <div className="grid grid-cols-1 gap-6">
             <WeeklyRoutine
@@ -364,6 +407,34 @@ export default function Week() {
           onSave={(patch) => handleSave(editItem, patch)}
         />
       )}
+
+      <Dialog open={editSleep} onOpenChange={setEditSleep}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl text-primary">
+              {isPt ? "Sono" : "Sleep"}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-[11px] text-muted-foreground -mt-2">
+            {isPt
+              ? "Define o mesmo padrão de sono para todos os dias da semana."
+              : "Sets the same sleep pattern for every day of the week."}
+          </p>
+          <BedtimeWakeControl
+            bedtime={pendingSleep.bedtime}
+            wake={pendingSleep.wake}
+            onChange={setPendingSleep}
+          />
+          <DialogFooter className="flex-row justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setEditSleep(false)}>
+              {t.chronos.dialog.cancel}
+            </Button>
+            <Button size="sm" onClick={() => handleSaveSleep(pendingSleep)}>
+              {t.common.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -242,7 +242,7 @@ const pt = {
       chatPlanDesc: "Discutir e modificar com o Aetheris.",
       builder: {
         title: "Criar Planejamento",
-        step: (n: number) => `Passo ${n} de 4`,
+        step: (n: number) => `Passo ${n} de 3`,
         startPoint: "Ponto de Partida",
         scratch: "Começar do zero",
         scratchDesc: "Uma agenda limpa para você construir.",
@@ -994,7 +994,7 @@ const en: typeof pt = {
       chatPlanDesc: "Discuss and modify with Aetheris.",
       builder: {
         title: "Create Schedule",
-        step: (n: number) => `Step ${n} of 4`,
+        step: (n: number) => `Step ${n} of 3`,
         startPoint: "Starting Point",
         scratch: "Start from scratch",
         scratchDesc: "A clean slate for you to build.",

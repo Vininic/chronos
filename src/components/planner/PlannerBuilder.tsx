@@ -1,16 +1,19 @@
-import { useState, type FormEvent } from "react";
-import { useT } from "@/lib/i18n/I18nProvider";
+import { useState } from "react";
+import { useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { SCHEDULE_TEMPLATES, createEmptySchedule, baseCategories } from "@/lib/schedule/templates";
 import type { ScheduleTemplate } from "@/lib/schedule/templates";
 import type { PlannerProposal, PlannerPreferences } from "@/lib/ai/planner/types";
 import type { LearningProfile } from "@/lib/ai/learning/types";
 import type { ScheduleData } from "@/lib/schedule/types";
-import { generateProposals } from "@/lib/ai/planner/generator";
 import { generateGeminiProposals } from "@/lib/ai/planner/gemini-planner";
 import PlannerForm from "./PlannerForm";
 import CategoryInput from "./CategoryInput";
+import DraftWeekPreview from "./DraftWeekPreview";
+import BedtimeWakeControl from "./BedtimeWakeControl";
+import PlannerDraftChat from "./PlannerDraftChat";
+import { isProviderConfigured, loadSettingsSync } from "@/lib/ai/settings/store";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowLeft, Check, Sparkles, FileText, Wand2, Merge } from "lucide-react";
+import { ArrowLeft, Check, Sparkles, FileText, Wand2, Merge } from "lucide-react";
 
 interface PlannerBuilderProps {
   onApply: (schedule: ScheduleData) => void;
@@ -25,7 +28,9 @@ const WORKLOAD_STYLES: Record<ScheduleTemplate["workload"], { badge: string; bar
 
 export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuilderProps) {
   const t = useT();
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const { locale } = useI18n();
+  const isPt = locale === "pt";
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [startPoint, setStartPoint] = useState<"scratch" | "template" | "ai" | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<ScheduleTemplate | null>(null);
   const [proposals, setProposals] = useState<PlannerProposal[]>([]);
@@ -40,6 +45,9 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
   const [merging, setMerging] = useState(false);
 
   const b = t.chronos.plannerPage.builder;
+  // The visual chat only appears when an AI provider is usable. Without one,
+  // the Planner stays fully functional via templates / manual edits.
+  const aiUsable = isProviderConfigured(loadSettingsSync().providerId);
 
   function handleStartPointChoice(choice: "scratch" | "template" | "ai") {
     setStartPoint(choice);
@@ -244,16 +252,21 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
       setStep(2);
       return;
     }
-    if (step === 4) {
-      setStep(3);
-      return;
-    }
   }
 
-  function goNext() {
-    if (step === 3 && generatedSchedule) {
-      setStep(4);
-    }
+  function handleSleepChange(next: { bedtime: string; wake: string }) {
+    if (!generatedSchedule) return;
+    // Bedtime/wake map directly onto the draft's sleep window. Keep
+    // sleepSchedule in sync (single all-days entry) so the draft validates
+    // the same way the live schedule does.
+    setGeneratedSchedule({
+      ...generatedSchedule,
+      meta: {
+        ...generatedSchedule.meta,
+        sleepWindow: { start: next.bedtime, end: next.wake },
+        sleepSchedule: [{ start: next.bedtime, end: next.wake }],
+      },
+    });
   }
 
   const scheduledHours = generatedSchedule
@@ -536,52 +549,56 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
         </div>
       )}
 
-      {/* STEP 3: Review & Customize */}
+      {/* STEP 3: Refine the draft (live preview + sleep + categories) */}
       {step === 3 && generatedSchedule && (
         <div>
           <h2 className="text-lg font-display text-primary mb-2 text-center">{b.review}</h2>
           <p className="text-sm text-muted-foreground text-center mb-6">{b.reviewDesc}</p>
 
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="chronos-card p-4 text-center">
-              <div className="text-2xl font-display text-primary">{categoryCount}</div>
-              <div className="text-xs text-muted-foreground mt-1">{b.categories}</div>
-            </div>
-            <div className="chronos-card p-4 text-center">
-              <div className="text-2xl font-display text-primary">{Math.round(scheduledHours)}h</div>
-              <div className="text-xs text-muted-foreground mt-1">{b.weeklyBlocks}</div>
-            </div>
-            <div className="chronos-card p-4 text-center">
-              <div className="flex items-center justify-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-bronze" />
-                <span className="font-display text-primary">
-                  {startPoint === "template" && selectedTemplate
-                    ? `${Math.round(selectedTemplate.focusRatio * 100)}%`
-                    : startPoint === "ai" && selectedProposal
-                    ? `${Math.round(selectedProposal.focusRatio * 100)}%`
-                    : "—"}
-                </span>
-                <span className="text-xs text-muted-foreground">/</span>
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <span className="font-display text-primary">
-                  {startPoint === "template" && selectedTemplate
-                    ? `${Math.round(selectedTemplate.recoveryRatio * 100)}%`
-                    : startPoint === "ai" && selectedProposal
-                    ? `${Math.round(selectedProposal.recoveryRatio * 100)}%`
-                    : "—"}
-                </span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+            {/* Live week preview of the draft */}
+            <div className="chronos-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-primary">
+                  {isPt ? "Prévia da semana" : "Week preview"}
+                </h3>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>{categoryCount} {b.categories.toLowerCase()}</span>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span>{Math.round(scheduledHours)}h</span>
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground mt-1">{b.focusBalance}</div>
+              <DraftWeekPreview draft={generatedSchedule} />
             </div>
-          </div>
 
-          <div className="chronos-card p-5 mb-6">
-            <label className="text-xs font-medium text-primary mb-2 block">{b.categories}</label>
-            <CategoryInput
-              value={editedCategories}
-              onChange={setEditedCategories}
-              placeholder="Add, edit or remove categories..."
-            />
+            {/* Sleep + categories controls */}
+            <div className="space-y-5">
+              <div className="chronos-card p-5">
+                <h3 className="text-sm font-medium text-primary mb-3">
+                  {isPt ? "Sono" : "Sleep"}
+                </h3>
+                <BedtimeWakeControl
+                  bedtime={generatedSchedule.meta.sleepWindow?.start ?? "22:30"}
+                  wake={generatedSchedule.meta.sleepWindow?.end ?? "07:00"}
+                  onChange={handleSleepChange}
+                />
+              </div>
+
+              <div className="chronos-card p-5">
+                <label className="text-sm font-medium text-primary mb-3 block">{b.categories}</label>
+                <CategoryInput
+                  value={editedCategories}
+                  onChange={setEditedCategories}
+                  placeholder="Add, edit or remove categories..."
+                />
+              </div>
+
+              {aiUsable && (
+                <div className="chronos-card p-5">
+                  <PlannerDraftChat draft={generatedSchedule} onDraftChange={setGeneratedSchedule} />
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-center gap-3">
@@ -592,59 +609,6 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
             <Button variant="outline" onClick={handleRegenerate}>
               <Sparkles className="h-4 w-4 mr-1.5" />
               {b.regenerate}
-            </Button>
-            <Button onClick={goNext}>
-              {b.next}
-              <ArrowRight className="h-4 w-4 ml-1.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 4: Apply */}
-      {step === 4 && generatedSchedule && (
-        <div>
-          <h2 className="text-lg font-display text-primary mb-2 text-center">{b.apply}</h2>
-
-          <div className="chronos-card p-6 mb-6 max-w-md mx-auto">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{b.categories}</span>
-                <span className="text-primary font-medium">{categoryCount}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{b.weeklyBlocks}</span>
-                <span className="text-primary font-medium">{Math.round(scheduledHours)}h</span>
-              </div>
-              {startPoint === "template" && selectedTemplate && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{b.focusBalance}</span>
-                  <span className="text-primary font-medium">
-                    {Math.round(selectedTemplate.focusRatio * 100)}% / {Math.round(selectedTemplate.recoveryRatio * 100)}%
-                  </span>
-                </div>
-              )}
-              {startPoint === "ai" && selectedProposal && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{b.focusBalance}</span>
-                  <span className="text-primary font-medium">
-                    {Math.round(selectedProposal.focusRatio * 100)}% / {Math.round(selectedProposal.recoveryRatio * 100)}%
-                  </span>
-                </div>
-              )}
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Categorias</span>
-                <span className="text-primary font-medium text-right max-w-[200px] truncate">
-                  {editedCategories}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-3">
-            <Button variant="outline" onClick={goBack}>
-              <ArrowLeft className="h-4 w-4 mr-1.5" />
-              {b.back}
             </Button>
             <Button onClick={handleApply}>
               <Check className="h-4 w-4 mr-1.5" />

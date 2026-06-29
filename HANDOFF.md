@@ -37,8 +37,69 @@ Replace the current 4-step Planner wizard with a cleaner flow:
 - **"Remove plan" now empties** instead of re-seeding (was calling `resetToSeed()`).
   (`src/pages/dashboard/Planner.tsx` `handleDeletePlan` → `replace({...empty})`)
 
-### Not started (this handoff)
-The redesign itself — increments below.
+### Inc. 1 DONE this session (built + verified; pending commit)
+- **Draft + live week preview + bedtime/wake sleep control** shipped. The wizard's
+  old step 3 (Review) + step 4 (Apply) are now a single **"refine the draft"** screen:
+  - `generatedSchedule` *is* the draft (local state, never the store until Apply).
+  - New `src/components/planner/DraftWeekPreview.tsx` — read-only 7-day strip of the
+    draft, blocks sized by duration (reuses `safeKindStyle`/`TAILWIND_TO_HEX`).
+  - New `src/components/planner/BedtimeWakeControl.tsx` — *deitar/acordar* control with
+    automatic cross-midnight detection + sleep-duration readout. Writes
+    `meta.sleepWindow` **and** `meta.sleepSchedule` (single all-days entry) so the draft
+    validates the same way the live schedule does.
+  - `PlannerBuilder.tsx`: step type `1|2|3`, dropped step 4, `handleSleepChange`, Apply
+    moved onto step 3. Step copy fixed to "de 3 / of 3" in `dictionaries.ts`.
+- Verified in preview (127.0.0.1:8080): scratch → step 3 shows 0-block preview +
+  "Sono: 8h 30min · atravessa a meia-noite"; template → 50h preview with per-day counts.
+  No console errors. `tsc` clean, 349 tests green.
+
+### Inc. 2 DONE this session (built + verified; pending commit)
+- **Draft-scoped tool executor** — the "key architecture gap" — shipped as a *pure*
+  module, no store, no singleton registry: `src/lib/ai/tools/draftExecutor.ts`.
+  - `applyDraftToolCall(draft, name, params) → { ok, draft, message?, error? }`. Maps every
+    write tool (createBlock/updateBlock/moveBlock/splitBlock/mergeBlocks/deleteBlock,
+    create/update/deleteCategory, create/update/move/deleteCommitment) onto **ScheduleService**'s
+    pure `ScheduleData → ScheduleData | string` transforms. Re-runs `withDerived` so the
+    preview's ledger/hours stay fresh. Read/goal/program/session/note tools are out of
+    scope (return `ok:false`, surfaced — not silently applied).
+  - **Why this design:** the registry tool factories hardcode `globalToolRegistry`
+    (singleton; `register` is a no-op on dup names) and call into the live store, so they
+    can't be reused for a draft. ScheduleService already exposes the same logic as pure
+    transforms → reuse those directly. Sleep/conflict validation comes for free.
+  - 8 unit tests: `src/test/draft-executor.test.ts` (immutability, sleep-overlap reject,
+    split/merge, category create/delete, unsupported-tool guard).
+- **Visual chat panel** — `src/components/planner/PlannerDraftChat.tsx`. Streams via the
+  existing `streamChatMessage(draft, …)` (the model sees the *draft* as context), parses
+  `[TOOL:…]` markers with `extractToolCalls`, applies each through `applyDraftToolCall`,
+  and threads the new draft up via `onDraftChange`. Suggestion chips, tool-result pills.
+- **Gated on AI** in `PlannerBuilder` step 3: `isProviderConfigured(loadSettingsSync().providerId)`;
+  no provider → panel hidden, manual/template flow intact.
+- Verified live (guest @127.0.0.1:8080 → template → step 3): panel renders, streams with
+  draft context (model read "32h deep work / 07:00 ritual" from the draft), no console
+  errors. `tsc` clean, **357 tests green**.
+- **Gotcha:** the model sometimes claims "Done" without emitting `[TOOL:…]` markers
+  (same non-determinism as the live Aetheris chat) — not an executor bug; the apply path
+  is unit-proven. A stricter system-prompt nudge could improve emission rate (future).
+
+### Inc. 3 DONE this session (built + verified; pending commit)
+- **Week-page sleep control** (`src/pages/dashboard/Week.tsx`): a compact "Sono" card
+  (Deitar/Acordar readout) with an "Editar sono" dialog reusing the **same
+  `BedtimeWakeControl`** as the planner. Saves via existing store mutators
+  (`updateSleepSchedule` single all-days entry + `updateSleepWindow` +
+  `setSleepBoundaryEnforced(true)`). Verified live (guest @8080 → /dashboard/week):
+  card shows "Deitar 22:30 · Acordar 07:00", dialog opens with cross-midnight readout,
+  Save toasts + closes, no console errors.
+- **Honest template workload** (`src/lib/schedule/templates.ts`): the `workload` tag is
+  now **derived from real block density**, not hand-authored. New exports
+  `weeklyRoutineHours(data)` + `classifyWorkload(hours)` (<45 light / 45–60 moderate /
+  ≥60 intense). `SCHEDULE_TEMPLATES` is `.map`-post-processed to set each tag from its
+  generated routine. This fixed real lies — recovery@51h was "light", early-bird@78h
+  "moderate", barbershop@12h "intense", weekend-maker@58.5h "moderate" (= deep-work's
+  "intense"). Distribution went 8/5/1 → **4 light / 7 moderate / 3 intense**. Tests:
+  `src/test/template-workload.test.ts` (every tag matches density; tiers all populated).
+
+### Redesign COMPLETE — all 3 increments done + verified, pending commit.
+`tsc -p tsconfig.app.json` clean · **360 tests green**.
 
 ## Increments (build in order; each is independently deployable)
 

@@ -1,4 +1,5 @@
 import type { ScheduleData, RoutineBlock, Commitment, Goal } from "./types";
+import { durationMin } from "./types";
 
 export function createEmptySchedule(owner?: string): ScheduleData {
   return {
@@ -1253,6 +1254,23 @@ const musicianTemplate: ScheduleTemplate = {
   }),
 };
 
+/** Total non-sleep hours a template blocks out across the week — the honest
+ *  measure of how full ("dense") the week is. */
+export function weeklyRoutineHours(data: ScheduleData): number {
+  return data.routine
+    .filter((b) => b.kind !== "sleep")
+    .reduce((sum, b) => sum + durationMin(b.start, b.end), 0) / 60;
+}
+
+/** Map weekly density to a workload tier. Tags are DERIVED from this, never
+ *  hand-set — so the badge can't lie about how packed a template is.
+ *  Thresholds chosen so the 14 templates spread sensibly (≈4/7/3). */
+export function classifyWorkload(weeklyHours: number): ScheduleTemplate["workload"] {
+  if (weeklyHours < 45) return "light";
+  if (weeklyHours < 60) return "moderate";
+  return "intense";
+}
+
 export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
   productivityTemplate,
   balancedTemplate,
@@ -1268,4 +1286,10 @@ export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
   personalTrainerTemplate,
   parentHomeTemplate,
   musicianTemplate,
-];
+].map((tmpl) => ({
+  // Honest workload: classify by the template's real block density instead of
+  // trusting the hand-authored `workload` literal (which had drifted — e.g.
+  // recovery@51h was "light", early-bird@78h "moderate", barbershop@12h "intense").
+  ...tmpl,
+  workload: classifyWorkload(weeklyRoutineHours(tmpl.generate())),
+}));
