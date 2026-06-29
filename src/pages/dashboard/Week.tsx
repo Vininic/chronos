@@ -8,7 +8,7 @@ import { BlockKind, durationMin, computeGoalProgress, computeStreak, getPeriodSt
 import type { GoalFields } from "@/components/dashboard/GoalDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2, Target, BarChart3, Clock, CheckCircle2, CalendarDays, TrendingUp, Zap } from "lucide-react";
+import { Trash2, Target, BarChart3, Clock, CheckCircle2, CalendarDays } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useFmtDur, useT, useI18n } from "@/lib/i18n/I18nProvider";
 import { useScheduleText } from "@/lib/i18n/scheduleText";
@@ -18,8 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import BedtimeWakeControl from "@/components/planner/BedtimeWakeControl";
+import SleepRibbon from "@/components/planner/SleepRibbon";
 import { getSleepWindowForDay } from "@/lib/schedule/sleep";
-import { Moon } from "lucide-react";
 
 type TabId = "week" | "month";
 
@@ -216,22 +216,11 @@ export default function Week() {
             </div>
           </div>
 
-          {/* Performance + Balance cards */}
-          <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="chronos-card p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <TrendingUp className="h-4 w-4 text-secondary" />
-                <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</span>
-              </div>
-              <PerformanceCard />
-            </div>
-            <div className="chronos-card p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="h-4 w-4 text-secondary" />
-                <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.balanceTitle}</span>
-              </div>
-              <BalanceCard />
-            </div>
+          {/* Performance + Balance cards — each is self-contained (avoid the
+              card-in-card nesting that left squares floating in the background) */}
+          <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <PerformanceCard />
+            <BalanceCard />
           </div>
 
           {/* Optimization strip */}
@@ -239,35 +228,15 @@ export default function Week() {
             <OptimizationStrip />
           </div>
 
-          {/* Sleep window — bedtime/wake, edited with the same control as the planner */}
-          <div className="mb-6 chronos-card p-4 flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-muted grid place-items-center">
-                <Moon className="h-4 w-4 text-secondary" />
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.18em] text-secondary">{isPt ? "Sono" : "Sleep"}</div>
-                <div className="text-sm text-primary font-medium num">
-                  {isPt ? "Deitar" : "Bedtime"} {bedtime} · {isPt ? "Acordar" : "Wake"} {wake}
-                </div>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setPendingSleep({ bedtime, wake }); setEditSleep(true); }}
-            >
-              {isPt ? "Editar sono" : "Edit sleep"}
-            </Button>
-          </div>
-
-          {/* Weekly routine grid */}
+          {/* Weekly routine grid — sleep is drawn striped per day; clicking a
+              sleep region opens the editor (no separate sleep card needed). */}
           <div className="grid grid-cols-1 gap-6">
             <WeeklyRoutine
               onBlockClick={(b) => {
                 const original = data.routine.find((r) => r.id === b.id);
                 if (original) setEditItem(original);
               }}
+              onSleepClick={() => { setPendingSleep({ bedtime, wake }); setEditSleep(true); }}
             />
           </div>
         </>
@@ -420,6 +389,7 @@ export default function Week() {
               ? "Define o mesmo padrão de sono para todos os dias da semana."
               : "Sets the same sleep pattern for every day of the week."}
           </p>
+          <SleepRibbon bedtime={pendingSleep.bedtime} wake={pendingSleep.wake} className="mb-1" />
           <BedtimeWakeControl
             bedtime={pendingSleep.bedtime}
             wake={pendingSleep.wake}

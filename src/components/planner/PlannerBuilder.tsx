@@ -10,6 +10,7 @@ import PlannerForm from "./PlannerForm";
 import CategoryInput from "./CategoryInput";
 import DraftWeekPreview from "./DraftWeekPreview";
 import BedtimeWakeControl from "./BedtimeWakeControl";
+import SleepRibbon from "./SleepRibbon";
 import PlannerDraftChat from "./PlannerDraftChat";
 import { isProviderConfigured, loadSettingsSync } from "@/lib/ai/settings/store";
 import { Button } from "@/components/ui/button";
@@ -577,6 +578,11 @@ export default function PlannerBuilder({ onApply, learningProfile }: PlannerBuil
                 <h3 className="text-sm font-medium text-primary mb-3">
                   {isPt ? "Sono" : "Sleep"}
                 </h3>
+                <SleepRibbon
+                  bedtime={generatedSchedule.meta.sleepWindow?.start ?? "22:30"}
+                  wake={generatedSchedule.meta.sleepWindow?.end ?? "07:00"}
+                  className="mb-3"
+                />
                 <BedtimeWakeControl
                   bedtime={generatedSchedule.meta.sleepWindow?.start ?? "22:30"}
                   wake={generatedSchedule.meta.sleepWindow?.end ?? "07:00"}

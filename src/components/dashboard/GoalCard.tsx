@@ -118,7 +118,10 @@ export function GoalCard({ goal, allGoals, routine, commitments, snapshots, onEd
               ) : (
                 <>{progress.numerator}<span className="text-muted-foreground"> / </span>{progress.denominator}</>
               )}
-              {goal.unit ? <span className="text-muted-foreground ml-1">{goal.unit}</span> : null}
+              {/* Duration goals already render their unit via fmtDur ("13h / 25h") —
+                  appending goal.unit produced "13h / 25h minutes". Only show the
+                  unit suffix for non-duration (numeric) goals. */}
+              {goal.unit && goal.kind !== "duration" ? <span className="text-muted-foreground ml-1">{goal.unit}</span> : null}
             </span>
             <span className="text-[10px] text-muted-foreground">·</span>
             <span className="text-[10px] text-muted-foreground">{periodLabel}</span>

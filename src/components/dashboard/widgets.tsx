@@ -1,6 +1,7 @@
-import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target, AlertTriangle } from "lucide-react";
+import { Sparkles, ArrowUpRight, Check, Clock, Coffee, Zap, Brain, Calendar as CalIcon, X, Moon, Target, AlertTriangle, TrendingUp } from "lucide-react";
 import { useSchedule } from "@/lib/schedule/store";
 import { buildAgendaForDate } from "@/lib/schedule/agenda";
+import { getActiveSleepWindows } from "@/lib/schedule/sleep";
 import { BlockKind, RoutineBlock, durationMin, timeToMinutes } from "@/lib/schedule/types";
 import { Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
@@ -175,8 +176,12 @@ export function PerformanceCard() {
   const variety = data.ledger.metrics.find((m) => m.label === "Variety")?.value ?? 0;
   return (
     <div className="chronos-card p-6 h-full">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-secondary" />
+        <span className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.chronos.widgets.perfIndex}</span>
+      </div>
 
-      <div className="mt-6 grid place-items-center relative">
+      <div className="mt-4 grid place-items-center relative">
         <svg width="180" height="180" viewBox="0 0 140 140">
           <defs>
             <linearGradient id="bronzeArc" x1="0" y1="0" x2="1" y2="1">
@@ -283,22 +288,28 @@ function minsToTime(mins: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export function WeeklyRoutine({ editable = false, onBlockClick }: { editable?: boolean; onBlockClick?: (b: RoutineBlock) => void }) {
+export function WeeklyRoutine({ editable = false, onBlockClick, onSleepClick }: { editable?: boolean; onBlockClick?: (b: RoutineBlock) => void; onSleepClick?: () => void }) {
   const { data, removeRoutine } = useSchedule();
   const t = useT();
   const scheduleText = useScheduleText();
   const days = [1, 2, 3, 4, 5, 6, 0];
   const todayDow = new Date().getDay();
 
-  // Dynamic window derived from user's sleep schedule
-  const startHour = Math.max(0, Math.floor(timeToMinutes(data.meta.sleepWindow?.end ?? "06:30") / 60));
-  const endHour = Math.min(24, Math.ceil(timeToMinutes(data.meta.sleepWindow?.start ?? "23:00") / 60));
-  const totalHours = Math.max(1, endHour - startHour);
-  const rowHeight = 30;
+  // Full 24h window so every day shows the same canvas and sleep/break time is
+  // visible (striped), not hidden — the awake window is no longer assumed uniform.
+  const startHour = 0;
+  const endHour = 24;
+  const totalHours = 24;
+  const rowHeight = 26;
   const gridHeight = totalHours * rowHeight;
 
   const tickHours: number[] = [];
-  for (let h = startHour; h <= endHour; h += 2) tickHours.push(h);
+  for (let h = startHour; h <= endHour; h += 3) tickHours.push(h);
+
+  // Per-day sleep/break intervals (handles cross-midnight split + per-day
+  // schedule entries + sleep breaks), rendered as striped "blocked" regions.
+  const sleepIntervalsForDay = (day: number) =>
+    getActiveSleepWindows(data, day).filter((i) => i.end > i.start);
 
   // Expand crossday blocks into two visible segments
   const routineSegments = data.routine.flatMap((block) => {
@@ -311,17 +322,27 @@ export function WeeklyRoutine({ editable = false, onBlockClick }: { editable?: b
   });
 
   const freeSlotsForDay = (day: number) => {
-    const dayBlocks = routineSegments
-      .filter((b) => b.renderDay === day && b.kind !== "sleep")
-      .sort((a, b) => a.renderStart.localeCompare(b.renderStart));
+    // Occupied = routine blocks + sleep/break regions, merged. Free slots are
+    // the gaps between them within the awake part of the 24h window.
+    const occupied = [
+      ...routineSegments
+        .filter((b) => b.renderDay === day && b.kind !== "sleep")
+        .map((b) => ({
+          start: timeToMinutes(b.renderStart),
+          end: timeToMinutes(b.renderEnd === "23:59" ? "24:00" : b.renderEnd),
+        })),
+      ...sleepIntervalsForDay(day),
+    ]
+      .filter((i) => i.end > i.start)
+      .sort((a, b) => a.start - b.start);
+
     const slots: { start: string; end: string }[] = [];
     let cursor = startHour * 60;
     const dayEnd = endHour * 60;
-    for (const block of dayBlocks) {
-      const bs = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.renderStart)));
-      const be = Math.max(cursor, Math.min(dayEnd, timeToMinutes(block.renderEnd === "23:59" ? "24:00" : block.renderEnd)));
+    for (const iv of occupied) {
+      const bs = Math.max(cursor, Math.min(dayEnd, iv.start));
       if (bs - cursor >= 15) slots.push({ start: minsToTime(cursor), end: minsToTime(bs) });
-      cursor = Math.max(cursor, be);
+      cursor = Math.max(cursor, Math.min(dayEnd, iv.end));
     }
     if (dayEnd - cursor >= 15) slots.push({ start: minsToTime(cursor), end: minsToTime(dayEnd) });
     return slots;
@@ -379,6 +400,35 @@ export function WeeklyRoutine({ editable = false, onBlockClick }: { editable?: b
                 <div key={`gl-${h}`} className="absolute left-0 right-0 border-t border-dashed border-border/40" style={{ top: ((h - startHour) / totalHours) * gridHeight }} />
               ))}
 
+              {/* Sleep / break regions — striped grey, behind the blocks.
+                  Clicking a region opens the sleep editor (when wired). */}
+              {sleepIntervalsForDay(di).map((iv, i) => {
+                const top = (iv.start / (24 * 60)) * gridHeight;
+                const height = ((iv.end - iv.start) / (24 * 60)) * gridHeight;
+                const clickable = !!onSleepClick;
+                return (
+                  <div
+                    key={`sleep-${i}`}
+                    className={`absolute left-0 right-0 overflow-hidden ${clickable ? "cursor-pointer hover:brightness-95 dark:hover:brightness-125" : ""}`}
+                    style={{
+                      top,
+                      height,
+                      backgroundImage:
+                        "repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.10) 0, hsl(var(--muted-foreground) / 0.10) 4px, transparent 4px, transparent 8px)",
+                      backgroundColor: "hsl(var(--muted) / 0.35)",
+                    }}
+                    title={`${minsToTime(iv.start)}–${minsToTime(iv.end)}`}
+                    onClick={onSleepClick}
+                  >
+                    {height >= 16 && (
+                      <div className="flex items-center gap-1 px-1.5 pt-0.5 text-[8px] uppercase tracking-wider text-muted-foreground/50">
+                        <Moon className="h-2.5 w-2.5" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
               {/* Free slots */}
               {freeSlotsForDay(di).map((slot) => {
                 const sh = timeToMinutes(slot.start) / 60;
@@ -400,17 +450,27 @@ export function WeeklyRoutine({ editable = false, onBlockClick }: { editable?: b
                 );
               })}
 
-              {/* Routine blocks — clamped to the visible window */}
-              {segs.map((b) => {
-                const sh = timeToMinutes(b.renderStart) / 60;
-                const rawEh = b.renderEnd === "23:59" ? 24 : timeToMinutes(b.renderEnd) / 60;
-                const csh = Math.max(startHour, sh);
-                const ceh = Math.min(endHour, rawEh);
-                if (ceh <= csh) return null;
-                const top = ((csh - startHour) / totalHours) * gridHeight;
-                const height = Math.max(14, ((ceh - csh) / totalHours) * gridHeight - 2);
-                const s = safeKindStyle(b.kind, data.categories);
-                const clickable = !!onBlockClick;
+              {/* Routine blocks — clamped to the visible window. Each block's
+                  rendered height is capped so a short (min-height-inflated) block
+                  can never overlap the one that follows it. */}
+              {segs
+                .map((b) => {
+                  const sh = timeToMinutes(b.renderStart) / 60;
+                  const rawEh = b.renderEnd === "23:59" ? 24 : timeToMinutes(b.renderEnd) / 60;
+                  return { b, csh: Math.max(startHour, sh), ceh: Math.min(endHour, rawEh) };
+                })
+                .filter(({ csh, ceh }) => ceh > csh)
+                .sort((a, b) => a.csh - b.csh)
+                .map(({ b, csh, ceh }, i, arr) => {
+                  const top = ((csh - startHour) / totalHours) * gridHeight;
+                  const naturalH = ((ceh - csh) / totalHours) * gridHeight - 2;
+                  const next = arr[i + 1];
+                  const maxBottom = next
+                    ? ((next.csh - startHour) / totalHours) * gridHeight - 1
+                    : gridHeight;
+                  const height = Math.max(6, Math.min(Math.max(14, naturalH), maxBottom - top));
+                  const s = safeKindStyle(b.kind, data.categories);
+                  const clickable = !!onBlockClick;
                 return (
                   <div
                     key={`${b.id}-${b.renderStart}`}
@@ -419,8 +479,8 @@ export function WeeklyRoutine({ editable = false, onBlockClick }: { editable?: b
                     title={`${scheduleText.blockTitle(b.title, b.titleCustom)} · ${b.renderStart}–${b.renderEnd}`}
                     onClick={() => clickable && onBlockClick(b as unknown as RoutineBlock)}
                   >
-                    <div className="truncate leading-tight">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>
-                    {height >= 28 && <div className="text-[8px] opacity-60 num">{b.renderStart}</div>}
+                    {height >= 13 && <div className="truncate leading-tight">{scheduleText.blockTitle(b.title, b.titleCustom)}</div>}
+                    {height >= 30 && <div className="text-[8px] opacity-60 num">{b.renderStart}</div>}
                     {editable && (
                       <button
                         onClick={(e) => { e.stopPropagation(); removeRoutine(b.id); toast({ title: t.chronos.widgets.blockRemoved }); }}
