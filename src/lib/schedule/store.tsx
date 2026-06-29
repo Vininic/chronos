@@ -66,6 +66,21 @@ function ensureCategories(data: ScheduleData): ScheduleData {
   return data;
 }
 
+const ACADEMIA_CATEGORY = (seedPt as unknown as ScheduleData).categories.find((c) => c.id === "academia")!;
+const ACADEMIA_BLOCKS = (seedPt as unknown as ScheduleData).routine.filter((b) => b.kind === "academia");
+
+function migrateAcademia(data: ScheduleData, locale: Locale): ScheduleData {
+  if (locale !== "pt") return data;
+  const hasCategory = data.categories.some((c) => c.id === "academia");
+  const hasBlocks   = data.routine.some((b) => b.kind === "academia");
+  if (hasCategory && hasBlocks) return data;
+  return {
+    ...data,
+    categories: hasCategory ? data.categories : [...data.categories, ACADEMIA_CATEGORY],
+    routine:    hasBlocks   ? data.routine    : [...data.routine,    ...ACADEMIA_BLOCKS],
+  };
+}
+
 function seedData(locale: Locale): ScheduleData {
   return normalizeNamingModel(getSeedForLocale(locale), locale);
 }
@@ -140,7 +155,7 @@ export function ScheduleProvider({ children, repo }: { children: ReactNode; repo
       try {
         const stored = await repoInstance.loadRaw();
         if (!cancelled && stored) {
-          const loaded = ensureCategories(normalizeNamingModel(stored, locale));
+          const loaded = migrateAcademia(ensureCategories(normalizeNamingModel(stored, locale)), locale);
           setData(withDerivedLocale(loaded, true));
         }
       } catch {

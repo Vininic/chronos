@@ -12,7 +12,50 @@
     { "id": "meeting",  "label": "Reunião",           "tone": "midnight",    "description": "Colaboração síncrona." },
     { "id": "ritual",   "label": "Ritual",            "tone": "primary-glow","description": "Prática pessoal recorrente." },
     { "id": "recovery", "label": "Recuperação",       "tone": "emerald",     "description": "Descanso ativo, caminhadas, respiração." },
-    { "id": "shallow",  "label": "Superficial",       "tone": "neutral",     "description": "Email, admin, tarefas de baixo custo." }
+    { "id": "shallow",  "label": "Superficial",       "tone": "neutral",     "description": "Email, admin, tarefas de baixo custo." },
+    {
+      "id": "academia",
+      "label": "Academia",
+      "tone": "coral",
+      "description": "Treinos de musculação — ciclo A B C A B.",
+      "workspace": {
+        "levels": [
+          {
+            "key": "grupo",
+            "label": "Grupo muscular",
+            "labelPlural": "Grupos musculares",
+            "fields": [],
+            "tracking": { "type": "boolean", "default": false, "label": "Concluído" }
+          }
+        ],
+        "display": { "summary": "Treino", "progress": "boolean" },
+        "templates": [
+          {
+            "name": "Treino A — Peito · Tríceps · Ombro",
+            "children": [
+              { "name": "Teta Bolada (Peito)" },
+              { "name": "Triceps Marreta" },
+              { "name": "Ombrão Cebola (Ombro)" }
+            ]
+          },
+          {
+            "name": "Treino B — Costas · Bíceps",
+            "children": [
+              { "name": "Costas Tridimensional" },
+              { "name": "Biceps Pão de Açucar" }
+            ]
+          },
+          {
+            "name": "Treino C — Perna · Abdomen",
+            "children": [
+              { "name": "Coxa de Ciclista" },
+              { "name": "Panturrilha" },
+              { "name": "Abdomen" }
+            ]
+          }
+        ]
+      }
+    }
   ],
   "routine": [
     { "id": "r-mon-1", "day": 1, "start": "07:00", "end": "07:30", "kind": "ritual",   "title": "Amanhecer estoico · reflexão" },
@@ -33,7 +76,12 @@
     { "id": "r-fri-2", "day": 5, "start": "10:00", "end": "12:00", "kind": "deep",     "title": "Bloco Atlas" },
     { "id": "r-fri-3", "day": 5, "start": "15:00", "end": "16:30", "kind": "shallow",  "title": "Correspondência" },
     { "id": "r-sat-1", "day": 6, "start": "09:00", "end": "10:30", "kind": "recovery", "title": "Caminhada longa" },
-    { "id": "r-sun-1", "day": 0, "start": "10:00", "end": "11:00", "kind": "ritual",   "title": "Reflexão semanal" }
+    { "id": "r-sun-1", "day": 0, "start": "10:00", "end": "11:00", "kind": "ritual",   "title": "Reflexão semanal" },
+    { "id": "r-gym-mon", "day": 1, "start": "19:00", "end": "20:30", "kind": "academia", "title": "Treino A · Teta Bolada",          "notes": "Teta Bolada (Peito) · Triceps Marreta · Ombrão Cebola" },
+    { "id": "r-gym-tue", "day": 2, "start": "12:15", "end": "13:45", "kind": "academia", "title": "Treino B · Costas Tridimensional", "notes": "Costas Tridimensional · Biceps Pão de Açucar" },
+    { "id": "r-gym-wed", "day": 3, "start": "12:15", "end": "13:45", "kind": "academia", "title": "Treino C · Coxa de Ciclista",      "notes": "Coxa de Ciclista · Panturrilha · Abdomen" },
+    { "id": "r-gym-thu", "day": 4, "start": "12:15", "end": "13:45", "kind": "academia", "title": "Treino A · Teta Bolada",          "notes": "Teta Bolada (Peito) · Triceps Marreta · Ombrão Cebola" },
+    { "id": "r-gym-fri", "day": 5, "start": "12:15", "end": "13:45", "kind": "academia", "title": "Treino B · Costas Tridimensional", "notes": "Costas Tridimensional · Biceps Pão de Açucar" }
   ],
   "commitments": [
     { "id": "c-1", "date": "2026-05-04", "start": "11:00", "end": "12:30", "kind": "meeting", "title": "Briefing com investidores · Meridian", "notes": "Pré-leitura enviada na sexta." },
