@@ -408,7 +408,7 @@ function AISettingsContent() {
               {connectionError && <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" /> {connectionError}</p>}
             </div>
           )}
-          {settings.providerId === "gemini-local" && (
+          {(settings.providerId === "gemini-local" || settings.providerId === "openrouter-local") && (
             <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
               {isAiProxyAvailable() ? (
                 <><CheckCircle2 className="h-3 w-3 text-green-500" /> {s.ai.proxyOk}</>

@@ -403,7 +403,7 @@ function ProposedGroups({
 }) {
   if (actions.length === 0) {
     if (!rawText) return null;
-    return <div className="text-[11px] leading-relaxed whitespace-pre-wrap text-primary/60">{rawText}</div>;
+    return <div className="text-[11px] leading-relaxed whitespace-pre-wrap text-primary/60">{renderRichHtml(rawText)}</div>;
   }
   const removed  = actions.filter(a => a.kind === "delete");
   const added    = actions.filter(a => a.kind === "create");

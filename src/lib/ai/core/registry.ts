@@ -1,6 +1,7 @@
 import type { LLMProvider, LLMProviderConfig, ProviderId } from "./provider";
 import { GeminiAdapter } from "./adapters/gemini";
 import { GeminiProxyAdapter, isAiProxyAvailable } from "./adapters/geminiProxy";
+import { OpenRouterProxyAdapter } from "./adapters/openrouterProxy";
 import { OpenAIAdapter } from "./adapters/openai";
 import { AnthropicAdapter } from "./adapters/anthropic";
 import { OllamaAdapter } from "./adapters/ollama";
@@ -24,6 +25,14 @@ const PROVIDER_REGISTRY = new Map<ProviderId, ProviderRegistration>([
     name: "Gemini (Hosted)",
     adapter: GeminiProxyAdapter,
     defaultModel: "gemini-3.1-flash-lite",
+    requiresApiKey: false,
+    capabilities: { streaming: true, functionCalling: true },
+  }],
+  ["openrouter-local", {
+    id: "openrouter-local",
+    name: "OpenRouter (Hosted)",
+    adapter: OpenRouterProxyAdapter,
+    defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
     requiresApiKey: false,
     capabilities: { streaming: true, functionCalling: true },
   }],
@@ -99,7 +108,7 @@ export function createProviderFromSettings(settings: {
   return createProvider(settings.providerId, config);
 }
 
-const FALLBACK_PROVIDER_CHAIN: ProviderId[] = ["gemini-local", "gemini", "openrouter", "openai", "anthropic", "ollama"];
+const FALLBACK_PROVIDER_CHAIN: ProviderId[] = ["gemini-local", "openrouter-local", "gemini", "openrouter", "openai", "anthropic", "ollama"];
 
 export function resolveFallbackProvider(
   preferredId: ProviderId,
@@ -112,9 +121,9 @@ export function resolveFallbackProvider(
     if (!registration) continue;
 
     if (registration.requiresApiKey && !apiKeys[id]) continue;
-    // gemini-local routes through the hosted proxy (Supabase). Skip it when no project
-    // is configured, so the chain falls through to a usable keyed provider.
-    if (id === "gemini-local" && !isAiProxyAvailable()) continue;
+    // The hosted proxy providers route through Supabase. Skip them when no project is
+    // configured, so the chain falls through to a usable keyed provider.
+    if ((id === "gemini-local" || id === "openrouter-local") && !isAiProxyAvailable()) continue;
 
     const provider = createProvider(id, {
       apiKey: apiKeys[id] ?? "",

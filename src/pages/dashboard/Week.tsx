@@ -184,6 +184,19 @@ export default function Week() {
 
       {tab === "week" ? (
         <>
+          {/* Weekly routine grid — the compact week overview comes first, ahead
+              of the stats; sleep is drawn striped per day, clicking a sleep
+              region opens the editor (no separate sleep card needed). */}
+          <div className="mb-6 grid grid-cols-1 gap-6">
+            <WeeklyRoutine
+              onBlockClick={(b) => {
+                const original = data.routine.find((r) => r.id === b.id);
+                if (original) setEditItem(original);
+              }}
+              onSleepClick={() => { setPendingSleep({ bedtime, wake }); setEditSleep(true); }}
+            />
+          </div>
+
           {/* Mini stats row */}
           <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="chronos-card p-3">
@@ -226,18 +239,6 @@ export default function Week() {
           {/* Optimization strip */}
           <div className="mb-6">
             <OptimizationStrip />
-          </div>
-
-          {/* Weekly routine grid — sleep is drawn striped per day; clicking a
-              sleep region opens the editor (no separate sleep card needed). */}
-          <div className="grid grid-cols-1 gap-6">
-            <WeeklyRoutine
-              onBlockClick={(b) => {
-                const original = data.routine.find((r) => r.id === b.id);
-                if (original) setEditItem(original);
-              }}
-              onSleepClick={() => { setPendingSleep({ bedtime, wake }); setEditSleep(true); }}
-            />
           </div>
         </>
       ) : (

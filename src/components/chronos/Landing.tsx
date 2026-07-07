@@ -82,13 +82,13 @@ export default function Landing() {
           <div className="text-xs uppercase tracking-[0.22em] text-secondary">{L.suiteEyebrow}</div>
           <h2 className="font-display text-4xl mt-3 text-primary text-balance">{L.suiteTitle}</h2>
         </div>
-        <div className="mt-10 grid md:grid-cols-3 gap-4">
-          {L.suiteProducts.map((p, i) => {
-            const live = i === 0;
-            return (
+        <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {L.suiteProducts.map((p) => {
+            const live = "live" in p ? !!p.live : false;
+            const href = "href" in p ? (p.href as string | undefined) : undefined;
+            const card = (
               <div
-                key={p.n}
-                className={`rounded-2xl p-6 relative overflow-hidden ${
+                className={`h-full rounded-2xl p-6 relative overflow-hidden ${
                   live
                     ? "bg-midnight border border-secondary/20 shadow-elevated"
                     : "bg-card text-primary border"
@@ -105,6 +105,11 @@ export default function Landing() {
                   )}
                 </div>
               </div>
+            );
+            return href ? (
+              <a key={p.n} href={href} target="_blank" rel="noreferrer" className="block h-full">{card}</a>
+            ) : (
+              <div key={p.n} className="h-full">{card}</div>
             );
           })}
         </div>

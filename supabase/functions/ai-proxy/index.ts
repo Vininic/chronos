@@ -1,13 +1,21 @@
-// Supabase Edge Function (Deno) — secure Gemini proxy.
+// Supabase Edge Function (Deno) — secure AI proxy for the whole suite.
 //
-// Holds the Google AI Studio key as a SERVER secret so the deployed demo can offer
-// working AI without ever shipping the key in the client bundle. The browser calls
-// this function (with the public anon key for auth); the function calls Google.
+// Holds provider keys as SERVER secrets so deployed apps (Chronos, Kairos) can offer
+// working AI without ever shipping a key in the client bundle. The browser calls this
+// function (with the public anon key for auth); the function calls the upstream provider.
+//
+// Providers:
+//   - "gemini" (default): Google AI Studio, hard free-tier wall (no billing = can't be charged).
+//   - "openrouter": routes ONLY to a server-side allowlisted ":free" model — the client can
+//     request a model, but this function silently substitutes a safe default if it doesn't
+//     match the allowlist, so a client bug or a bad request can never spend real credit on
+//     this key's finite, non-renewing balance.
 //
 // Deploy:  supabase functions deploy ai-proxy
-// Secret:  supabase secrets set GEMINI_API_KEY=AIza...
-// Optional: supabase secrets set ALLOWED_ORIGIN=https://your-app.vercel.app
-//           (restricts browser callers; defaults to "*")
+// Secrets: supabase secrets set GEMINI_API_KEY=AIza...
+//          supabase secrets set OPENROUTER_API_KEY=sk-or-v1-...
+// Optional: supabase secrets set ALLOWED_ORIGIN="https://chronos.vercel.app,https://kairos-suite.vercel.app"
+//           (comma-separated allowlist; defaults to "*" if unset)
 // Rate limit table/RPC: supabase db push  (applies 0002_ai_proxy.sql)
 //
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically.
@@ -15,20 +23,30 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGIN") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
 
-// Per-IP requests allowed per minute (cost guard for the shared key).
+// Per-IP requests allowed per minute (cost guard for the shared keys).
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get("AI_PROXY_RATE_LIMIT") ?? "30");
 
-const cors = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+function corsFor(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  const allowOrigin = ALLOWED_ORIGINS.includes("*")
+    ? "*"
+    : ALLOWED_ORIGINS.includes(origin)
+      ? origin
+      : ALLOWED_ORIGINS[0] ?? "*";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+}
 
-function json(body: unknown, status = 200): Response {
+function json(body: unknown, status: number, cors: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...cors, "Content-Type": "application/json" },
@@ -41,9 +59,31 @@ interface ProxyRequest {
   temperature?: number;
   maxTokens?: number;
   model?: string;
+  provider?: "gemini" | "openrouter";
 }
 
-const DEFAULT_MODEL = "gemini-3.1-flash-lite";
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+
+// Server-side allowlist for OpenRouter — the ONLY models this function will ever call on
+// that key, regardless of what a client asks for. All are $0/token ":free" models. This is
+// the actual safety boundary: a client can pick among these, never escape them.
+// OpenRouter's free catalog rotates — verify against https://openrouter.ai/api/v1/models
+// before adding an entry. Several previously-free slugs (deepseek/deepseek-chat:free,
+// google/gemini-2.0-flash-exp:free) have been retired or gone paid-only. Some free models
+// (openai/gpt-oss-120b:free, nousresearch/hermes-3-llama-3.1-405b:free, nvidia/nemotron-*)
+// also 404 on this account until its data-sharing policy is opened up at
+// https://openrouter.ai/settings/privacy — they were left out until that's configured.
+const OPENROUTER_FREE_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+] as const;
+const DEFAULT_OPENROUTER_MODEL = OPENROUTER_FREE_MODELS[0];
+
+function safeOpenRouterModel(requested: string | undefined): string {
+  return OPENROUTER_FREE_MODELS.includes(requested as (typeof OPENROUTER_FREE_MODELS)[number])
+    ? (requested as string)
+    : DEFAULT_OPENROUTER_MODEL;
+}
 
 /** Best-effort per-IP limit. Fail-open: if the RPC/table is missing, allow the request. */
 async function underRateLimit(ip: string): Promise<boolean> {
@@ -58,59 +98,26 @@ async function underRateLimit(ip: string): Promise<boolean> {
   }
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+async function callGemini(body: ProxyRequest): Promise<{ text: string; finishReason: string; usage: Record<string, number> }> {
+  if (!GEMINI_API_KEY) throw new ProxyError("AI proxy not configured: GEMINI_API_KEY secret is missing.", 503);
 
-  if (!GEMINI_API_KEY) {
-    return json({ error: "AI proxy not configured: GEMINI_API_KEY secret is missing." }, 503);
-  }
-
-  const ip = (req.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
-  if (!(await underRateLimit(ip))) {
-    return json({ error: "Rate limit exceeded. Please slow down and try again shortly." }, 429);
-  }
-
-  let body: ProxyRequest;
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid JSON body" }, 400);
-  }
-
-  const prompt = (body.prompt ?? "").toString();
-  if (!prompt.trim()) return json({ error: "Missing 'prompt'" }, 400);
-
-  // Clamp to keep each call cheap regardless of what the client asks for.
   const maxOutputTokens = Math.min(Math.max(1, Number(body.maxTokens ?? 2048)), 2048);
   const temperature = Math.min(Math.max(0, Number(body.temperature ?? 0.5)), 2);
-  const model = (body.model ?? DEFAULT_MODEL).toString().replace(/[^a-zA-Z0-9.\-]/g, "");
+  const model = (body.model ?? DEFAULT_GEMINI_MODEL).toString().replace(/[^a-zA-Z0-9.\-]/g, "");
 
   const payload: Record<string, unknown> = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [{ role: "user", parts: [{ text: body.prompt }] }],
     generationConfig: { temperature, maxOutputTokens },
   };
-  if (body.systemPrompt) {
-    payload.systemInstruction = { parts: [{ text: String(body.systemPrompt) }] };
-  }
+  if (body.systemPrompt) payload.systemInstruction = { parts: [{ text: String(body.systemPrompt) }] };
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    return json({ error: `Upstream request failed: ${err instanceof Error ? err.message : "unknown"}` }, 502);
-  }
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    .catch((err) => { throw new ProxyError(`Upstream request failed: ${err instanceof Error ? err.message : "unknown"}`, 502); });
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    // Surface quota/rate problems with their status so the client can show a friendly note.
-    return json({ error: `Gemini error ${res.status}: ${detail.slice(0, 300)}` }, res.status);
+    throw new ProxyError(`Gemini error ${res.status}: ${detail.slice(0, 300)}`, res.status);
   }
 
   const data = await res.json().catch(() => null) as {
@@ -118,13 +125,92 @@ Deno.serve(async (req) => {
     usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
   } | null;
 
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-  const finishReason = data?.candidates?.[0]?.finishReason ?? "stop";
-  const usage = {
-    promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
-    completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
-    totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
+  return {
+    text: data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "",
+    finishReason: data?.candidates?.[0]?.finishReason ?? "stop",
+    usage: {
+      promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
+      completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
+      totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
+    },
   };
+}
 
-  return json({ text, finishReason, usage });
+async function callOpenRouter(body: ProxyRequest): Promise<{ text: string; finishReason: string; usage: Record<string, number> }> {
+  if (!OPENROUTER_API_KEY) throw new ProxyError("AI proxy not configured: OPENROUTER_API_KEY secret is missing.", 503);
+
+  const maxTokens = Math.min(Math.max(1, Number(body.maxTokens ?? 2048)), 2048);
+  const temperature = Math.min(Math.max(0, Number(body.temperature ?? 0.5)), 2);
+  const model = safeOpenRouterModel(body.model); // never escapes the free-model allowlist
+
+  const messages = [
+    ...(body.systemPrompt ? [{ role: "system", content: String(body.systemPrompt) }] : []),
+    { role: "user", content: body.prompt },
+  ];
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      // Required by OpenRouter for free-tier attribution; harmless if ignored upstream.
+      "HTTP-Referer": "https://github.com/Vininic",
+      "X-Title": "Olympus Suite",
+    },
+    body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens }),
+  }).catch((err) => { throw new ProxyError(`Upstream request failed: ${err instanceof Error ? err.message : "unknown"}`, 502); });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new ProxyError(`OpenRouter error ${res.status}: ${detail.slice(0, 300)}`, res.status);
+  }
+
+  const data = await res.json().catch(() => null) as {
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  } | null;
+
+  return {
+    text: data?.choices?.[0]?.message?.content ?? "",
+    finishReason: data?.choices?.[0]?.finish_reason ?? "stop",
+    usage: {
+      promptTokens: data?.usage?.prompt_tokens ?? 0,
+      completionTokens: data?.usage?.completion_tokens ?? 0,
+      totalTokens: data?.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+class ProxyError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
+Deno.serve(async (req) => {
+  const cors = corsFor(req);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405, cors);
+
+  const ip = (req.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  if (!(await underRateLimit(ip))) {
+    return json({ error: "Rate limit exceeded. Please slow down and try again shortly." }, 429, cors);
+  }
+
+  let body: ProxyRequest;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400, cors);
+  }
+
+  if (!(body.prompt ?? "").toString().trim()) return json({ error: "Missing 'prompt'" }, 400, cors);
+
+  try {
+    const result = body.provider === "openrouter" ? await callOpenRouter(body) : await callGemini(body);
+    return json(result, 200, cors);
+  } catch (err) {
+    if (err instanceof ProxyError) return json({ error: err.message }, err.status, cors);
+    return json({ error: err instanceof Error ? err.message : "Unknown error" }, 500, cors);
+  }
 });

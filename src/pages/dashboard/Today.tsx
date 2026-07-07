@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPlanner, type DayPlannerHandle } from "@/components/dashboard/DayPlanner";
 import { ComposeBlockDialog } from "@/components/dashboard/ComposeBlockDialog";
 import { FocusBlocksCard, AetherisCard, safeKindStyle, alpha, TAILWIND_TO_HEX } from "@/components/dashboard/widgets";
+import { KairosInboxCard } from "@/components/dashboard/KairosInboxCard";
 import { GoalSection } from "@/components/dashboard/GoalSection";
 import { useAuth } from "@/lib/auth";
 import { useSchedule } from "@/lib/schedule/store";
@@ -201,6 +202,10 @@ export default function Today() {
           />
         </div>
       )}
+
+      <div className="mt-10">
+        <KairosInboxCard />
+      </div>
 
       <div className="mt-10 border-t border-border/30 pt-5">
         <div className="flex items-center gap-2 mb-4">
