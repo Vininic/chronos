@@ -6,10 +6,13 @@
 //
 // Providers:
 //   - "gemini" (default): Google AI Studio, hard free-tier wall (no billing = can't be charged).
+//     Accepts an optional `images: [{ mimeType, dataBase64 }]` array, mapped to Gemini
+//     `inlineData` parts (Pluto's statement-photo import; ≤4 images, ≤4MB each — see
+//     `sanitizeImages`). Requests without `images` are unaffected.
 //   - "openrouter": routes ONLY to a server-side allowlisted ":free" model — the client can
 //     request a model, but this function silently substitutes a safe default if it doesn't
 //     match the allowlist, so a client bug or a bad request can never spend real credit on
-//     this key's finite, non-renewing balance.
+//     this key's finite, non-renewing balance. No image support.
 //
 // Deploy:  supabase functions deploy ai-proxy
 // Secrets: supabase secrets set GEMINI_API_KEY=AIza...
@@ -53,6 +56,11 @@ function json(body: unknown, status: number, cors: Record<string, string>): Resp
   });
 }
 
+interface ProxyImage {
+  mimeType?: string;
+  dataBase64?: string;
+}
+
 interface ProxyRequest {
   prompt?: string;
   systemPrompt?: string;
@@ -60,6 +68,36 @@ interface ProxyRequest {
   maxTokens?: number;
   model?: string;
   provider?: "gemini" | "openrouter";
+  /** Gemini only (see `callGemini`) — e.g. Pluto's statement-photo import.
+   *  Clamped to 4 images / 4MB each; oversized or malformed entries are
+   *  dropped rather than failing the whole request. */
+  images?: ProxyImage[];
+}
+
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+
+/** Base64 length → decoded byte size, without actually decoding (~4/3 ratio,
+ *  minus padding). Good enough for a size guard. */
+function base64ByteLength(b64: string): number {
+  const len = b64.length;
+  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.floor((len * 3) / 4) - padding;
+}
+
+function sanitizeImages(images: ProxyImage[] | undefined): { mimeType: string; data: string }[] {
+  if (!Array.isArray(images)) return [];
+  const out: { mimeType: string; data: string }[] = [];
+  for (const img of images) {
+    if (out.length >= MAX_IMAGES) break;
+    const mimeType = (img.mimeType ?? "").toLowerCase();
+    const data = img.dataBase64 ?? "";
+    if (!ALLOWED_IMAGE_MIME.has(mimeType) || !data) continue;
+    if (base64ByteLength(data) > MAX_IMAGE_BYTES) continue;
+    out.push({ mimeType, data });
+  }
+  return out;
 }
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
@@ -105,8 +143,12 @@ async function callGemini(body: ProxyRequest): Promise<{ text: string; finishRea
   const temperature = Math.min(Math.max(0, Number(body.temperature ?? 0.5)), 2);
   const model = (body.model ?? DEFAULT_GEMINI_MODEL).toString().replace(/[^a-zA-Z0-9.\-]/g, "");
 
+  const images = sanitizeImages(body.images);
+  const parts: unknown[] = [{ text: body.prompt }];
+  for (const img of images) parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+
   const payload: Record<string, unknown> = {
-    contents: [{ role: "user", parts: [{ text: body.prompt }] }],
+    contents: [{ role: "user", parts }],
     generationConfig: { temperature, maxOutputTokens },
   };
   if (body.systemPrompt) payload.systemInstruction = { parts: [{ text: String(body.systemPrompt) }] };
