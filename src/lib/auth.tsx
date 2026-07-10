@@ -7,6 +7,8 @@ interface Session { name: string; signedInAt: string; email?: string; }
 interface Ctx {
   session: Session | null;
   signIn: (name: string, email?: string, password?: string) => Promise<string | null> | void;
+  /** Explicit account creation — never triggered implicitly by a failed sign-in. */
+  signUp: (name: string | undefined, email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void> | void;
   updateName: (name: string) => Promise<void> | void;
   isCloud: boolean;
@@ -53,19 +55,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (name?: string, email?: string, password?: string) => {
     if (supabase && email && password) {
-      let result;
-      const existing = await supabase.auth.signInWithPassword({ email, password });
-      if (existing.error?.message?.includes("Invalid login credentials")) {
-        result = await supabase.auth.signUp({ email, password, options: { data: { name } } });
-      } else {
-        result = existing;
+      // Sign-in only — a wrong password or a typo'd email must NEVER silently
+      // create a new account (that's what signUp below is for).
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        const invalid = error.code === "invalid_credentials" || error.message.includes("Invalid login credentials");
+        return invalid ? "invalid_credentials" : error.message;
       }
-      if (result.error) return result.error.message;
-      if (!result.data?.user) return "No user returned";
+      if (!data.user) return "No user returned";
       setSession({
-        name: result.data.user.user_metadata?.name ?? name ?? email.split("@")[0],
-        signedInAt: result.data.user.created_at ?? new Date().toISOString(),
-        email: result.data.user.email,
+        name: data.user.user_metadata?.name ?? name ?? email.split("@")[0],
+        signedInAt: data.user.created_at ?? new Date().toISOString(),
+        email: data.user.email,
       });
       return null;
     }
@@ -73,6 +74,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Local fallback
     const trimmed = (name || "").trim() || "Composer";
     setSession({ name: trimmed, signedInAt: new Date().toISOString() });
+    return null;
+  }, [supabase]);
+
+  const signUp = useCallback(async (name: string | undefined, email: string, password: string) => {
+    if (!supabase) return "Cloud is not configured";
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
+    if (error) return error.message;
+    // Supabase obfuscates existing accounts: returns a user with no identities.
+    if (data.user && (data.user.identities?.length ?? 0) === 0) return "account_exists";
+    if (!data.user) return "No user returned";
+    setSession({
+      name: data.user.user_metadata?.name ?? name ?? email.split("@")[0],
+      signedInAt: data.user.created_at ?? new Date().toISOString(),
+      email: data.user.email,
+    });
     return null;
   }, [supabase]);
 
@@ -91,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   return (
-    <AuthCtx.Provider value={{ session, signIn, signOut, updateName, isCloud: !!supabase }}>
+    <AuthCtx.Provider value={{ session, signIn, signUp, signOut, updateName, isCloud: !!supabase }}>
       {children}
     </AuthCtx.Provider>
   );

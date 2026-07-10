@@ -15,10 +15,11 @@ import { ThemeToggle } from "@/components/suite/ThemeToggle";
 type Mode = "local" | "cloud";
 
 export default function Login() {
-  const { signIn, isCloud } = useAuth();
+  const { signIn, signUp, isCloud } = useAuth();
   const navigate = useNavigate();
   const t = useT();
   const [mode, setMode] = useState<Mode>("local");
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,9 +38,11 @@ export default function Login() {
     if (!email.trim() || !password) { toast({ title: L.needsEmailPass }); return; }
     setLoading(true);
     try {
-      const err = await signIn(name.trim() || undefined, email.trim(), password);
+      const err = authMode === "signup"
+        ? await signUp(name.trim() || undefined, email.trim(), password)
+        : await signIn(name.trim() || undefined, email.trim(), password);
       if (typeof err === "string") {
-        toast({ title: err });
+        toast({ title: err === "invalid_credentials" ? L.badCredentials : err === "account_exists" ? L.accountExists : err });
         return;
       }
       toast({ title: L.cloudWelcome });
@@ -149,7 +152,7 @@ export default function Login() {
                   <Input
                     id="password"
                     type="password"
-                    autoComplete="current-password"
+                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={L.passwordPlaceholder}
@@ -160,9 +163,16 @@ export default function Login() {
                   {loading ? (
                     <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> {L.signingIn}</>
                   ) : (
-                    <>{L.cloudEnter} <ArrowRight className="ml-1.5 h-4 w-4" /></>
+                    <>{authMode === "signup" ? L.signUpSubmit : L.signInSubmit} <ArrowRight className="ml-1.5 h-4 w-4" /></>
                   )}
                 </Button>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode(authMode === "signin" ? "signup" : "signin")}
+                  className="w-full text-center text-xs text-secondary hover:underline"
+                >
+                  {authMode === "signin" ? L.toggleToSignUp : L.toggleToSignIn}
+                </button>
               </form>
               <p className="mt-4 text-[11px] text-muted-foreground text-center leading-relaxed">
                 {L.cloudHint}
