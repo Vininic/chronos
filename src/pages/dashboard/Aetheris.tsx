@@ -384,7 +384,7 @@ export default function Aetheris() {
     let fullResponse = "";
 
     try {
-      const stream = streamChatMessage(data, activeSession.messages, text, settings.autonomy, pendingAttachments);
+      const stream = streamChatMessage(data, activeSession.messages, text, settings.autonomy, pendingAttachments, locale);
       for await (const chunk of stream) {
         fullResponse += chunk;
         setStreamingText(fullResponse);

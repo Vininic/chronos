@@ -44,14 +44,15 @@ export default function DashboardLayout() {
   const loc = useLocation();
   const { data } = useSchedule();
   const isAetheris = loc.pathname === "/dashboard/aetheris" || loc.pathname.startsWith("/dashboard/aetheris/");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Silently build the historical daily log on first mount each session
   useEffect(() => { autoCaptureLogs(data); }, []);
   return (
     <div className="h-screen flex overflow-hidden bg-background">
-      <Sidebar />
+      <Sidebar mobileNavOpen={mobileNavOpen} onMobileNavOpenChange={setMobileNavOpen} />
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <Topbar />
+        <Topbar onMenuClick={() => setMobileNavOpen(true)} />
         <DemoBanner />
         <main className={`flex-1 chronos-surface overflow-y-auto overflow-x-hidden${isAetheris ? ' flex flex-col' : ''}`}>
           {isAetheris ? (

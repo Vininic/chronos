@@ -11,6 +11,7 @@ import { recordLLMCall } from "../core/logger";
 import { evaluateResponse } from "../eval/selfEval";
 import { loadProfile } from "../learning/store";
 import { formatPreferencesForPrompt } from "../memory";
+import { DEFAULT_LOCALE, LOCALE_LABELS, type Locale } from "../../i18n/dictionaries";
 
 const AB_VARIANT_KEY = "chronos.ab-variant";
 
@@ -204,6 +205,7 @@ export async function processChatMessage(
   data: ScheduleData,
   messages: ChatMessage[],
   userMessage: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<ChatResult> {
   const fullMessages: ChatMessage[] = [
     ...messages,
@@ -239,7 +241,9 @@ export async function processChatMessage(
     provider = fallback.provider;
   }
 
-  const systemPrompt = PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema());
+  const systemPrompt =
+    PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema()) +
+    buildLocaleInstruction(locale);
   const startTime = performance.now();
   const result = await provider.generateContent(prompt, {
     systemPrompt,
@@ -286,6 +290,15 @@ export async function processChatMessage(
   };
 }
 
+// Tells the model what language the user's UI is in, so replies default to that
+// language even when the schedule data (block/category titles) is in another one.
+// Same intent as Kairos' buildSystemPrompt locale line, adapted for Chronos'
+// append-a-string-onto-the-built-prompt pattern (see AUTONOMY_INSTRUCTIONS below).
+function buildLocaleInstruction(locale: Locale): string {
+  const localeLabel = LOCALE_LABELS[locale]?.long ?? LOCALE_LABELS[DEFAULT_LOCALE].long;
+  return `\n\n## Language\nThe user's UI language is ${localeLabel}. Always reply in that language, even if the schedule data (block/category/commitment names) is in a different one — unless the user explicitly writes to you in another language, in which case switch to that.`;
+}
+
 const AUTONOMY_INSTRUCTIONS: Record<string, string> = {
   conservative: "\n\n## Autonomy: Mild\nYou are in MILD mode. Always describe planned changes in an 'Actions:' section and wait for the user's explicit confirmation before calling any write tools (createBlock, deleteBlock, updateBlock, moveBlock, etc.). Never act on your own.",
   balanced: "\n\n## Autonomy: Balanced\nYou are in BALANCED mode. For low-risk additions or time adjustments, proceed with write tools directly. For deletions or major restructuring, describe the changes in an 'Actions:' section and ask for confirmation first.",
@@ -298,6 +311,7 @@ export async function* streamChatMessage(
   userMessage: string,
   autonomy?: "conservative" | "balanced" | "aggressive",
   attachments?: FileAttachment[],
+  locale: Locale = DEFAULT_LOCALE,
 ): AsyncIterable<string> {
   const fullMessages: ChatMessage[] = [
     ...messages,
@@ -333,7 +347,8 @@ export async function* streamChatMessage(
 
   const systemPrompt =
     PromptBuilder.chatSystemPrompt(version).replace("{tools}", buildToolSchema()) +
-    (AUTONOMY_INSTRUCTIONS[resolvedAutonomy] ?? "");
+    (AUTONOMY_INSTRUCTIONS[resolvedAutonomy] ?? "") +
+    buildLocaleInstruction(locale);
   try {
     const stream = provider.generateContentStream(prompt, {
       systemPrompt,

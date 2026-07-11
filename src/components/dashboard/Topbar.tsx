@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ComposeBlockDialog } from "./ComposeBlockDialog";
@@ -11,7 +11,12 @@ import { timeToMinutes } from "@/lib/schedule/types";
 import { LanguageToggle } from "@/components/suite/LanguageToggle";
 import { ThemeToggle } from "@/components/suite/ThemeToggle";
 
-export default function Topbar() {
+interface TopbarProps {
+  /** Opens the mobile nav drawer (below `lg`) — omitted, the hamburger button hides itself. */
+  onMenuClick?: () => void;
+}
+
+export default function Topbar({ onMenuClick }: TopbarProps = {}) {
   const { data } = useSchedule();
   const t = useT();
   const fmt = useDateFormat();
@@ -95,7 +100,17 @@ export default function Topbar() {
   }
 
   return (
-    <header className="h-16 border-b bg-card/70 backdrop-blur flex items-center px-6 gap-4 sticky top-0 z-10">
+    <header className="h-16 border-b bg-card/70 backdrop-blur flex items-center px-4 lg:px-6 gap-3 lg:gap-4 sticky top-0 z-10">
+      {onMenuClick && (
+        <button
+          type="button"
+          aria-label="Open menu"
+          onClick={onMenuClick}
+          className="lg:hidden h-9 w-9 -ml-1 shrink-0 rounded-md grid place-items-center text-muted-foreground hover:text-primary hover:bg-secondary/10 transition-colors"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
       <div>
         <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">{t.common.today}</div>
         <div className="font-display text-lg text-primary -mt-0.5">{today}</div>

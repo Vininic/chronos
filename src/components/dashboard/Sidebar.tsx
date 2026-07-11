@@ -10,8 +10,15 @@ import ProfileDialog from "./ProfileDialog";
 import { ProgressDialog } from "./ProgressDialog";
 import { TimerCard } from "./TimerCard";
 import { subscribe, getAetherisCount } from "@/lib/notification-count";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
-export default function Sidebar() {
+interface SidebarProps {
+  /** Controls the mobile nav drawer (below `lg`) — the desktop <aside> below is untouched. */
+  mobileNavOpen?: boolean;
+  onMobileNavOpenChange?: (open: boolean) => void;
+}
+
+export default function Sidebar({ mobileNavOpen = false, onMobileNavOpenChange }: SidebarProps = {}) {
   const { data, overallGoalProgress } = useSchedule();
   const { session } = useAuth();
   const t = useT();
@@ -37,7 +44,20 @@ useEffect(() => subscribe(setAetherisCount), []);
     { to: "/dashboard/about",     label: t.chronos.nav.about, icon: CircleHelp },
   ];
   const initial = (session?.name ?? "A").trim().charAt(0).toUpperCase();
+
+  // Mobile drawer always shows full labels, independent of the desktop
+  // sidebar's `collapsed` state (which is irrelevant on mobile since the
+  // <aside> below is hidden entirely under `lg`).
+  const mobileNavClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
+      isActive
+        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+        : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+    }`;
+  const closeMobileNav = () => onMobileNavOpenChange?.(false);
+
   return (
+    <>
     <aside className={`hidden lg:flex flex-col shrink-0 h-screen sticky top-0 overflow-y-auto bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300 ease-in-out ${
       collapsed ? "w-[72px]" : "w-[260px]"
     }`}>
@@ -149,5 +169,56 @@ useEffect(() => subscribe(setAetherisCount), []);
         <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
       </div>
     </aside>
+
+    {/* Mobile nav drawer — below `lg`, mirrors the desktop <aside>'s complete nav (not a curated subset). */}
+    <Sheet open={mobileNavOpen} onOpenChange={onMobileNavOpenChange}>
+      <SheetContent side="left" className="flex w-72 flex-col gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground">
+        <SheetTitle className="sr-only">{t.chronos.nav.composition}</SheetTitle>
+        <div className="px-6 pt-7 pb-6">
+          <Logo variant="light" />
+        </div>
+
+        <nav className="flex-1 overflow-y-auto px-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mb-2">{t.chronos.nav.composition}</div>
+          {main.map(({ to, label, icon: Icon }) => {
+            const badge = to === "/dashboard/aetheris" && aetherisCount > 0 ? aetherisCount : undefined;
+            const aetherisClear = to === "/dashboard/aetheris" && aetherisCount === 0;
+            return (
+              <NavLink key={to} to={to} end={to === "/dashboard"} onClick={closeMobileNav} className={mobileNavClass}>
+                <Icon className="h-4 w-4 text-secondary-soft shrink-0" />
+                <span className="flex-1">{label}</span>
+                {badge ? (
+                  <span className="text-[10px] font-semibold rounded-full bg-secondary text-primary-deep px-1.5 py-0.5 num">{badge}</span>
+                ) : aetherisClear ? (
+                  <span className="text-[10px] rounded-full bg-emerald-500/20 text-emerald-500 px-1 py-0.5 flex items-center"><Check className="h-3 w-3" /></span>
+                ) : null}
+              </NavLink>
+            );
+          })}
+
+          <div className="text-[10px] uppercase tracking-[0.22em] text-sidebar-foreground/50 px-3 mt-7 mb-2">{t.chronos.nav.system}</div>
+          {meta.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} onClick={closeMobileNav} className={mobileNavClass}>
+              <Icon className="h-4 w-4 shrink-0" />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="px-4 pb-4 pt-2">
+          <button
+            onClick={() => { setProfileOpen(true); closeMobileNav(); }}
+            className="w-full rounded-lg bg-sidebar-accent/50 border border-sidebar-border p-3 flex items-center gap-3 hover:bg-sidebar-accent transition-colors text-left"
+          >
+            <div className="h-9 w-9 rounded-full bg-bronze grid place-items-center text-primary-deep font-display font-semibold shrink-0">{initial}</div>
+            <div className="min-w-0">
+              <div className="text-sm text-sidebar-accent-foreground truncate">{session?.name ?? data.meta.owner}</div>
+              <div className="text-[11px] text-sidebar-foreground/50 truncate">{t.common.appName}</div>
+            </div>
+          </button>
+        </div>
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }
