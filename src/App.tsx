@@ -1,4 +1,4 @@
-import { Component, useMemo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -20,12 +20,14 @@ import Settings from "./pages/dashboard/Settings";
 import { ScheduleProvider } from "@/lib/schedule/store";
 import { TimerProvider } from "@/lib/timer/TimerContext";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { I18nProvider } from "@/lib/i18n/I18nProvider";
-import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+import { I18nProvider, useI18n } from "@/lib/i18n/I18nProvider";
+import type { Locale } from "@/lib/i18n/I18nProvider";
+import { ThemeProvider, useTheme } from "@/lib/theme/ThemeProvider";
 import { SupabaseScheduleRepository } from "@/lib/supabase/SupabaseScheduleRepository";
 import { LocalStorageScheduleRepository } from "@/lib/schedule/infrastructure/LocalStorageScheduleRepository";
 import type { ScheduleRepository } from "@/lib/schedule/ports/ScheduleRepository";
 import { useSyncEngine } from "@/lib/sync/userDataSync";
+import { pullSuitePrefs, pushSuitePrefs } from "@/lib/prefs";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) { super(props); this.state = { error: null }; }
@@ -67,6 +69,26 @@ function SyncEngineMount() {
   return null;
 }
 
+function SyncPrefs() {
+  const { isCloud } = useAuth();
+  const { setTheme } = useTheme();
+  const { setLocale } = useI18n();
+
+  useEffect(() => {
+    if (!isCloud) return;
+    let cancelled = false;
+    void pullSuitePrefs().then((prefs) => {
+      if (cancelled) return;
+      if (prefs?.theme) setTheme(prefs.theme);
+      if (prefs?.locale && (prefs.locale === "pt" || prefs.locale === "en"))
+        setLocale(prefs.locale as Locale);
+    });
+    return () => { cancelled = true; };
+  }, [isCloud, setTheme, setLocale]);
+
+  return null;
+}
+
 const App = () => (
   <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
@@ -80,6 +102,7 @@ const App = () => (
             <AuthProvider>
               <ScheduleProviderWithRepo>
                 <SyncEngineMount />
+                <SyncPrefs />
                 <TimerProvider>
                 <Routes>
               <Route path="/" element={<Index />} />
