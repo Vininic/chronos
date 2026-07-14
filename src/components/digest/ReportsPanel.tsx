@@ -22,13 +22,6 @@ const TIMEFRAME_LABELS: Record<string, string> = {
   custom: "Custom Report",
 };
 
-const HISTORY_BORDER: Record<string, string> = {
-  blue: "border-l-blue-400/50",
-  purple: "border-l-purple-400/50",
-  amber: "border-l-amber-400/50",
-  teal: "border-l-teal-400/50",
-};
-
 const HISTORY_DOT: Record<string, string> = {
   blue: "bg-blue-400",
   purple: "bg-purple-400",
@@ -133,7 +126,7 @@ export function ReportsPanel({ data, onSendToChat }: ReportsPanelProps) {
               <div key={d.id} className="flex items-start gap-1">
                 <button
                   onClick={() => { setCurrentDigest(d); setShowHistory(false); }}
-                  className={`flex-1 text-left border border-border rounded-lg p-2.5 hover:bg-secondary/5 transition-colors border-l-2 ${HISTORY_BORDER[d.color]}`}
+                  className="flex-1 text-left border border-border rounded-lg p-2.5 hover:bg-secondary/5 transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full shrink-0 ${HISTORY_DOT[d.color]}`} />
