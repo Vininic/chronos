@@ -84,25 +84,23 @@ export default function Landing() {
         </div>
         <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-4 gap-4">
           {L.suiteProducts.map((p) => {
-            const live = "live" in p ? !!p.live : false;
             const href = "href" in p ? (p.href as string | undefined) : undefined;
+            const color = "color" in p ? (p.color as string) : "#B7863B";
             const card = (
               <div
-                className={`h-full rounded-2xl p-6 relative overflow-hidden ${
-                  live
-                    ? "bg-midnight border border-secondary/20 shadow-elevated"
-                    : "bg-card text-primary border"
-                }`}
+                className="h-full rounded-2xl p-6 relative overflow-hidden border shadow-elevated"
+                style={{ backgroundColor: `${color}24`, borderColor: `${color}40` }}
               >
-                <div className={`text-xs uppercase tracking-[0.22em] ${live ? "text-secondary-soft" : "opacity-70"}`}>{p.r}</div>
-                <div className={`font-display text-3xl mt-2 ${live ? "text-sidebar-foreground" : ""}`}>{p.n}</div>
-                <p className={`text-sm mt-3 ${live ? "text-sidebar-foreground/70" : "text-muted-foreground"}`}>{p.d}</p>
+                <div className="text-xs uppercase tracking-[0.22em]" style={{ color }}>{p.r}</div>
+                <div className="font-display text-3xl mt-2 text-primary">{p.n}</div>
+                <p className="text-sm mt-3 text-muted-foreground">{p.d}</p>
                 <div className="mt-6 text-xs">
-                  {live ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary text-primary-deep px-2.5 py-1 font-medium">{L.live}</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-muted-foreground">{L.inAtelier}</span>
-                  )}
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium"
+                    style={{ backgroundColor: color, color: "#0b0a09" }}
+                  >
+                    {L.live}
+                  </span>
                 </div>
               </div>
             );
