@@ -299,9 +299,22 @@ function buildLocaleInstruction(locale: Locale): string {
   return `\n\n## Language\nThe user's UI language is ${localeLabel}. Always reply in that language, even if the schedule data (block/category/commitment names) is in a different one — unless the user explicitly writes to you in another language, in which case switch to that.`;
 }
 
+// Proposed (not-yet-executed) changes use the exact same tag+JSON convention as
+// real tool calls ([TOOL:name]{...params...}[/TOOL]) — just a different tag name
+// ([PROPOSE:...]) so extractToolCalls doesn't pick them up and actually run them.
+// Same tool names, same param shapes the model already gets right for real calls
+// (buildToolSchema/describeToolParams), so this doesn't ask it to learn a second
+// format — it reuses the one it already uses correctly. Previously the model
+// wrote free-text "Actions:" prose here, which ChatThread.tsx regex-parsed into
+// pills (fragile: dependent on exact phrasing, quoting, bullet style); replacing
+// prose with the same structured tag the model uses everywhere else parses with
+// a plain JSON.parse instead.
+const PROPOSE_FORMAT_INSTRUCTION =
+  "Describe each planned change as a `[PROPOSE:toolName]{...same JSON params as that tool takes...}[/PROPOSE]` tag — the exact same tag/JSON shape as a real tool call, just PROPOSE instead of TOOL, so it previews as a chip instead of executing. Do not describe planned changes in prose.";
+
 const AUTONOMY_INSTRUCTIONS: Record<string, string> = {
-  conservative: "\n\n## Autonomy: Mild\nYou are in MILD mode. Always describe planned changes in an 'Actions:' section and wait for the user's explicit confirmation before calling any write tools (createBlock, deleteBlock, updateBlock, moveBlock, etc.). Never act on your own.",
-  balanced: "\n\n## Autonomy: Balanced\nYou are in BALANCED mode. For low-risk additions or time adjustments, proceed with write tools directly. For deletions or major restructuring, describe the changes in an 'Actions:' section and ask for confirmation first.",
+  conservative: `\n\n## Autonomy: Mild\nYou are in MILD mode. ${PROPOSE_FORMAT_INSTRUCTION} Wait for the user's explicit confirmation before calling any write tools (createBlock, deleteBlock, updateBlock, moveBlock, etc.) for real. Never act on your own.`,
+  balanced: `\n\n## Autonomy: Balanced\nYou are in BALANCED mode. For low-risk additions or time adjustments, proceed with write tools directly. For deletions or major restructuring, ${PROPOSE_FORMAT_INSTRUCTION[0].toLowerCase()}${PROPOSE_FORMAT_INSTRUCTION.slice(1)} and ask for confirmation first.`,
   aggressive: "\n\n## Autonomy: Aggressive\nYou are in AGGRESSIVE mode. Execute all schedule changes immediately using the available write tools — do not ask for confirmation. After executing, briefly confirm what was done.",
 };
 
@@ -392,6 +405,28 @@ export function extractToolCalls(text: string): Array<{ tool: string; params: Re
 
 export function stripToolCallsFromText(text: string): string {
   return text.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, "").trim();
+}
+
+// Same shape/robustness as extractToolCalls, for the not-yet-executed preview
+// tag — see PROPOSE_FORMAT_INSTRUCTION above. Unlike extractToolCalls, this is
+// NOT stripped from the stored message text: ChatThread.tsx renders straight
+// from msg.content, splitting prose from tags itself (mirrors how the old
+// "Actions:" prose used to stay in msg.content for the same reason).
+export function extractProposedCalls(text: string): Array<{ tool: string; params: Record<string, unknown> }> {
+  const calls: Array<{ tool: string; params: Record<string, unknown> }> = [];
+  const pattern = /\[PROPOSE:(\w+)\]([\s\S]*?)\[\/PROPOSE\]/g;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    try {
+      const params = JSON.parse(match[2].trim());
+      calls.push({ tool: match[1], params });
+    } catch {
+      calls.push({ tool: match[1], params: { raw: match[2].trim() } });
+    }
+  }
+
+  return calls;
 }
 
 export function validateTimeReferences(text: string, data: ScheduleData): string[] {

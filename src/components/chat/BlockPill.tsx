@@ -3,8 +3,6 @@ import { Moon, Target, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "luc
 import { safeKindStyle } from "@/components/dashboard/widgets";
 import type { ScheduleData } from "@/lib/schedule/types";
 
-export const ACTIONS_HEADER_RE = /(?:\*\*Actions\s*(?:taken)?\s*:\s*\*\*|\*\*Actions\s*(?:taken)?\s*:\*\*|Actions\s*(?:taken)?\s*:)/i;
-
 export interface BlockPillProps {
   title: string;
   start?: string;
@@ -186,7 +184,7 @@ type ToolCall = {
 };
 
 // Extracts confirmed block changes from tool call results.
-// For proposed (pre-confirmation) changes, see parseActionsSection in ChatThread.tsx.
+// For proposed (pre-confirmation) changes, see extractProposedBlockData below.
 export function extractBlockData(
   msg: { content: string; toolCalls?: ToolCall[] },
   data?: ScheduleData
@@ -251,6 +249,92 @@ export function extractBlockData(
           title: found.title,
           start: String(tc.params.newStart ?? found.start),
           end: String(tc.params.newEnd ?? found.end),
+          kind: found.kind,
+          categories: data.categories,
+          action: "modified",
+        });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  return blocks.filter(b => {
+    const key = `${b.action}:${b.title.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// Same per-tool mapping as extractBlockData, for [PROPOSE:...] calls instead
+// of executed msg.toolCalls — see extractProposedCalls in chat/service.ts.
+// Nothing has run yet, so there's no tc.result to read a deleted/updated
+// block's title from; every id-referencing tool resolves blockId → title from
+// the live `data` instead (the block still exists at proposal time).
+export function extractProposedBlockData(
+  calls: Array<{ tool: string; params: Record<string, unknown> }>,
+  data?: ScheduleData,
+): BlockPillProps[] {
+  if (!calls.length || !data) return [];
+
+  const blocks: BlockPillProps[] = [];
+  const allBlocks = [...data.routine, ...data.commitments];
+
+  for (const call of calls) {
+    const p = call.params;
+
+    if (call.tool === "createBlock" || call.tool === "addCommitment") {
+      if (p.title && p.start && p.end) {
+        blocks.push({
+          title: String(p.title),
+          start: String(p.start),
+          end: String(p.end),
+          kind: String(p.category ?? ""),
+          categories: data.categories,
+          action: "added",
+        });
+      }
+    }
+
+    if (call.tool === "deleteBlock" || call.tool === "removeCommitment") {
+      const id = String(p.blockId ?? p.commitmentId ?? "");
+      const found = allBlocks.find(b => b.id === id);
+      if (found) {
+        blocks.push({
+          title: found.title,
+          start: found.start,
+          end: found.end,
+          kind: found.kind,
+          categories: data.categories,
+          action: "removed",
+        });
+      }
+    }
+
+    if (call.tool === "updateBlock" || call.tool === "updateCommitment") {
+      const id = String(p.blockId ?? p.commitmentId ?? "");
+      const patch = (p.patch as Record<string, unknown>) ?? {};
+      const found = allBlocks.find(b => b.id === id);
+      if (found) {
+        blocks.push({
+          title: String(patch.title ?? found.title),
+          start: String(patch.start ?? found.start),
+          end: String(patch.end ?? found.end),
+          kind: String(patch.category ?? found.kind),
+          categories: data.categories,
+          action: "modified",
+        });
+      }
+    }
+
+    if (call.tool === "moveBlock") {
+      const id = String(p.blockId ?? "");
+      const found = allBlocks.find(b => b.id === id);
+      if (found) {
+        blocks.push({
+          title: found.title,
+          start: String(p.newStart ?? found.start),
+          end: String(p.newEnd ?? found.end),
           kind: found.kind,
           categories: data.categories,
           action: "modified",

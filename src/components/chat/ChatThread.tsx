@@ -4,7 +4,8 @@ import type { ScheduleData } from "@/lib/schedule/types";
 import {
   CheckCircle2, AlertCircle, Undo2, Clock, Sparkles,
 } from "lucide-react";
-import { BlockPill, BlockBadge, BlockSection, extractBlockData, ACTIONS_HEADER_RE } from "./BlockPill";
+import { BlockPill, BlockBadge, BlockSection, extractBlockData, extractProposedBlockData } from "./BlockPill";
+import { extractProposedCalls } from "@/lib/ai/chat/service";
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
 
@@ -17,149 +18,7 @@ function formatTime(ts: string) {
   }
 }
 
-// ─── Proposed-action parsing ────────────────────────────────────────────────
-// Works purely from text — no block data dependency needed. The AI's "Actions:"
-// section is parsed into typed items regardless of whether block titles match
-// anything in the schedule, so something visual always appears.
-
-interface ParsedAction {
-  kind: "delete" | "create" | "modify";
-  label: string;
-  start?: string;
-  end?: string;
-  category?: string;
-}
-
-const TIME_RANGE_RE = /(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/;
-const DELETE_VERB_RE  = /^(delete|remove)[d]?\s*[:\s]\s*/i;
-const CREATE_VERB_RE  = /^(create|add)[d]?\s*[:\s]\s*/i;
-const MODIFY_VERB_RE  = /^(move|update|modify|merge|split|reschedule|change)\w*\s*[:\s]\s*/i;
-const REMOVED_VERB_RE = /^(removed|deleted)\s*[:\s]\s*/i;
-const ADDED_VERB_RE   = /^(added|created)\s*[:\s]\s*/i;
-const MODIFIED_VERB_RE = /^(modified|moved|updated|merged|split)\s*[:\s]\s*/i;
-const BULLET_RE = /^[-•*]\s+(.+)$|^\d+\.\s+(.+)$/;
 const WRITE_TOOLS = new Set(["createBlock","updateBlock","deleteBlock","moveBlock","splitBlock","mergeBlocks","addCommitment","removeCommitment","updateCommitment"]);
-
-// Splits a comma-separated list ignoring commas inside parentheses.
-function splitOutsideParens(text: string): string[] {
-  const parts: string[] = [];
-  let depth = 0, start = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '(') depth++;
-    else if (text[i] === ')') depth--;
-    else if (depth === 0 && text[i] === ',') { parts.push(text.slice(start, i).trim()); start = i + 1; }
-  }
-  parts.push(text.slice(start).trim());
-  return parts.map(p => p.replace(/^\s*and\s+/i, '').trim()).filter(Boolean);
-}
-
-function extractItems(text: string, kind: ParsedAction["kind"]): ParsedAction[] {
-  const out: ParsedAction[] = [];
-
-  // 1. Quoted names: "Title" [from] HH:MM-HH:MM
-  const quotedRE = /"([^"]+)"/g;
-  let m: RegExpExecArray | null;
-  let foundQuoted = false;
-  while ((m = quotedRE.exec(text)) !== null) {
-    const after = text.slice(m.index + m[0].length, m.index + m[0].length + 60);
-    const t = TIME_RANGE_RE.exec(after);
-    out.push({ kind, label: m[1], start: t?.[1], end: t?.[2] });
-    foundQuoted = true;
-  }
-  if (foundQuoted) return out;
-
-  // 2. Comma-separated items outside parens: "A, B, Strategy (note)" → ["A","B","Strategy"]
-  const outerParts = splitOutsideParens(text.replace(/[.!]$/, ''));
-  if (outerParts.length > 1) {
-    for (const part of outerParts) {
-      const label = part.replace(/\s*\([^)]*\)\s*$/, '').replace(/[.!]$/, '').trim();
-      if (label.length > 2) {
-        const t = TIME_RANGE_RE.exec(part);
-        out.push({ kind, label, start: t?.[1], end: t?.[2] });
-      }
-    }
-    if (out.length > 0) return out;
-  }
-
-  // 3. Paren IS the list: "Redundant blocks (A, B, and C)"
-  const parenMatch = /\(([^)]+)\)/.exec(text);
-  if (parenMatch && parenMatch[1].includes(',')) {
-    const items = parenMatch[1].split(/,\s+(?:and\s+)?|(?:\s+and\s+)/i);
-    for (const item of items) {
-      const label = item.trim().replace(/[.!]$/, '');
-      if (label.length > 2) out.push({ kind, label });
-    }
-    if (out.length > 0) return out;
-  }
-
-  // 4. Fallback: entire text as a single item
-  const cleaned = text.replace(/[.!]$/, '').trim();
-  if (cleaned.length > 2) {
-    const t = TIME_RANGE_RE.exec(cleaned);
-    out.push({
-      kind,
-      label: cleaned.replace(TIME_RANGE_RE, '').replace(/\bfrom\b/i, '').trim(),
-      start: t?.[1],
-      end: t?.[2],
-    });
-  }
-  return out;
-}
-
-export function parseActionsSection(content: string): ParsedAction[] {
-  const headerIdx = content.search(ACTIONS_HEADER_RE);
-  if (headerIdx === -1) return [];
-
-  const lines = content.slice(headerIdx).split('\n');
-  const actions: ParsedAction[] = [];
-  let currentKind: ParsedAction["kind"] | null = null;
-  let pastHeader = false;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim().replace(/\*\*/g, '').trim();
-    if (!line) continue;
-    if (ACTIONS_HEADER_RE.test(rawLine)) { pastHeader = true; continue; }
-    if (!pastHeader) continue;
-
-    const tryKind = (re: RegExp, kind: ParsedAction["kind"]): boolean => {
-      if (!re.test(line)) return false;
-      currentKind = kind;
-      const rest = line.replace(re, '').trim();
-      if (rest) actions.push(...extractItems(rest, kind));
-      return true;
-    };
-
-    if (tryKind(DELETE_VERB_RE, "delete")) continue;
-    if (tryKind(CREATE_VERB_RE, "create")) continue;
-    if (tryKind(MODIFY_VERB_RE, "modify")) continue;
-    if (tryKind(REMOVED_VERB_RE, "delete")) continue;
-    if (tryKind(ADDED_VERB_RE, "create")) continue;
-    if (tryKind(MODIFIED_VERB_RE, "modify")) continue;
-
-    // Bullet/numbered items — infer kind from item text, or inherit currentKind
-    const bulletMatch = BULLET_RE.exec(line);
-    if (bulletMatch) {
-      const itemText = bulletMatch[1] ?? bulletMatch[2] ?? '';
-      if (itemText) {
-        let bulletKind = currentKind;
-        let content = itemText;
-        if      (DELETE_VERB_RE.test(itemText))   { bulletKind = "delete"; content = itemText.replace(DELETE_VERB_RE, '').trim(); }
-        else if (REMOVED_VERB_RE.test(itemText))  { bulletKind = "delete"; content = itemText.replace(REMOVED_VERB_RE, '').trim(); }
-        else if (CREATE_VERB_RE.test(itemText))   { bulletKind = "create"; content = itemText.replace(CREATE_VERB_RE, '').trim(); }
-        else if (ADDED_VERB_RE.test(itemText))    { bulletKind = "create"; content = itemText.replace(ADDED_VERB_RE, '').trim(); }
-        else if (MODIFY_VERB_RE.test(itemText))   { bulletKind = "modify"; content = itemText.replace(MODIFY_VERB_RE, '').trim(); }
-        else if (MODIFIED_VERB_RE.test(itemText)) { bulletKind = "modify"; content = itemText.replace(MODIFIED_VERB_RE, '').trim(); }
-        if (bulletKind && content) actions.push(...extractItems(content, bulletKind));
-      }
-      continue;
-    }
-
-    // Non-action line → closing text starts here, stop
-    break;
-  }
-
-  return actions;
-}
 
 // ─── Inline renderer ────────────────────────────────────────────────────────
 
@@ -364,6 +223,11 @@ function ToolChips({ calls, onUndo }: { calls: NonNullable<ChatMessage["toolCall
 }
 
 // Block pills grouped by change kind — shared by applied and proposed ledgers.
+// Both now resolve to the same BlockPillProps[] shape (extractBlockData for
+// executed [TOOL:...] calls, extractProposedBlockData for not-yet-run
+// [PROPOSE:...] ones), so one renderer covers both instead of two near-
+// duplicate ones (the old ProposedGroups re-derived this from regex-parsed
+// prose with its own label/category guessing).
 function BlockGroups({ blocks }: { blocks: ReturnType<typeof extractBlockData> }) {
   if (blocks.length === 0) return null;
   const added    = blocks.filter(b => b.action === "added");
@@ -387,71 +251,22 @@ function BlockGroups({ blocks }: { blocks: ReturnType<typeof extractBlockData> }
   );
 }
 
-// ─── Proposed actions ─────────────────────────────────────────────────────
-// Body for a "proposed" ActionLedger: what the AI plans to do but hasn't run.
-// Renders purely from text — no schedule data dependency for visual output. The
-// ledger frame supplies the header, so this is just the grouped pill content.
-
-function ProposedGroups({
-  actions,
-  rawText,
-  categories,
-}: {
-  actions: ParsedAction[];
-  rawText?: string;
-  categories?: ScheduleData["categories"];
-}) {
-  if (actions.length === 0) {
-    if (!rawText) return null;
-    return <div className="text-[11px] leading-relaxed whitespace-pre-wrap text-primary/60">{renderRichHtml(rawText)}</div>;
-  }
-  const removed  = actions.filter(a => a.kind === "delete");
-  const added    = actions.filter(a => a.kind === "create");
-  const modified = actions.filter(a => a.kind === "modify");
-  return (
-    <div className="space-y-2.5">
-      {removed.length > 0 && (
-        <BlockSection title="Remove" icon={<AlertCircle className="h-3 w-3 text-destructive" />}
-          items={removed.map((a, i) => (
-            <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="removed" />
-          ))} />
-      )}
-      {added.length > 0 && (
-        <BlockSection title="Add" icon={<CheckCircle2 className="h-3 w-3 text-emerald-500" />}
-          items={added.map((a, i) => (
-            <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="added" />
-          ))} />
-      )}
-      {modified.length > 0 && (
-        <BlockSection title="Modify" icon={<Undo2 className="h-3 w-3 text-amber-500" />}
-          items={modified.map((a, i) => (
-            <BlockPill key={i} title={a.label} start={a.start} end={a.end} kind={a.category} categories={categories} action="modified" />
-          ))} />
-      )}
-    </div>
-  );
-}
-
-// ─── Closing-text detection ──────────────────────────────────────────────────
-// Returns true when a line is part of the action list (not closing remarks).
-
-function isActionLine(raw: string): boolean {
-  const line = raw.trim().replace(/\*\*/g, '');
-  return (
-    /^[-•*]\s/.test(line) ||
-    /^\d+\.\s/.test(line) ||
-    ACTIONS_HEADER_RE.test(raw) ||
-    /^(Delete|Remove|Create|Add|Move|Update|Modify|Removed|Added|Created|Deleted|Modified|Merged|Split)[\s:]/i.test(line)
-  );
-}
-
 // ─── Message content ─────────────────────────────────────────────────────────
+// Proposed (not-yet-executed) changes arrive as [PROPOSE:tool]{json}[/PROPOSE]
+// tags inline in msg.content — same tag/JSON convention as real [TOOL:...]
+// calls (see PROPOSE_FORMAT_INSTRUCTION in chat/service.ts), so parsing is a
+// plain regex+JSON.parse (extractProposedCalls) instead of the old free-text
+// "Actions:" section regex-parser. The tags stay in msg.content (never
+// stripped, same as the old "Actions:" prose never was) — this component is
+// what splits prose from tags for display.
+
+const PROPOSE_TAG_RE = /\[PROPOSE:\w+\][\s\S]*?\[\/PROPOSE\]/g;
 
 function ChatMessageContent({ msg, data, onUndo }: { msg: ChatMessage; data?: ScheduleData; onUndo?: () => void }) {
   const hasToolCalls = (msg.toolCalls?.length ?? 0) > 0;
   const hasWriteCalls = msg.toolCalls?.some(tc => !tc.error && WRITE_TOOLS.has(tc.tool)) ?? false;
-  // Only show the actions card when the AI hasn't already executed the changes
-  const hasActionsSection = !hasWriteCalls && ACTIONS_HEADER_RE.test(msg.content);
+  // Only show the proposal card when the AI hasn't already executed the changes
+  const hasProposals = !hasWriteCalls && PROPOSE_TAG_RE.test(msg.content);
 
   const confirmedBlocks = useMemo(
     () => (hasWriteCalls ? extractBlockData(msg, data) : []),
@@ -459,51 +274,27 @@ function ChatMessageContent({ msg, data, onUndo }: { msg: ChatMessage; data?: Sc
     [msg.id, msg.toolCalls, data, hasWriteCalls],
   );
 
-  // Split content at "Actions:" — always done when detected so the section never shows as plain text
-  const { displayText, actionsRaw, closingText } = useMemo(() => {
-    if (!hasActionsSection) return { displayText: msg.content, actionsRaw: "", closingText: "" };
-
-    const idx = msg.content.search(ACTIONS_HEADER_RE);
-    const beforeActions = msg.content.slice(0, idx).trim();
-    const afterLines = msg.content.slice(idx).split('\n');
-
-    let closingStart = -1;
-    let pastHeader = false;
-    const actionIdxs: number[] = [];
-
-    for (let i = 0; i < afterLines.length; i++) {
-      const line = afterLines[i].trim();
-      if (!line) continue;
-      if (ACTIONS_HEADER_RE.test(afterLines[i])) { pastHeader = true; continue; }
-      if (!pastHeader) continue;
-      if (!isActionLine(afterLines[i])) { closingStart = i; break; }
-      actionIdxs.push(i);
-    }
-
-    return {
-      displayText: beforeActions,
-      actionsRaw: actionIdxs.map(i => afterLines[i]).join('\n'),
-      closingText: closingStart !== -1 ? afterLines.slice(closingStart).join('\n').trim() : '',
-    };
-  }, [msg.content, hasActionsSection]);
-
-  // Parse for typed items (icons/colors). Falls back to actionsRaw inside ActionsCard if empty.
-  const proposedActions = useMemo(
-    () => (hasActionsSection ? parseActionsSection(msg.content) : []),
+  const proposedBlocks = useMemo(
+    () => (hasProposals ? extractProposedBlockData(extractProposedCalls(msg.content), data) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [msg.id, msg.content, hasActionsSection],
+    [msg.id, msg.content, hasProposals, data],
   );
 
-  // Enrich with category from matching block titles so BlockPill can color by category
-  const enrichedActions = useMemo(() => {
-    if (!data || proposedActions.length === 0) return proposedActions;
-    const allBlocks = [...(data.routine ?? []), ...(data.commitments ?? [])];
-    const byTitle = new Map(allBlocks.map(b => [b.title.toLowerCase(), b.kind]));
-    return proposedActions.map(a => ({
-      ...a,
-      category: a.category ?? byTitle.get(a.label.toLowerCase()),
-    }));
-  }, [proposedActions, data]);
+  // Split content around the [PROPOSE:...] tags: everything before the first
+  // one is the lead-in prose, everything after the last one is closing text.
+  const { displayText, closingText } = useMemo(() => {
+    if (!hasProposals) return { displayText: msg.content, closingText: "" };
+    PROPOSE_TAG_RE.lastIndex = 0;
+    const matches = [...msg.content.matchAll(PROPOSE_TAG_RE)];
+    const first = matches[0];
+    const last = matches[matches.length - 1];
+    const firstIdx = first.index ?? 0;
+    const lastEnd = (last.index ?? 0) + last[0].length;
+    return {
+      displayText: msg.content.slice(0, firstIdx).trim(),
+      closingText: msg.content.slice(lastEnd).trim(),
+    };
+  }, [msg.content, hasProposals]);
 
   // Executed-write state drives the ledger accent: undone wins, then error, else applied.
   const execState: LedgerState = msg.toolCalls?.some(tc => tc.undone)
@@ -531,9 +322,11 @@ function ChatMessageContent({ msg, data, onUndo }: { msg: ChatMessage; data?: Sc
         </div>
       ) : null}
 
-      {hasActionsSection && (
+      {hasProposals && (
         <ActionLedger state="proposed">
-          <ProposedGroups actions={enrichedActions} rawText={actionsRaw} categories={data?.categories} />
+          {proposedBlocks.length > 0
+            ? <BlockGroups blocks={proposedBlocks} />
+            : <p className="text-[11px] text-primary/60">Proposed changes.</p>}
         </ActionLedger>
       )}
 
